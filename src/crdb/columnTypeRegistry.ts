@@ -230,20 +230,20 @@ export const COLUMN_TYPE_HINTS: ColumnTypeHint[] = [
   {
     table: 'system.job_info',
     column: 'value',
-    duckdbType: 'VARCHAR',
-    description: 'Mixed data - some values are protobuf, others are plain strings'
+    duckdbType: 'JSON',
+    description: 'Protobuf data converted to JSON, or fallback JSON wrapper for non-proto data'
   },
   {
     table: 'system_job_info',
     column: 'value',
-    duckdbType: 'VARCHAR',
-    description: 'Mixed data - some values are protobuf, others are plain strings'
+    duckdbType: 'JSON',
+    description: 'Protobuf data converted to JSON, or fallback JSON wrapper for non-proto data'
   },
   {
     table: 'job_info',
     column: 'value',
-    duckdbType: 'VARCHAR',
-    description: 'Mixed data - some values are protobuf, others are plain strings'
+    duckdbType: 'JSON',
+    description: 'Protobuf data converted to JSON, or fallback JSON wrapper for non-proto data'
   }
 ];
 

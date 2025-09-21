@@ -244,17 +244,32 @@ describe('CSV Preprocessor - job_info proto decoding', () => {
       expect(processed).toBeDefined();
     });
 
-    it('should handle unknown info_key types', () => {
+    it('should handle unknown info_key types with UTF-8 fallback', () => {
       const csvContent = [
         'job_id\tinfo_key\twritten\tvalue',
-        '999\tunknown_key\t2025-09-17 21:50:46.424229+00\t\\x0123456789'
+        '100\tunknown_type\t2025-09-17 21:51:14.934948+00\t\\x48656c6c6f20576f726c64', // "Hello World" in hex
+        '101\tanother_unknown\t2025-09-17 21:51:14.934948+00\t\\x80ff' // Invalid UTF-8
       ].join('\n');
 
       const processed = preprocessCSV(csvContent, {
         tableName: 'system.job_info.txt',
         decodeProtos: true
       });
-      expect(processed).toBeDefined();
+
+      const lines = processed.split('\n');
+      expect(lines[0]).toBe('job_id\tinfo_key\twritten\tvalue');
+
+      // First row should have UTF-8 string in JSON wrapper
+      const row1 = lines[1].split('\t');
+      expect(row1[3]).toBe('{"value":"Hello World"}');
+
+      // Second row should have base64-encoded bytes in JSON wrapper
+      const row2 = lines[2].split('\t');
+      const parsed = JSON.parse(row2[3]);
+      expect(parsed).toHaveProperty('value');
+      expect(typeof parsed.value).toBe('string');
+      // Should be base64 since UTF-8 decoding fails
+      expect(parsed.value).toMatch(/^[A-Za-z0-9+/]*(=|==)?$/);
       // Should preserve the original hex value when type is unknown
     });
   });

@@ -116,6 +116,30 @@ function hexToBytes(hex: string): Uint8Array {
   return bytes;
 }
 
+// Check if bytes are valid UTF-8 and return appropriate JSON value
+function createFallbackJson(hexValue: string): string {
+  try {
+    const bytes = hexToBytes(hexValue);
+
+    // Try to decode as UTF-8
+    const decoder = new TextDecoder('utf-8', { fatal: true });
+    const utf8String = decoder.decode(bytes);
+
+    // If successful, return JSON with the string value
+    return JSON.stringify({ value: utf8String });
+  } catch {
+    // If UTF-8 decoding fails, use base64
+    try {
+      const bytes = hexToBytes(hexValue);
+      const base64String = btoa(String.fromCharCode(...bytes));
+      return JSON.stringify({ value: base64String });
+    } catch {
+      // If all else fails, return the original hex as string
+      return JSON.stringify({ value: hexValue });
+    }
+  }
+}
+
 
 // Main preprocessing function - transforms keys in place
 export function preprocessCSV(
@@ -197,7 +221,11 @@ export function preprocessCSV(
           } else if (infoKey === 'legacy_progress') {
             protoType = 'cockroach.sql.jobs.jobspb.Progress';
           } else {
-            protoType = null; // Unknown info_key type
+            // Unknown info_key type - use fallback JSON wrapper
+            if (value && value !== '\\N' && value !== 'NULL') {
+              return createFallbackJson(value);
+            }
+            return value;
           }
 
         }
