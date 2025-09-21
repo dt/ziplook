@@ -35,10 +35,14 @@ export class ZipReader {
           );
 
           if (!shouldSkip) {
+            // Remove 'renamed_' prefix from displayed path and name for cleaner UI
+            const displayPath = path.startsWith('renamed_') ? path.slice(8) : path;
+            const displayName = name.startsWith('renamed_') ? name.slice(8) : name;
+
             this.entries.push({
-              id: path,
-              name,
-              path,
+              id: displayPath,
+              name: displayName,
+              path: displayPath,
               size: file.originalSize || 0,
               compressedSize: file.size || 0,
               isDir,
@@ -66,15 +70,23 @@ export class ZipReader {
     const { unzip } = fflate;
 
     return new Promise((resolve, reject) => {
+      // Try both the requested path and the 'renamed_' version
+      const pathsToTry = [path, `renamed_${path}`];
+
       unzip(this.zipData, {
-        filter: (file) => file.name === path
+        filter: (file) => pathsToTry.includes(file.name)
       }, (err, files) => {
         if (err) {
           reject(err);
           return;
         }
 
-        const data = files[path];
+        // Try the requested path first, then the renamed version
+        let data = files[path];
+        if (!data) {
+          data = files[`renamed_${path}`];
+        }
+
         if (!data) {
           reject(new Error(`File not found in zip: ${path}`));
           return;

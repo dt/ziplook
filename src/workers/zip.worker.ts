@@ -34,7 +34,8 @@ async function streamFile(path: string, zipData: Uint8Array) {
 
       // Handle file discovery
       unzipper.onfile = (file) => {
-        if (file.name === path) {
+        // Try both the requested path and the 'renamed_' version
+        if (file.name === path || file.name === `renamed_${path}`) {
           foundFile = true;
           fileSize = file.originalSize || 0;
 

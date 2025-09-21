@@ -283,12 +283,12 @@ function DropZone() {
 
     try {
       // Use relative path that works in both dev and production
-      const response = await fetch(`${import.meta.env.BASE_URL}debug.zip`);
+      const response = await fetch(`${import.meta.env.BASE_URL}debug_renamed.zip`);
       if (!response.ok) {
         throw new Error('Failed to load demo file');
       }
       const arrayBuffer = await response.arrayBuffer();
-      const file = new File([arrayBuffer], 'debug.zip', { type: 'application/zip' });
+      const file = new File([arrayBuffer], 'debug_renamed.zip', { type: 'application/zip' });
       handleFile(file);
     } catch (err) {
       console.error('Failed to load demo file:', err);
