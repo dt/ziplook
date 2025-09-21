@@ -30,31 +30,7 @@ export const COLUMN_TYPE_HINTS: ColumnTypeHint[] = [
     description: 'Timestamp as VARCHAR due to NULL handling issues'
   },
   {
-    table: 'system_jobs',  // Table name after file name conversion
-    column: 'created',
-    duckdbType: 'VARCHAR',
-    description: 'Timestamp as VARCHAR due to NULL handling issues'
-  },
-  {
-    table: 'jobs',
-    column: 'created',
-    duckdbType: 'VARCHAR',
-    description: 'Timestamp as VARCHAR due to NULL handling issues'
-  },
-  {
     table: 'system.jobs',
-    column: 'finished',
-    duckdbType: 'VARCHAR',
-    description: 'Timestamp as VARCHAR due to NULL handling issues'
-  },
-  {
-    table: 'system_jobs',  // Table name after file name conversion
-    column: 'finished',
-    duckdbType: 'VARCHAR',
-    description: 'Timestamp as VARCHAR due to NULL handling issues'
-  },
-  {
-    table: 'jobs',
     column: 'finished',
     duckdbType: 'VARCHAR',
     description: 'Timestamp as VARCHAR due to NULL handling issues'
@@ -82,31 +58,7 @@ export const COLUMN_TYPE_HINTS: ColumnTypeHint[] = [
     description: 'Node ID as integer'
   },
   {
-    table: 'kv_node_status',
-    column: 'node_id',
-    duckdbType: 'INTEGER',
-    description: 'Node ID as integer'
-  },
-  {
-    table: 'crdb_internal_kv_node_status',
-    column: 'node_id',
-    duckdbType: 'INTEGER',
-    description: 'Node ID as integer'
-  },
-  {
     table: 'crdb_internal.kv_node_status',
-    column: 'started_at',
-    duckdbType: 'VARCHAR',
-    description: 'Timestamp as VARCHAR for safe parsing'
-  },
-  {
-    table: 'kv_node_status',
-    column: 'started_at',
-    duckdbType: 'VARCHAR',
-    description: 'Timestamp as VARCHAR for safe parsing'
-  },
-  {
-    table: 'crdb_internal_kv_node_status',
     column: 'started_at',
     duckdbType: 'VARCHAR',
     description: 'Timestamp as VARCHAR for safe parsing'
@@ -118,31 +70,7 @@ export const COLUMN_TYPE_HINTS: ColumnTypeHint[] = [
     description: 'Timestamp as VARCHAR for safe parsing'
   },
   {
-    table: 'kv_node_status',
-    column: 'updated_at',
-    duckdbType: 'VARCHAR',
-    description: 'Timestamp as VARCHAR for safe parsing'
-  },
-  {
-    table: 'crdb_internal_kv_node_status',
-    column: 'updated_at',
-    duckdbType: 'VARCHAR',
-    description: 'Timestamp as VARCHAR for safe parsing'
-  },
-  {
     table: 'crdb_internal.kv_node_status',
-    column: 'metrics',
-    duckdbType: 'VARCHAR',
-    description: 'Large JSON field that breaks auto-detection'
-  },
-  {
-    table: 'kv_node_status',
-    column: 'metrics',
-    duckdbType: 'VARCHAR',
-    description: 'Large JSON field that breaks auto-detection'
-  },
-  {
-    table: 'crdb_internal_kv_node_status',
     column: 'metrics',
     duckdbType: 'VARCHAR',
     description: 'Large JSON field that breaks auto-detection'
@@ -156,91 +84,25 @@ export const COLUMN_TYPE_HINTS: ColumnTypeHint[] = [
     description: 'Protobuf data converted to JSON'
   },
   {
-    table: 'system_descriptor',
-    column: 'descriptor',
-    duckdbType: 'JSON',
-    description: 'Protobuf data converted to JSON'
-  },
-  {
-    table: 'descriptor',
-    column: 'descriptor',
-    duckdbType: 'JSON',
-    description: 'Protobuf data converted to JSON'
-  },
-  {
     table: 'system.span_configurations',
     column: 'config',
     duckdbType: 'JSON',
     description: 'Protobuf data converted to JSON'
   },
   {
-    table: 'system_span_configurations',
-    column: 'config',
-    duckdbType: 'JSON',
-    description: 'Protobuf data converted to JSON'
-  },
-  {
-    table: 'span_configurations',
-    column: 'config',
-    duckdbType: 'JSON',
-    description: 'Protobuf data converted to JSON'
-  },
-  {
-    table: 'span_configs',
-    column: 'config',
-    duckdbType: 'JSON',
-    description: 'Protobuf data converted to JSON'
-  },
-  {
     table: 'system.jobs',
     column: 'payload',
     duckdbType: 'JSON',
     description: 'Protobuf data converted to JSON'
   },
   {
-    table: 'system_jobs',
-    column: 'payload',
-    duckdbType: 'JSON',
-    description: 'Protobuf data converted to JSON'
-  },
-  {
-    table: 'jobs',
-    column: 'payload',
-    duckdbType: 'JSON',
-    description: 'Protobuf data converted to JSON'
-  },
-  {
     table: 'system.jobs',
-    column: 'progress',
-    duckdbType: 'JSON',
-    description: 'Protobuf data converted to JSON'
-  },
-  {
-    table: 'system_jobs',
-    column: 'progress',
-    duckdbType: 'JSON',
-    description: 'Protobuf data converted to JSON'
-  },
-  {
-    table: 'jobs',
     column: 'progress',
     duckdbType: 'JSON',
     description: 'Protobuf data converted to JSON'
   },
   {
     table: 'system.job_info',
-    column: 'value',
-    duckdbType: 'JSON',
-    description: 'Protobuf data converted to JSON, or fallback JSON wrapper for non-proto data'
-  },
-  {
-    table: 'system_job_info',
-    column: 'value',
-    duckdbType: 'JSON',
-    description: 'Protobuf data converted to JSON, or fallback JSON wrapper for non-proto data'
-  },
-  {
-    table: 'job_info',
     column: 'value',
     duckdbType: 'JSON',
     description: 'Protobuf data converted to JSON, or fallback JSON wrapper for non-proto data'

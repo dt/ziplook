@@ -12,12 +12,21 @@ function formatFileSize(bytes: number): string {
 }
 
 function parseTableName(name: string): { prefix?: string; mainName: string } {
-  // Check for system_ or crdb_internal_ prefix
-  if (name.startsWith('system_')) {
+  // Check for system. or crdb_internal. prefix
+  if (name.startsWith('system.')) {
     return { prefix: 'system', mainName: name.substring(7) };
   }
-  if (name.startsWith('crdb_internal_')) {
+  if (name.startsWith('crdb_internal.')) {
     return { prefix: 'crdb_internal', mainName: name.substring(14) };
+  }
+  // Check for per-node schemas like n1_system. or n1_crdb_internal.
+  if (name.match(/^n\d+_system\./)) {
+    const dotIndex = name.indexOf('.');
+    return { prefix: name.substring(0, dotIndex), mainName: name.substring(dotIndex + 1) };
+  }
+  if (name.match(/^n\d+_crdb_internal\./)) {
+    const dotIndex = name.indexOf('.');
+    return { prefix: name.substring(0, dotIndex), mainName: name.substring(dotIndex + 1) };
   }
   return { mainName: name };
 }

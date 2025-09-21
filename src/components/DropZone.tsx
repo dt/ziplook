@@ -38,7 +38,9 @@ function DropZone() {
 
     for (const entry of tablesToLoad) {
       // Check if it's a node-specific table
-      let tableName = entry.name.replace(/\.(err\.txt|txt|csv)$/, '').replace(/\./g, '_');
+      // Extract just the filename from the path
+      const filename = entry.name.split('/').pop() || entry.name;
+      let tableName = filename.replace(/\.(err\.txt|txt|csv)$/, '');
       let nodeId: number | undefined;
       let originalName: string | undefined;
 
@@ -47,7 +49,15 @@ function DropZone() {
       if (nodeMatch) {
         nodeId = parseInt(nodeMatch[1], 10);
         originalName = tableName;
-        tableName = `n${nodeId}_${tableName}`;
+
+        // For schema.table format, create per-node schema: system.job_info -> n1_system.job_info
+        if (tableName.includes('.')) {
+          const [schema, table] = tableName.split('.', 2);
+          tableName = `n${nodeId}_${schema}.${table}`;
+        } else {
+          // For regular tables, prefix as before
+          tableName = `n${nodeId}_${tableName}`;
+        }
       }
 
       try {
@@ -203,7 +213,9 @@ function DropZone() {
             (entry.path.includes('system.') || entry.path.includes('crdb_internal.')) &&
             (entry.path.endsWith('.txt') || entry.path.endsWith('.csv') || entry.path.endsWith('.err.txt'))) {
 
-          let tableName = entry.name.replace(/\.(err\.txt|txt|csv)$/, '').replace(/\./g, '_');
+          // Extract just the filename from the path
+      const filename = entry.name.split('/').pop() || entry.name;
+      let tableName = filename.replace(/\.(err\.txt|txt|csv)$/, '');
           let nodeId: number | undefined;
           let originalName: string | undefined;
 
@@ -212,7 +224,15 @@ function DropZone() {
           if (nodeMatch) {
             nodeId = parseInt(nodeMatch[1], 10);
             originalName = tableName;
-            tableName = `n${nodeId}_${tableName}`;
+
+            // For schema.table format, create per-node schema: system.job_info -> n1_system.job_info
+            if (tableName.includes('.')) {
+              const [schema, table] = tableName.split('.', 2);
+              tableName = `n${nodeId}_${schema}.${table}`;
+            } else {
+              // For regular tables, prefix as before
+              tableName = `n${nodeId}_${tableName}`;
+            }
           }
 
           // Check if it's an error file

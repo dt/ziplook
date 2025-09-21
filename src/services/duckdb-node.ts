@@ -54,8 +54,28 @@ export class NodeDuckDBService implements DuckDBService {
     this.instance = await DuckDBInstance.create(':memory:');
     this.conn = await this.instance.connect();
     this.dir = mkdtempSync(join(tmpdir(), 'duckdb-test-'));
+
+    // Create schemas for CRDB table namespaces
+    await this.createSchemas();
+
     this.initialized = true;
   }
+
+  private async createSchemas(): Promise<void> {
+    if (!this.conn) {
+      throw new Error('DuckDB not initialized');
+    }
+
+    try {
+      // Create schemas for CRDB namespaces
+      await this.conn.run('CREATE SCHEMA IF NOT EXISTS system');
+      await this.conn.run('CREATE SCHEMA IF NOT EXISTS crdb_internal');
+    } catch (error) {
+      console.error('Failed to create schemas:', error);
+      throw error;
+    }
+  }
+
 
   async connect(): Promise<IDuckDBConnection> {
     if (!this.conn) {
@@ -79,16 +99,16 @@ export class NodeDuckDBService implements DuckDBService {
     }
 
     if (this.loadedTables.has(tableName)) {
-      const cleanTableName = tableName.replace(/[^a-zA-Z0-9_]/g, '_');
+      const quotedTableName = `"${tableName}"`;
       const countResult = await this.conn.run(
-        `SELECT COUNT(*) as count FROM ${cleanTableName}`
+        `SELECT COUNT(*) as count FROM ${quotedTableName}`
       );
       return (countResult as any)[0].count;
     }
 
     try {
-      // Clean table name for SQL
-      const cleanTableName = tableName.replace(/[^a-zA-Z0-9_]/g, '_');
+      // Use quoted table name to preserve dots
+      const quotedTableName = `"${tableName}"`;
 
       // Check if we should preprocess this table
       let processedContent = content;
@@ -111,10 +131,11 @@ export class NodeDuckDBService implements DuckDBService {
 
       // Create table from CSV/TSV content
       // First, register the content as a virtual file
-      await this.registerFileText(`${cleanTableName}.txt`, processedContent);
+      const fileBaseName = tableName.replace(/[^a-zA-Z0-9_]/g, '_');
+      await this.registerFileText(`${fileBaseName}.txt`, processedContent);
 
       // Drop table if exists
-      await this.conn.run(`DROP TABLE IF EXISTS ${cleanTableName}`);
+      await this.conn.run(`DROP TABLE IF EXISTS ${quotedTableName}`);
 
       // Check if we have type hints for this table
       const typeHints = getTableTypeHints(tableName);
@@ -138,7 +159,7 @@ export class NodeDuckDBService implements DuckDBService {
           const columnsClause = columnDefs.join(', ');
           const filePath = join(this.dir, `${cleanTableName}.txt`);
           sql = `
-            CREATE TABLE ${cleanTableName} AS
+            CREATE TABLE ${quotedTableName} AS
             SELECT * FROM read_csv(
               '${filePath}',
               delim='${delimiter}',
@@ -153,7 +174,7 @@ export class NodeDuckDBService implements DuckDBService {
           // No type hints, use standard auto-detection
           const filePath = join(this.dir, `${cleanTableName}.txt`);
           sql = `
-            CREATE TABLE ${cleanTableName} AS
+            CREATE TABLE ${quotedTableName} AS
             SELECT * FROM read_csv_auto(
               '${filePath}',
               delim='${delimiter}',
@@ -172,7 +193,7 @@ export class NodeDuckDBService implements DuckDBService {
 
           const filePath = join(this.dir, `${cleanTableName}.txt`);
           const sql = `
-            CREATE TABLE ${cleanTableName} AS
+            CREATE TABLE ${quotedTableName} AS
             SELECT * FROM read_csv_auto(
               '${filePath}',
               delim='${delimiter}',
@@ -204,7 +225,7 @@ export class NodeDuckDBService implements DuckDBService {
           const filePath = join(this.dir, `${cleanTableName}.txt`);
 
           const fallbackSql = `
-            CREATE TABLE ${cleanTableName} AS
+            CREATE TABLE ${quotedTableName} AS
             SELECT * FROM read_csv(
               '${filePath}',
               delim='${delimiter}',
@@ -230,7 +251,7 @@ export class NodeDuckDBService implements DuckDBService {
 
       // Get row count
       const countResult = await this.conn.run(
-        `SELECT COUNT(*) as count FROM ${cleanTableName}`
+        `SELECT COUNT(*) as count FROM ${quotedTableName}`
       );
       const countArray = countResult as any;
       const count = countArray && countArray.length > 0 ? countArray[0].count : 0;
@@ -243,13 +264,43 @@ export class NodeDuckDBService implements DuckDBService {
     }
   }
 
+  private rewriteQuery(sql: string): string {
+    // Convert dot versions to underscore versions to match how tables are actually stored
+    let rewritten = sql;
+
+    // Handle dot versions and convert them to underscore versions
+    // system.job_info -> system_job_info
+    rewritten = rewritten.replace(/\bsystem\.([a-zA-Z0-9_]+)\b/gi, 'system_$1');
+
+    // crdb_internal.settings -> crdb_internal_settings
+    rewritten = rewritten.replace(/\bcrdb_internal\.([a-zA-Z0-9_]+)\b/gi, 'crdb_internal_$1');
+
+    return rewritten;
+  }
+
+  private rewriteQuery(sql: string): string {
+    // Convert schema.table references to quoted table names since tables are stored with dots
+    let rewritten = sql;
+
+    // Handle explicit schema.table references by quoting them
+    rewritten = rewritten.replace(/\bsystem\.([a-zA-Z0-9_]+)\b/gi, '"system.$1"');
+    rewritten = rewritten.replace(/\bcrdb_internal\.([a-zA-Z0-9_]+)\b/gi, '"crdb_internal.$1"');
+
+    // Handle per-node schema references like n1_system.table -> "n1_system.table"
+    rewritten = rewritten.replace(/\bn\d+_system\.([a-zA-Z0-9_]+)\b/gi, '"$&"');
+    rewritten = rewritten.replace(/\bn\d+_crdb_internal\.([a-zA-Z0-9_]+)\b/gi, '"$&"');
+
+    return rewritten;
+  }
+
   async query(sql: string): Promise<DuckDBQueryResult> {
     if (!this.conn) {
       throw new Error('DuckDB not initialized');
     }
 
     try {
-      const result = await this.conn.run(sql);
+      const rewrittenSql = this.rewriteQuery(sql);
+      const result = await this.conn.run(rewrittenSql);
       return new NodeDuckDBQueryResult(result as any);
     } catch (error) {
       console.error('Query failed:', error);

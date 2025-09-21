@@ -70,16 +70,16 @@ export class DuckDBService {
     if (this.loadedTables.has(tableName)) {
       // console.log(`Table ${tableName} already loaded`);
       // Get and return existing row count
-      const cleanTableName = tableName.replace(/[^a-zA-Z0-9_]/g, '_');
+      const quotedTableName = `"${tableName}"`;
       const countResult = await this.conn.query(
-        `SELECT COUNT(*) as count FROM ${cleanTableName}`
+        `SELECT COUNT(*) as count FROM ${quotedTableName}`
       );
       return countResult.toArray()[0].count;
     }
 
     try {
-      // Clean table name for SQL
-      const cleanTableName = tableName.replace(/[^a-zA-Z0-9_]/g, '_');
+      // Use quoted table name to preserve dots
+      const quotedTableName = `"${tableName}"`;
 
       // Check if we should preprocess this table
       let processedContent = content;
@@ -102,13 +102,14 @@ export class DuckDBService {
 
       // Create table from CSV/TSV content
       // First, register the content as a virtual file
+      const fileBaseName = tableName.replace(/[^a-zA-Z0-9_]/g, '_');
       await this.db!.registerFileText(
-        `${cleanTableName}.txt`,
+        `${fileBaseName}.txt`,
         processedContent
       );
 
       // Drop table if exists
-      await this.conn.query(`DROP TABLE IF EXISTS ${cleanTableName}`);
+      await this.conn.query(`DROP TABLE IF EXISTS ${quotedTableName}`);
 
       // Check if we have type hints for this table
       const typeHints = getTableTypeHints(tableName);
@@ -131,9 +132,9 @@ export class DuckDBService {
 
           const columnsClause = columnDefs.join(', ');
           sql = `
-            CREATE TABLE ${cleanTableName} AS
+            CREATE TABLE ${quotedTableName} AS
             SELECT * FROM read_csv(
-              '${cleanTableName}.txt',
+              '${fileBaseName}.txt',
               delim='${delimiter}',
               header=true,
               columns={${columnsClause}},
@@ -145,9 +146,9 @@ export class DuckDBService {
         } else {
           // No type hints, use standard auto-detection
           sql = `
-            CREATE TABLE ${cleanTableName} AS
+            CREATE TABLE ${quotedTableName} AS
             SELECT * FROM read_csv_auto(
-              '${cleanTableName}.txt',
+              '${fileBaseName}.txt',
               delim='${delimiter}',
               header=true
             )
@@ -163,14 +164,14 @@ export class DuckDBService {
 
           // Re-register with original content
           await this.db!.registerFileText(
-            `${cleanTableName}.txt`,
+            `${fileBaseName}.txt`,
             content
           );
 
           const sql = `
-            CREATE TABLE ${cleanTableName} AS
+            CREATE TABLE ${quotedTableName} AS
             SELECT * FROM read_csv_auto(
-              '${cleanTableName}.txt',
+              '${fileBaseName}.txt',
               delim='${delimiter}',
               header=true
             )
@@ -198,9 +199,9 @@ export class DuckDBService {
           }).join(', ');
 
           const fallbackSql = `
-            CREATE TABLE ${cleanTableName} AS
+            CREATE TABLE ${quotedTableName} AS
             SELECT * FROM read_csv(
-              '${cleanTableName}.txt',
+              '${fileBaseName}.txt',
               delim='${delimiter}',
               header=true,
               columns={${columnDefs}},
@@ -222,7 +223,7 @@ export class DuckDBService {
 
       // Get row count
       const countResult = await this.conn.query(
-        `SELECT COUNT(*) as count FROM ${cleanTableName}`
+        `SELECT COUNT(*) as count FROM ${quotedTableName}`
       );
       const count = countResult.toArray()[0].count;
 
@@ -235,13 +236,29 @@ export class DuckDBService {
     }
   }
 
+  private rewriteQuery(sql: string): string {
+    // Convert schema.table references to quoted table names since tables are stored with dots
+    let rewritten = sql;
+
+    // Handle explicit schema.table references by quoting them
+    rewritten = rewritten.replace(/\bsystem\.([a-zA-Z0-9_]+)\b/gi, '"system.$1"');
+    rewritten = rewritten.replace(/\bcrdb_internal\.([a-zA-Z0-9_]+)\b/gi, '"crdb_internal.$1"');
+
+    // Handle per-node schema references like n1_system.table -> "n1_system.table"
+    rewritten = rewritten.replace(/\bn\d+_system\.([a-zA-Z0-9_]+)\b/gi, '"$&"');
+    rewritten = rewritten.replace(/\bn\d+_crdb_internal\.([a-zA-Z0-9_]+)\b/gi, '"$&"');
+
+    return rewritten;
+  }
+
   async query(sql: string): Promise<any> {
     if (!this.conn) {
       throw new Error('DuckDB not initialized');
     }
 
     try {
-      const result = await this.conn.query(sql);
+      const rewrittenSql = this.rewriteQuery(sql);
+      const result = await this.conn.query(rewrittenSql);
       const data = result.toArray();
 
       // Get column names and check for timestamps in the data
@@ -272,11 +289,10 @@ export class DuckDBService {
   }
 
   async getTableSchema(tableName: string): Promise<any[]> {
-    const cleanTableName = tableName.replace(/[^a-zA-Z0-9_]/g, '_');
     return this.query(`
       SELECT column_name, data_type
       FROM information_schema.columns
-      WHERE table_name = '${cleanTableName}'
+      WHERE table_name = '${tableName}'
     `);
   }
 

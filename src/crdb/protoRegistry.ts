@@ -10,19 +10,7 @@ export interface ProtoColumnMapping {
 export const PROTO_COLUMN_MAPPINGS: ProtoColumnMapping[] = [
   // system.span_configurations - various naming patterns
   {
-    table: 'system_span_configurations',
-    column: 'config',
-    protoType: 'cockroach.roachpb.SpanConfig',
-    description: 'Span configuration'
-  },
-  {
     table: 'system.span_configurations',
-    column: 'config',
-    protoType: 'cockroach.roachpb.SpanConfig',
-    description: 'Span configuration'
-  },
-  {
-    table: 'span_configurations',
     column: 'config',
     protoType: 'cockroach.roachpb.SpanConfig',
     description: 'Span configuration'
@@ -34,19 +22,7 @@ export const PROTO_COLUMN_MAPPINGS: ProtoColumnMapping[] = [
     description: 'Span configuration'
   },
   {
-    table: 'span_configs',
-    column: 'config',
-    protoType: 'cockroach.roachpb.SpanConfig',
-    description: 'Span configuration'
-  },
-  {
     table: 'system.span_config',
-    column: 'config',
-    protoType: 'cockroach.roachpb.SpanConfig',
-    description: 'Span configuration'
-  },
-  {
-    table: 'span_config',
     column: 'config',
     protoType: 'cockroach.roachpb.SpanConfig',
     description: 'Span configuration'
@@ -74,12 +50,6 @@ export const PROTO_COLUMN_MAPPINGS: ProtoColumnMapping[] = [
     description: 'Table/database/schema descriptor'
   },
   {
-    table: 'system_descriptor',
-    column: 'descriptor',
-    protoType: 'cockroach.sql.sqlbase.Descriptor',
-    description: 'Table/database/schema descriptor'
-  },
-  {
     table: 'descriptor',
     column: 'descriptor',
     protoType: 'cockroach.sql.sqlbase.Descriptor',
@@ -100,18 +70,6 @@ export const PROTO_COLUMN_MAPPINGS: ProtoColumnMapping[] = [
     description: 'Job progress'
   },
   {
-    table: 'system_jobs',
-    column: 'payload',
-    protoType: 'cockroach.sql.jobs.jobspb.Payload',
-    description: 'Job payload'
-  },
-  {
-    table: 'system_jobs',
-    column: 'progress',
-    protoType: 'cockroach.sql.jobs.jobspb.Progress',
-    description: 'Job progress'
-  },
-  {
     table: 'jobs',
     column: 'payload',
     protoType: 'cockroach.sql.jobs.jobspb.Payload',
@@ -127,12 +85,6 @@ export const PROTO_COLUMN_MAPPINGS: ProtoColumnMapping[] = [
   // system.job_info - dynamic based on info_key column
   {
     table: 'system.job_info',
-    column: 'value',
-    protoType: 'dynamic:job_info',
-    description: 'Job info value (type depends on info_key)'
-  },
-  {
-    table: 'system_job_info',
     column: 'value',
     protoType: 'dynamic:job_info',
     description: 'Job info value (type depends on info_key)'
