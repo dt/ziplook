@@ -51,6 +51,14 @@ export class DuckDBService {
       // Create connection
       this.conn = await this.db.connect();
 
+      // Preload JSON extension to avoid loading it later during table creation
+      try {
+        await this.conn.query("INSTALL json; LOAD json;");
+      } catch (err) {
+        console.warn('Failed to preload JSON extension:', err);
+        // Continue anyway - extension will load on demand
+      }
+
       this.initialized = true;
     } catch (error) {
       console.error('Failed to initialize DuckDB:', error);

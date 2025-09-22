@@ -12,6 +12,7 @@ import { AppProvider, useApp } from './state/AppContext';
 import { NavigationProvider } from './components/NavigationProvider';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useKeyboardNavigation } from './hooks/useKeyboardNavigation';
+import { duckDBService } from './services/duckdb';
 
 type ActiveView = 'files' | 'tables' | 'search' | 'stackgazer';
 
@@ -20,6 +21,13 @@ function AppContent() {
   const [activeView, setActiveView] = useState<ActiveView>('tables');
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(360);
+
+  // Initialize DuckDB immediately when the app loads
+  useEffect(() => {
+    duckDBService.initialize().catch(err => {
+      console.error('Failed to initialize DuckDB at startup:', err);
+    });
+  }, []);
 
   // Send stack data to iframe when table loading finishes
   useEffect(() => {

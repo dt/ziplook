@@ -225,26 +225,19 @@ function DropZone() {
         entries,
       });
 
-      // Set tables loading state before starting DuckDB
+      // Set tables loading state before starting table loading
       dispatch({ type: 'SET_TABLES_LOADING', loading: true });
       setLoadingMessage('Loading tables...');
 
-      // Initialize DuckDB in the background
-      duckDBService.initialize().then(() => {
-        // console.log('DuckDB ready, loading system tables...');
-        loadSystemTables(reader, entries).then(() => {
-          // After tables are loaded, load stack data
-          return loadStackData(reader, entries);
-        }).then(() => {
-          dispatch({ type: 'SET_TABLES_LOADING', loading: false });
-          setLoading(false);
-        }).catch(err => {
-          console.error('Failed to load system tables:', err);
-          dispatch({ type: 'SET_TABLES_LOADING', loading: false });
-          setLoading(false);
-        });
+      // Load system tables (DuckDB should already be initialized)
+      loadSystemTables(reader, entries).then(() => {
+        // After tables are loaded, load stack data
+        return loadStackData(reader, entries);
+      }).then(() => {
+        dispatch({ type: 'SET_TABLES_LOADING', loading: false });
+        setLoading(false);
       }).catch(err => {
-        console.error('Failed to initialize DuckDB:', err);
+        console.error('Failed to load system tables:', err);
         dispatch({ type: 'SET_TABLES_LOADING', loading: false });
         setLoading(false);
       });
