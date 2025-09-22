@@ -389,8 +389,11 @@ function DropZone() {
           </>
         ) : (
           <>
-            <h2>📦 Drop debug.zip here</h2>
-            <p>or click to browse</p>
+            <h2>📦 Drop a debug.zip here</h2>
+            <p>or click to browse and upload</p>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+              all processing is local and in-browser -- nothing is uploaded
+            </p>
             <div style={{ marginTop: '1rem' }}>
               <button
                 className="btn btn-secondary"
