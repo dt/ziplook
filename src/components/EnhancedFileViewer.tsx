@@ -154,11 +154,9 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
 
     // Reset if empty
     if (!query) {
-      // Clear hidden areas by using fold/unfold functionality instead
-      const model = editorRef.current.getModel();
-      if (model && monacoRef.current) {
-        editorRef.current.setSelection(new monacoRef.current.Selection(1, 1, model.getLineCount(), 1));
-        editorRef.current.trigger('editor', 'editor.unfoldAll', {});
+      // Clear hidden areas
+      if (editorRef.current.setHiddenAreas) {
+        editorRef.current.setHiddenAreas([]);
       }
       decorationIds.current = editorRef.current.deltaDecorations(decorationIds.current, []);
       setVisibleLineCount(model?.getLineCount() || 0); // Show all lines
@@ -194,7 +192,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
     // Always keep line 1 visible (never hide it)
     visible.add(1);
 
-    // Build hidden ranges
+    // Build hidden ranges for setHiddenAreas
     const hiddenRanges: any[] = [];
     let runStart: number | null = null;
 
@@ -205,23 +203,22 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
       }
       if ((!shouldHide || ln === maxLine) && runStart !== null) {
         const runEnd = shouldHide && ln === maxLine ? ln : ln - 1;
-        hiddenRanges.push(
-          new monacoRef.current.Range(runStart, 1, runEnd, Number.MAX_SAFE_INTEGER)
-        );
+        if (runEnd >= runStart) {
+          hiddenRanges.push(
+            new monacoRef.current.Range(runStart, 1, runEnd, 1)
+          );
+        }
         runStart = null;
       }
     }
 
-    // Note: setHiddenAreas is not available in Monaco editor
-    // Instead, we'll use a different approach with decorations to show matches
+    // Use setHiddenRanges to hide non-matching lines
+    if (editorRef.current.setHiddenAreas) {
+      editorRef.current.setHiddenAreas(hiddenRanges);
+    }
 
-    // Update visible line count (subtract 1 for the always-visible line 1 if no actual matches)
-    const actualMatches = matchingLines.length > 0 ? visible.size : 0;
-    setVisibleLineCount(actualMatches);
-
-
-    // DISABLED: Create decorations for highlights - testing if this clears hidden areas
-    /*const newDecos = matchingLines.map(m => ({
+    // Add highlight decorations for matching lines
+    const highlightDecorations = matchingLines.map(m => ({
       range: m.range,
       options: {
         inlineClassName: 'grep-highlight',
@@ -232,10 +229,11 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
       }
     }));
 
-    decorationIds.current = editorRef.current.deltaDecorations(decorationIds.current, newDecos);*/
+    decorationIds.current = editorRef.current.deltaDecorations(decorationIds.current, highlightDecorations);
 
-    // Clear any existing decorations
-    decorationIds.current = editorRef.current.deltaDecorations(decorationIds.current, []);
+    // Update visible line count
+    const actualMatches = matchingLines.length > 0 ? visible.size : 0;
+    setVisibleLineCount(actualMatches);
 
     // DISABLED: Reveal first match - testing if this clears hidden areas
     /*if (matchingLines.length > 0) {
