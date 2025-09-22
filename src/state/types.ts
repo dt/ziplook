@@ -41,4 +41,5 @@ export interface AppState {
   fileCache: Map<ZipEntryId, { text?: string; bytes?: Uint8Array }>;
   tables: Record<string, TableMeta>;
   tablesLoading?: boolean; // Global state for table loading
+  stackData?: Record<string, string>; // Stack trace files: path -> content
 }

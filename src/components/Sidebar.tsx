@@ -5,7 +5,7 @@ import SearchView from './sidebar/SearchView';
 import { useApp } from '../state/AppContext';
 
 interface SidebarProps {
-  activeView: 'files' | 'tables' | 'search';
+  activeView: 'files' | 'tables' | 'search' | 'stackgazer';
   isVisible: boolean;
   width: number;
 }
@@ -40,6 +40,7 @@ function Sidebar({ activeView, isVisible, width }: SidebarProps) {
       case 'files': return 'Files';
       case 'tables': return 'Tables';
       case 'search': return 'Search';
+      case 'stackgazer': return 'Stack Traces';
     }
   };
 
@@ -48,6 +49,7 @@ function Sidebar({ activeView, isVisible, width }: SidebarProps) {
       case 'files': return <FilesView />;
       case 'tables': return <TablesView />;
       case 'search': return <SearchView />;
+      case 'stackgazer': return null; // No sidebar content for stackgazer
     }
   };
 

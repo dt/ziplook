@@ -7,19 +7,55 @@ import './styles/navigation.css';
 import IconRail from './components/IconRail';
 import Sidebar from './components/Sidebar';
 import MainPanel from './components/MainPanel';
+import StackgazerView from './components/StackgazerView';
 import { AppProvider, useApp } from './state/AppContext';
 import { NavigationProvider } from './components/NavigationProvider';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useKeyboardNavigation } from './hooks/useKeyboardNavigation';
 
-type ActiveView = 'files' | 'tables' | 'search';
+type ActiveView = 'files' | 'tables' | 'search' | 'stackgazer';
 
 function AppContent() {
+  const { state } = useApp();
   const [activeView, setActiveView] = useState<ActiveView>('tables');
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(360);
+
+  // Send stack data to iframe when table loading finishes
+  useEffect(() => {
+    if (!state.zip || !state.stackData || state.tablesLoading) return;
+
+    // Only proceed if we have actual stack data
+    if (Object.keys(state.stackData).length === 0) return;
+
+    console.log('App: Table loading finished, sending stack data to iframe:', Object.keys(state.stackData));
+
+    // Find the preloaded iframe
+    const preloadedIframe = document.getElementById('stackgazer-preload') as HTMLIFrameElement;
+    if (!preloadedIframe) return;
+
+    // Wait a bit for iframe to be ready, then send data one file at a time
+    setTimeout(() => {
+      try {
+        if (preloadedIframe.contentWindow) {
+          // Send each file individually
+          for (const [path, content] of Object.entries(state.stackData)) {
+            preloadedIframe.contentWindow.postMessage({
+              type: 'LOAD_STACK_FILE',
+              path: path,
+              content: content
+            }, '*');
+            console.log('App: Sent stack file:', path);
+          }
+          console.log('App: Sent all stack files to preloaded iframe');
+        }
+      } catch (error) {
+        console.error('App: Error sending data to stackgazer iframe:', error);
+      }
+    }, 100);
+  }, [state.zip, state.stackData, state.tablesLoading]);
   const [isDragging, setIsDragging] = useState(false);
-  const { state, dispatch } = useApp();
+  const { dispatch } = useApp();
   const navigation = useKeyboardNavigation();
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
@@ -160,20 +196,50 @@ function AppContent() {
   ]);
 
   return (
-    <div className={`app-container ${!sidebarVisible ? 'sidebar-collapsed' : ''}`}>
+    <div className={`app-container ${!sidebarVisible || activeView === 'stackgazer' ? 'sidebar-collapsed' : ''}`}>
       <IconRail activeView={activeView} onViewChange={handleViewChange} />
-      <Sidebar
-        activeView={activeView}
-        isVisible={sidebarVisible}
-        width={sidebarWidth}
-      />
-      {sidebarVisible && (
-        <div
-          className="sidebar-resize-handle"
-          onMouseDown={handleMouseDown}
-        />
+      {activeView !== 'stackgazer' && (
+        <>
+          <Sidebar
+            activeView={activeView}
+            isVisible={sidebarVisible}
+            width={sidebarWidth}
+          />
+          {sidebarVisible && (
+            <div
+              className="sidebar-resize-handle"
+              onMouseDown={handleMouseDown}
+            />
+          )}
+        </>
       )}
-      <MainPanel />
+      {activeView === 'stackgazer' ? <StackgazerView /> : <MainPanel />}
+      {/* Preloaded iframe that gets repositioned when stackgazer is active */}
+      <div
+        id="stackgazer-iframe-container"
+        style={{
+          position: activeView === 'stackgazer' ? 'static' : 'absolute',
+          left: activeView === 'stackgazer' ? 'auto' : '-9999px',
+          top: activeView === 'stackgazer' ? 'auto' : '-9999px',
+          width: activeView === 'stackgazer' ? '100%' : '1px',
+          height: activeView === 'stackgazer' ? '100%' : '1px',
+          flex: activeView === 'stackgazer' ? 1 : 'none',
+          display: activeView === 'stackgazer' ? 'flex' : 'block',
+          flexDirection: 'column',
+          overflow: 'hidden'
+        }}
+      >
+        <iframe
+          src="/stackgazer/index.html"
+          style={{
+            width: '100%',
+            height: '100%',
+            border: 'none',
+            backgroundColor: 'white'
+          }}
+          id="stackgazer-preload"
+        />
+      </div>
     </div>
   );
 }

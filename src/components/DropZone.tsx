@@ -153,6 +153,45 @@ function DropZone() {
     // console.log('All system tables loaded');
   };
 
+  const loadStackData = async (reader: any, entries: any[]): Promise<void> => {
+    console.log('Loading stack trace data...');
+
+    // Find all stack trace files
+    const stackFiles = entries.filter(entry =>
+      !entry.isDir &&
+      (entry.path.match(/stacks\.txt$/) || entry.path.match(/nodes\/[^\/]+\/stacks\.txt$/))
+    );
+
+    console.log('Found stack files:', stackFiles.map(f => f.path));
+
+    if (stackFiles.length === 0) {
+      console.log('No stack files found');
+      return;
+    }
+
+    // Read all stack files
+    const stackData: Record<string, string> = {};
+    for (const entry of stackFiles) {
+      try {
+        const result = await reader.readFile(entry.path);
+        if (result.text) {
+          stackData[entry.path] = result.text;
+          console.log(`Loaded stack file: ${entry.path} (${result.text.length} chars)`);
+        }
+      } catch (error) {
+        console.warn(`Failed to read stack file ${entry.path}:`, error);
+      }
+    }
+
+    // Store stack data in app state
+    dispatch({
+      type: 'SET_STACK_DATA',
+      stackData
+    });
+
+    console.log(`Loaded ${Object.keys(stackData).length} stack files`);
+  };
+
   const handleFile = async (file: File) => {
     if (!file.name.endsWith('.zip')) {
       setError('Please select a .zip file');
@@ -194,6 +233,9 @@ function DropZone() {
       duckDBService.initialize().then(() => {
         // console.log('DuckDB ready, loading system tables...');
         loadSystemTables(reader, entries).then(() => {
+          // After tables are loaded, load stack data
+          return loadStackData(reader, entries);
+        }).then(() => {
           dispatch({ type: 'SET_TABLES_LOADING', loading: false });
           setLoading(false);
         }).catch(err => {
