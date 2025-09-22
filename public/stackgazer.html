@@ -93,8 +93,24 @@
                     return;
                 }
 
+                if (event.data && event.data.type === 'LOAD_STACK_FILES') {
+                    console.log('Stackgazer: Received stack files:', event.data.files.map(f => f.path));
+
+                    try {
+                        // Convert all files to File objects and process as a batch
+                        const files = event.data.files.map(fileData =>
+                            new File([fileData.content], fileData.path, { type: 'text/plain' })
+                        );
+                        await app.handleFiles(files);
+                        console.log('Stackgazer: Processed all stack files:', files.map(f => f.name));
+                    } catch (error) {
+                        console.error('Stackgazer: Error processing stack files:', error);
+                    }
+                }
+
+                // Keep backward compatibility with single file messages
                 if (event.data && event.data.type === 'LOAD_STACK_FILE') {
-                    console.log('Stackgazer: Received stack file:', event.data.path);
+                    console.log('Stackgazer: Received single stack file:', event.data.path);
 
                     try {
                         // Convert to File object and process immediately

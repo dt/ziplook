@@ -59,7 +59,7 @@ function AppContent() {
               type: 'LOAD_STACK_FILE',
               path: path,
               content: content
-            }, '*');
+            }, window.location.origin);
             console.log('App: Sent stack file:', path);
           }
           console.log('App: Sent all stack files to preloaded iframe');
@@ -244,7 +244,7 @@ function AppContent() {
         }}
       >
         <iframe
-          src="/stackgazer/index.html"
+          src="./stackgazer.html"
           style={{
             width: '100%',
             height: '100%',
