@@ -31,6 +31,13 @@ function AppContent() {
 
   // Send stack data to iframe when table loading finishes
   useEffect(() => {
+    console.log('App: useEffect triggered', {
+      hasZip: !!state.zip,
+      hasStackData: !!state.stackData,
+      tablesLoading: state.tablesLoading,
+      stackDataKeys: state.stackData ? Object.keys(state.stackData) : []
+    });
+
     if (!state.zip || !state.stackData || state.tablesLoading) return;
 
     // Only proceed if we have actual stack data

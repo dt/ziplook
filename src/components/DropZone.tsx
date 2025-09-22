@@ -227,10 +227,14 @@ function DropZone() {
 
       // Set tables loading state before starting table loading
       dispatch({ type: 'SET_TABLES_LOADING', loading: true });
-      setLoadingMessage('Loading tables...');
+      setLoadingMessage('Initializing database...');
 
-      // Load system tables (DuckDB should already be initialized)
-      loadSystemTables(reader, entries).then(() => {
+      // Ensure DuckDB is initialized before proceeding
+      duckDBService.initialize().then(() => {
+        setLoadingMessage('Loading tables...');
+        // Load system tables
+        return loadSystemTables(reader, entries);
+      }).then(() => {
         // After tables are loaded, load stack data
         return loadStackData(reader, entries);
       }).then(() => {
