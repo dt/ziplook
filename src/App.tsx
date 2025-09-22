@@ -17,7 +17,7 @@ import { duckDBService } from './services/duckdb';
 type ActiveView = 'files' | 'tables' | 'search' | 'stackgazer';
 
 function AppContent() {
-  const { state } = useApp();
+  const { state, dispatch } = useApp();
   const [activeView, setActiveView] = useState<ActiveView>('tables');
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(360);
@@ -54,7 +54,7 @@ function AppContent() {
       try {
         if (preloadedIframe.contentWindow) {
           // Send each file individually
-          for (const [path, content] of Object.entries(state.stackData)) {
+          for (const [path, content] of Object.entries(state.stackData || {})) {
             preloadedIframe.contentWindow.postMessage({
               type: 'LOAD_STACK_FILE',
               path: path,
@@ -70,7 +70,6 @@ function AppContent() {
     }, 100);
   }, [state.zip, state.stackData, state.tablesLoading]);
   const [isDragging, setIsDragging] = useState(false);
-  const { dispatch } = useApp();
   const navigation = useKeyboardNavigation();
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
 

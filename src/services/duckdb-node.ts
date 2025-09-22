@@ -157,7 +157,7 @@ export class NodeDuckDBService implements DuckDBService {
           });
 
           const columnsClause = columnDefs.join(', ');
-          const filePath = join(this.dir, `${cleanTableName}.txt`);
+          const filePath = join(this.dir, `${fileBaseName}.txt`);
           sql = `
             CREATE TABLE ${quotedTableName} AS
             SELECT * FROM read_csv(
@@ -172,7 +172,7 @@ export class NodeDuckDBService implements DuckDBService {
           `;
         } else {
           // No type hints, use standard auto-detection
-          const filePath = join(this.dir, `${cleanTableName}.txt`);
+          const filePath = join(this.dir, `${fileBaseName}.txt`);
           sql = `
             CREATE TABLE ${quotedTableName} AS
             SELECT * FROM read_csv_auto(
@@ -189,9 +189,9 @@ export class NodeDuckDBService implements DuckDBService {
         if (usePreprocessed && (parseError.message?.includes('sniffing file') ||
                                parseError.message?.includes('Error when sniffing file'))) {
           // Re-register with original content
-          await this.registerFileText(`${cleanTableName}.txt`, content);
+          await this.registerFileText(`${fileBaseName}.txt`, content);
 
-          const filePath = join(this.dir, `${cleanTableName}.txt`);
+          const filePath = join(this.dir, `${fileBaseName}.txt`);
           const sql = `
             CREATE TABLE ${quotedTableName} AS
             SELECT * FROM read_csv_auto(
@@ -222,7 +222,7 @@ export class NodeDuckDBService implements DuckDBService {
             const safeType = hint || 'VARCHAR';
             return `'${header}': '${safeType}'`;
           }).join(', ');
-          const filePath = join(this.dir, `${cleanTableName}.txt`);
+          const filePath = join(this.dir, `${fileBaseName}.txt`);
 
           const fallbackSql = `
             CREATE TABLE ${quotedTableName} AS
@@ -262,20 +262,6 @@ export class NodeDuckDBService implements DuckDBService {
       console.error(`Failed to load table ${tableName}:`, error);
       throw error;
     }
-  }
-
-  private rewriteQuery(sql: string): string {
-    // Convert dot versions to underscore versions to match how tables are actually stored
-    let rewritten = sql;
-
-    // Handle dot versions and convert them to underscore versions
-    // system.job_info -> system_job_info
-    rewritten = rewritten.replace(/\bsystem\.([a-zA-Z0-9_]+)\b/gi, 'system_$1');
-
-    // crdb_internal.settings -> crdb_internal_settings
-    rewritten = rewritten.replace(/\bcrdb_internal\.([a-zA-Z0-9_]+)\b/gi, 'crdb_internal_$1');
-
-    return rewritten;
   }
 
   private rewriteQuery(sql: string): string {
