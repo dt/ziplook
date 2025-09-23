@@ -14,7 +14,6 @@ ZipLook loads CockroachDB debug zip files and provides SQL querying over system 
 - **File Navigation**: Tree view of zip contents with on-demand decompression.
 - **File Viewer**: Lazy loading and decompression, syntax highlighting for logs, live filtering with include/exclude expressions, regex support. Multiple tabs can be opened with different filters on the same file.
 - **Stack Analysis**: Goroutine stack trace browser using dt/stackgazer.
-- **Memory Monitoring**: Built-in memory usage tracking.
 
 ## Usage
 
@@ -98,7 +97,6 @@ Workers communicate via MessageChannels for direct data transfer. The WorkerMana
 #### State Management
 - **AppContext**: Centralized state using React Context and useReducer
 - **Worker State**: Each worker maintains its own state, synchronized via WorkerManager
-- **Memory Management**: Memory monitoring with cleanup capabilities
 
 ### Deployment
 
