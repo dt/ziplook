@@ -23,8 +23,8 @@ export interface ParsedQuery {
   tags?: string[];
 
   // Main search terms
-  keywords: string[];      // General keyword search
-  exactPhrases: string[];  // Quoted exact phrases
+  keywords: string[]; // General keyword search
+  exactPhrases: string[]; // Quoted exact phrases
   regex?: { pattern: string; flags: string };
 
   // Original query for display
@@ -40,7 +40,7 @@ export class QueryParser {
       keywords: [],
       exactPhrases: [],
       tags: [],
-      originalQuery: query.trim()
+      originalQuery: query.trim(),
     };
 
     if (!query.trim()) {
@@ -62,7 +62,7 @@ export class QueryParser {
         if (regexMatch) {
           result.regex = {
             pattern: regexMatch[1],
-            flags: regexMatch[2] || ''
+            flags: regexMatch[2] || "",
           };
         }
       } else if (token.trim()) {
@@ -79,9 +79,9 @@ export class QueryParser {
    */
   private static tokenize(query: string): string[] {
     const tokens: string[] = [];
-    let current = '';
+    let current = "";
     let inQuotes = false;
-    let quoteChar = '';
+    let quoteChar = "";
 
     for (let i = 0; i < query.length; i++) {
       const char = query[i];
@@ -90,7 +90,7 @@ export class QueryParser {
         // Start of quoted string
         if (current.trim()) {
           tokens.push(current.trim());
-          current = '';
+          current = "";
         }
         inQuotes = true;
         quoteChar = char;
@@ -99,17 +99,17 @@ export class QueryParser {
         // End of quoted string
         current += char;
         tokens.push(current);
-        current = '';
+        current = "";
         inQuotes = false;
-        quoteChar = '';
+        quoteChar = "";
       } else if (inQuotes) {
         // Inside quotes, preserve everything
         current += char;
-      } else if (char === ' ' || char === '\t') {
+      } else if (char === " " || char === "\t") {
         // Whitespace outside quotes
         if (current.trim()) {
           tokens.push(current.trim());
-          current = '';
+          current = "";
         }
       } else {
         // Regular character
@@ -136,8 +136,10 @@ export class QueryParser {
    * Check if token is a quoted string
    */
   private static isQuotedString(token: string): boolean {
-    return (token.startsWith('"') && token.endsWith('"')) ||
-           (token.startsWith("'") && token.endsWith("'"));
+    return (
+      (token.startsWith('"') && token.endsWith('"')) ||
+      (token.startsWith("'") && token.endsWith("'"))
+    );
   }
 
   /**
@@ -151,23 +153,23 @@ export class QueryParser {
    * Parse a field specifier like "level:error" or "tag:job=456"
    */
   private static parseFieldSpecifier(token: string, result: ParsedQuery): void {
-    const colonIndex = token.indexOf(':');
+    const colonIndex = token.indexOf(":");
     if (colonIndex === -1) return;
 
     const field = token.substring(0, colonIndex).toLowerCase();
     const value = token.substring(colonIndex + 1);
 
     switch (field) {
-      case 'level':
+      case "level":
         result.level = value.toLowerCase();
         break;
-      case 'file':
+      case "file":
         result.file = value;
         break;
-      case 'goroutine':
+      case "goroutine":
         result.goroutine = value;
         break;
-      case 'tag':
+      case "tag":
         if (!result.tags) result.tags = [];
         result.tags.push(value);
         break;
@@ -184,21 +186,21 @@ export class QueryParser {
     if (parsed.file) parts.push(`file:${parsed.file}`);
     if (parsed.goroutine) parts.push(`goroutine:${parsed.goroutine}`);
     if (parsed.tags) {
-      parsed.tags.forEach(tag => parts.push(`tag:${tag}`));
+      parsed.tags.forEach((tag) => parts.push(`tag:${tag}`));
     }
     if (parsed.regex) {
       parts.push(`/${parsed.regex.pattern}/${parsed.regex.flags}`);
     }
 
     // Add quoted exact phrases
-    parsed.exactPhrases.forEach(phrase => {
+    parsed.exactPhrases.forEach((phrase) => {
       parts.push(`"${phrase}"`);
     });
 
     // Add keywords
     parts.push(...parsed.keywords);
 
-    return parts.join(' ');
+    return parts.join(" ");
   }
 
   /**
@@ -211,18 +213,20 @@ export class QueryParser {
     if (parsed.file) parts.push(`file contains "${parsed.file}"`);
     if (parsed.goroutine) parts.push(`goroutine ${parsed.goroutine}`);
     if (parsed.tags && parsed.tags.length > 0) {
-      parts.push(`tags: ${parsed.tags.join(', ')}`);
+      parts.push(`tags: ${parsed.tags.join(", ")}`);
     }
     if (parsed.exactPhrases.length > 0) {
-      parts.push(`exact phrases: ${parsed.exactPhrases.map(p => `"${p}"`).join(', ')}`);
+      parts.push(
+        `exact phrases: ${parsed.exactPhrases.map((p) => `"${p}"`).join(", ")}`,
+      );
     }
     if (parsed.keywords.length > 0) {
-      parts.push(`keywords: ${parsed.keywords.join(', ')}`);
+      parts.push(`keywords: ${parsed.keywords.join(", ")}`);
     }
     if (parsed.regex) {
       parts.push(`regex: /${parsed.regex.pattern}/${parsed.regex.flags}`);
     }
 
-    return parts.length > 0 ? parts.join(' AND ') : 'empty query';
+    return parts.length > 0 ? parts.join(" AND ") : "empty query";
   }
 }

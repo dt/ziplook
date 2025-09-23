@@ -1,11 +1,14 @@
-import * as fflate from 'fflate';
-import type { ZipEntryMeta } from '../state/types';
+import * as fflate from "fflate";
+import type { ZipEntryMeta } from "../state/types";
 
-type StreamCallback = (chunk: string, progress: {
-  loaded: number;
-  total: number;
-  done: boolean;
-}) => void;
+type StreamCallback = (
+  chunk: string,
+  progress: {
+    loaded: number;
+    total: number;
+    done: boolean;
+  },
+) => void;
 
 export class ZipReader {
   private zipData: Uint8Array;
@@ -22,49 +25,57 @@ export class ZipReader {
 
     return new Promise((resolve, reject) => {
       // This runs without blocking the main thread
-      unzip(this.zipData, {
-        filter: (file) => {
-          const path = file.name;
-          const isDir = path.endsWith('/');
-          const name = path.split('/').pop() || path;
+      unzip(
+        this.zipData,
+        {
+          filter: (file) => {
+            const path = file.name;
+            const isDir = path.endsWith("/");
+            const name = path.split("/").pop() || path;
 
-          // Skip hidden files and system files
-          const segments = path.split('/');
-          const shouldSkip = segments.some(segment =>
-            segment.startsWith('.') || segment.startsWith('__')
-          );
+            // Skip hidden files and system files
+            const segments = path.split("/");
+            const shouldSkip = segments.some(
+              (segment) => segment.startsWith(".") || segment.startsWith("__"),
+            );
 
-          if (!shouldSkip) {
-            // Remove 'renamed_' prefix from displayed path and name for cleaner UI
-            const displayPath = path.startsWith('renamed_') ? path.slice(8) : path;
-            const displayName = name.startsWith('renamed_') ? name.slice(8) : name;
+            if (!shouldSkip) {
+              // Remove 'renamed_' prefix from displayed path and name for cleaner UI
+              const displayPath = path.startsWith("renamed_")
+                ? path.slice(8)
+                : path;
+              const displayName = name.startsWith("renamed_")
+                ? name.slice(8)
+                : name;
 
-            this.entries.push({
-              id: displayPath,
-              name: displayName,
-              path: displayPath,
-              size: file.originalSize || 0,
-              compressedSize: file.size || 0,
-              isDir,
-            });
+              this.entries.push({
+                id: displayPath,
+                name: displayName,
+                path: displayPath,
+                size: file.originalSize || 0,
+                compressedSize: file.size || 0,
+                isDir,
+              });
+            }
+
+            // Don't decompress any files during initialization - we'll read them on demand
+            return false;
+          },
+        },
+        (err) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(this.entries);
           }
-
-          // Don't decompress any files during initialization - we'll read them on demand
-          return false;
-        }
-      }, (err) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(this.entries);
-        }
-      });
+        },
+      );
     });
   }
 
   async readFile(
     path: string,
-    _onProgress?: (loaded: number, total: number) => void
+    _onProgress?: (loaded: number, total: number) => void,
   ): Promise<{ text?: string; bytes?: Uint8Array }> {
     // Simple approach using unzip with filter
     const { unzip } = fflate;
@@ -73,39 +84,43 @@ export class ZipReader {
       // Try both the requested path and the 'renamed_' version
       const pathsToTry = [path, `renamed_${path}`];
 
-      unzip(this.zipData, {
-        filter: (file) => pathsToTry.includes(file.name)
-      }, (err, files) => {
-        if (err) {
-          reject(err);
-          return;
-        }
+      unzip(
+        this.zipData,
+        {
+          filter: (file) => pathsToTry.includes(file.name),
+        },
+        (err, files) => {
+          if (err) {
+            reject(err);
+            return;
+          }
 
-        // Try the requested path first, then the renamed version
-        let data = files[path];
-        if (!data) {
-          data = files[`renamed_${path}`];
-        }
+          // Try the requested path first, then the renamed version
+          let data = files[path];
+          if (!data) {
+            data = files[`renamed_${path}`];
+          }
 
-        if (!data) {
-          reject(new Error(`File not found in zip: ${path}`));
-          return;
-        }
+          if (!data) {
+            reject(new Error(`File not found in zip: ${path}`));
+            return;
+          }
 
-        const bytes = data as Uint8Array;
+          const bytes = data as Uint8Array;
 
-        // Try to decode as text
-        try {
-          const text = new TextDecoder('utf-8').decode(bytes);
-          if (this.isLikelyText(text)) {
-            resolve({ text, bytes });
-          } else {
+          // Try to decode as text
+          try {
+            const text = new TextDecoder("utf-8").decode(bytes);
+            if (this.isLikelyText(text)) {
+              resolve({ text, bytes });
+            } else {
+              resolve({ bytes });
+            }
+          } catch {
             resolve({ bytes });
           }
-        } catch {
-          resolve({ bytes });
-        }
-      });
+        },
+      );
     });
   }
 
@@ -125,14 +140,18 @@ export class ZipReader {
   async readFileStream(
     path: string,
     onChunk: StreamCallback,
-    onProgress?: (loaded: number, total: number) => void
+    onProgress?: (loaded: number, total: number) => void,
   ): Promise<void> {
     // Check if we're in a test environment where Worker isn't available
-    if (typeof Worker === 'undefined') {
+    if (typeof Worker === "undefined") {
       // Fallback to non-streaming read in test environment
       const result = await this.readFile(path, onProgress);
       if (result.text) {
-        onChunk(result.text, { loaded: result.text.length, total: result.text.length, done: true });
+        onChunk(result.text, {
+          loaded: result.text.length,
+          total: result.text.length,
+          done: true,
+        });
       }
       return;
     }
@@ -140,57 +159,63 @@ export class ZipReader {
     return new Promise(async (resolve, reject) => {
       try {
         // Dynamically import the worker
-        const { default: ZipWorker } = await import('../workers/zip.worker?worker');
+        const { default: ZipWorker } = await import(
+          "../workers/zip.worker?worker"
+        );
 
         // Create a new worker for this operation
         this.worker = new ZipWorker();
 
-      this.worker.onmessage = (event) => {
-        const response = event.data;
+        this.worker.onmessage = (event) => {
+          const response = event.data;
 
-        switch (response.type) {
-          case 'chunk':
-            onChunk(response.data, {
-              loaded: response.loaded,
-              total: response.total,
-              done: response.done
-            });
-            if (onProgress) {
-              onProgress(response.loaded, response.total);
-            }
-            break;
+          switch (response.type) {
+            case "chunk":
+              onChunk(response.data, {
+                loaded: response.loaded,
+                total: response.total,
+                done: response.done,
+              });
+              if (onProgress) {
+                onProgress(response.loaded, response.total);
+              }
+              break;
 
-          case 'complete':
-            this.worker?.terminate();
-            this.worker = null;
-            resolve();
-            break;
+            case "complete":
+              this.worker?.terminate();
+              this.worker = null;
+              resolve();
+              break;
 
-          case 'error':
-            this.worker?.terminate();
-            this.worker = null;
-            reject(new Error(response.error));
-            break;
+            case "error":
+              this.worker?.terminate();
+              this.worker = null;
+              reject(new Error(response.error));
+              break;
 
-          case 'progress':
-            if (onProgress) {
-              onProgress(response.loaded, response.total);
-            }
-            break;
-        }
-      };
+            case "progress":
+              if (onProgress) {
+                onProgress(response.loaded, response.total);
+              }
+              break;
+          }
+        };
 
         // Start loading the file
         this.worker.postMessage({
-          type: 'loadFile',
+          type: "loadFile",
           path,
-          zipData: this.zipData
+          zipData: this.zipData,
         });
       } catch (error) {
         // If worker import fails, fallback to non-streaming
         const result = await this.readFile(path, onProgress);
         if (result.text) {
-          onChunk(result.text, { loaded: result.text.length, total: result.text.length, done: true });
+          onChunk(result.text, {
+            loaded: result.text.length,
+            total: result.text.length,
+            done: true,
+          });
         }
         resolve();
       }
@@ -199,7 +224,7 @@ export class ZipReader {
 
   cancelStream(): void {
     if (this.worker) {
-      this.worker.postMessage({ type: 'cancel' });
+      this.worker.postMessage({ type: "cancel" });
       this.worker.terminate();
       this.worker = null;
     }

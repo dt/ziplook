@@ -14,8 +14,8 @@
  * @returns {?Object} Always returns null in browser environment
  */
 function inquire(moduleName) {
-    // In browser environment, Node.js modules like 'fs' are never available
-    return null;
+  // In browser environment, Node.js modules like 'fs' are never available
+  return null;
 }
 
 module.exports = inquire;

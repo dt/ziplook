@@ -1,9 +1,19 @@
-export { prettyKey, isProbablyHexKey, type DecodedKey, type KeyPart } from './prettyKey';
-export { ProtoDecoder, protoDecoder, type DecodedProto, type ProtoDescriptor } from './protoDecoder';
+export {
+  prettyKey,
+  isProbablyHexKey,
+  type DecodedKey,
+  type KeyPart,
+} from "./prettyKey";
+export {
+  ProtoDecoder,
+  protoDecoder,
+  type DecodedProto,
+  type ProtoDescriptor,
+} from "./protoDecoder";
 
 export function detectAndTransform(value: any): any {
-  if (typeof value === 'string') {
-    if (value.startsWith('{') && value.endsWith('}')) {
+  if (typeof value === "string") {
+    if (value.startsWith("{") && value.endsWith("}")) {
       try {
         return JSON.parse(value);
       } catch {
@@ -17,10 +27,10 @@ export function detectAndTransform(value: any): any {
 
 export function formatValue(value: any): string {
   if (value === null || value === undefined) {
-    return '';
+    return "";
   }
 
-  if (typeof value === 'object') {
+  if (typeof value === "object") {
     // Handle Date objects
     if (value instanceof Date) {
       // Format as ISO 8601

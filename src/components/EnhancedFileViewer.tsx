@@ -1,21 +1,21 @@
-import { useEffect, useState, memo, useCallback, useRef } from 'react';
-import Editor, { type Monaco } from '@monaco-editor/react';
-import type { editor } from 'monaco-editor';
-import type { ViewerTab } from '../state/types';
-import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
-import { matchesFilter } from '../utils/filterUtils';
-import { useApp } from '../state/AppContext';
-import { setupLogLanguage } from '../services/monacoConfig';
-import { detectBinary, getFileTypeDescription } from '../utils/binaryDetection';
+import { useEffect, useState, memo, useCallback, useRef } from "react";
+import Editor, { type Monaco } from "@monaco-editor/react";
+import type { editor } from "monaco-editor";
+import type { ViewerTab } from "../state/types";
+import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
+import { matchesFilter } from "../utils/filterUtils";
+import { useApp } from "../state/AppContext";
+import { setupLogLanguage } from "../services/monacoConfig";
+import { detectBinary, getFileTypeDescription } from "../utils/binaryDetection";
 
 interface FileViewerProps {
-  tab: ViewerTab & { kind: 'file' };
+  tab: ViewerTab & { kind: "file" };
 }
 
 // Debounce helper
 function debounce<T extends (...args: any[]) => any>(
   func: T,
-  wait: number
+  wait: number,
 ): (...args: Parameters<T>) => void {
   let timeout: NodeJS.Timeout | null = null;
   return (...args: Parameters<T>) => {
@@ -30,19 +30,19 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
   // File loading state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [content, setContent] = useState<string>('');
+  const [content, setContent] = useState<string>("");
   const [progress, setProgress] = useState({ loaded: 0, total: 0, percent: 0 });
   const [isStreaming, setIsStreaming] = useState(false);
 
   // Binary detection state
   const [binaryDetected, setBinaryDetected] = useState(false);
-  const [binaryReason, setBinaryReason] = useState<string>('');
-  const [fileType, setFileType] = useState<string>('');
+  const [binaryReason, setBinaryReason] = useState<string>("");
+  const [fileType, setFileType] = useState<string>("");
   const [userOverrideBinary, setUserOverrideBinary] = useState(false);
 
   // Filter state
-  const [filterText, setFilterText] = useState(tab.filterText || '');
-  const [contextLines, setContextLines] = useState('');
+  const [filterText, setFilterText] = useState(tab.filterText || "");
+  const [contextLines, setContextLines] = useState("");
   const [visibleLineCount, setVisibleLineCount] = useState(0);
   const [totalLineCount, setTotalLineCount] = useState(0);
 
@@ -51,90 +51,95 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
   const abortRef = useRef<(() => void) | null>(null);
   const filterInputRef = useRef<HTMLInputElement>(null);
   const decorationIds = useRef<string[]>([]);
-  const languageRef = useRef<string>('plaintext');
-  const initialFilterRef = useRef<{ text: string; context: number } | null>(null);
-  const applyFilterRef = useRef<((query: string, context?: number) => void) | null>(null);
+  const languageRef = useRef<string>("plaintext");
+  const initialFilterRef = useRef<{ text: string; context: number } | null>(
+    null,
+  );
+  const applyFilterRef = useRef<
+    ((query: string, context?: number) => void) | null
+  >(null);
   const pendingLineNumber = useRef<number | null>(null);
 
   // Get original filename from filesIndex (never changes, unaffected by tab renaming)
   const originalFile = state.filesIndex[tab.fileId];
-  const originalFileName = originalFile?.path || originalFile?.name || tab.title;
+  const originalFileName =
+    originalFile?.path || originalFile?.name || tab.title;
 
   // Detect file type and language
   const getLanguage = useCallback((fileName: string): string => {
-    const ext = fileName.split('.').pop()?.toLowerCase();
+    const ext = fileName.split(".").pop()?.toLowerCase();
     const languageMap: Record<string, string> = {
-      'js': 'javascript',
-      'jsx': 'javascript',
-      'ts': 'typescript',
-      'tsx': 'typescript',
-      'json': 'json',
-      'jsonl': 'json',
-      'ndjson': 'json',
-      'html': 'html',
-      'htm': 'html',
-      'css': 'css',
-      'scss': 'scss',
-      'sass': 'sass',
-      'less': 'less',
-      'xml': 'xml',
-      'yaml': 'yaml',
-      'yml': 'yaml',
-      'md': 'markdown',
-      'markdown': 'markdown',
-      'py': 'python',
-      'rb': 'ruby',
-      'go': 'go',
-      'java': 'java',
-      'c': 'c',
-      'cpp': 'cpp',
-      'cc': 'cpp',
-      'cxx': 'cpp',
-      'h': 'c',
-      'hpp': 'cpp',
-      'cs': 'csharp',
-      'php': 'php',
-      'rs': 'rust',
-      'toml': 'toml',
-      'ini': 'ini',
-      'cfg': 'ini',
-      'conf': 'ini',
-      'sql': 'sql',
-      'sh': 'shell',
-      'bash': 'shell',
-      'zsh': 'shell',
-      'fish': 'shell',
-      'ps1': 'powershell',
-      'psm1': 'powershell',
-      'bat': 'bat',
-      'cmd': 'bat',
-      'dockerfile': 'dockerfile',
-      'makefile': 'makefile',
-      'mk': 'makefile',
-      'r': 'r',
-      'R': 'r',
-      'swift': 'swift',
-      'kt': 'kotlin',
-      'scala': 'scala',
-      'vim': 'vim',
-      'lua': 'lua',
-      'perl': 'perl',
-      'pl': 'perl',
-      'groovy': 'groovy',
-      'gradle': 'groovy',
-      'proto': 'protobuf',
-      'graphql': 'graphql',
-      'gql': 'graphql',
-      'diff': 'diff',
-      'patch': 'diff',
-      'log': 'log',
-      'txt': 'plaintext',
-      'text': 'plaintext',
-      'csv': 'plaintext',
-      'tsv': 'plaintext'
+      js: "javascript",
+      jsx: "javascript",
+      ts: "typescript",
+      tsx: "typescript",
+      json: "json",
+      jsonl: "json",
+      ndjson: "json",
+      html: "html",
+      htm: "html",
+      css: "css",
+      scss: "scss",
+      sass: "sass",
+      less: "less",
+      xml: "xml",
+      yaml: "yaml",
+      yml: "yaml",
+      md: "markdown",
+      markdown: "markdown",
+      py: "python",
+      rb: "ruby",
+      go: "go",
+      java: "java",
+      c: "c",
+      cpp: "cpp",
+      cc: "cpp",
+      cxx: "cpp",
+      h: "c",
+      hpp: "cpp",
+      cs: "csharp",
+      php: "php",
+      rs: "rust",
+      toml: "toml",
+      ini: "ini",
+      cfg: "ini",
+      conf: "ini",
+      sql: "sql",
+      sh: "shell",
+      bash: "shell",
+      zsh: "shell",
+      fish: "shell",
+      ps1: "powershell",
+      psm1: "powershell",
+      bat: "bat",
+      cmd: "bat",
+      dockerfile: "dockerfile",
+      makefile: "makefile",
+      mk: "makefile",
+      r: "r",
+      R: "r",
+      swift: "swift",
+      kt: "kotlin",
+      scala: "scala",
+      vim: "vim",
+      lua: "lua",
+      perl: "perl",
+      pl: "perl",
+      groovy: "groovy",
+      gradle: "groovy",
+      proto: "protobuf",
+      graphql: "graphql",
+      gql: "graphql",
+      diff: "diff",
+      patch: "diff",
+      log: "log",
+      txt: "plaintext",
+      text: "plaintext",
+      csv: "plaintext",
+      tsv: "plaintext",
     };
 
-    return languageMap[ext || ''] || 'plaintext';
+    return languageMap[ext || ""] || "plaintext";
   }, []);
 
   const language = getLanguage(originalFileName);
@@ -142,8 +147,16 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
 
   // Store initial filter state
   if (filterText) {
-    console.log('📄 FileViewer: Initial filter detected:', filterText, 'context:', contextLines);
-    initialFilterRef.current = { text: filterText, context: parseInt(contextLines) || 0 };
+    console.log(
+      "📄 FileViewer: Initial filter detected:",
+      filterText,
+      "context:",
+      contextLines,
+    );
+    initialFilterRef.current = {
+      text: filterText,
+      context: parseInt(contextLines) || 0,
+    };
   }
 
   // DEBUG: Uncomment to test with different language
@@ -151,9 +164,11 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
 
   // Apply filter/grep functionality
   const applyFilter = useCallback((query: string, context: number = 0) => {
-    console.log('📄 FileViewer: Applying filter:', query, 'context:', context);
+    console.log("📄 FileViewer: Applying filter:", query, "context:", context);
     if (!editorRef.current || !monacoRef.current) {
-      console.log('📄 FileViewer: Editor or Monaco not available for filtering');
+      console.log(
+        "📄 FileViewer: Editor or Monaco not available for filtering",
+      );
       return;
     }
 
@@ -162,14 +177,16 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
       return;
     }
 
-
     // Reset if empty
     if (!query) {
       // Clear hidden areas
       if ((editorRef.current as any).setHiddenAreas) {
         (editorRef.current as any).setHiddenAreas([]);
       }
-      decorationIds.current = editorRef.current.deltaDecorations(decorationIds.current, []);
+      decorationIds.current = editorRef.current.deltaDecorations(
+        decorationIds.current,
+        [],
+      );
       setVisibleLineCount(model?.getLineCount() || 0); // Show all lines
       return;
     }
@@ -194,11 +211,15 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
         // Track for highlighting
         matchingLines.push({
           lineNumber: lineNum,
-          range: new monacoRef.current.Range(lineNum, 1, lineNum, lineContent.length + 1)
+          range: new monacoRef.current.Range(
+            lineNum,
+            1,
+            lineNum,
+            lineContent.length + 1,
+          ),
         });
       }
     }
-
 
     // Always keep line 1 visible (never hide it)
     visible.add(1);
@@ -216,7 +237,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
         const runEnd = shouldHide && ln === maxLine ? ln : ln - 1;
         if (runEnd >= runStart) {
           hiddenRanges.push(
-            new monacoRef.current.Range(runStart, 1, runEnd, 1)
+            new monacoRef.current.Range(runStart, 1, runEnd, 1),
           );
         }
         runStart = null;
@@ -229,18 +250,21 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
     }
 
     // Add highlight decorations for matching lines
-    const highlightDecorations = matchingLines.map(m => ({
+    const highlightDecorations = matchingLines.map((m) => ({
       range: m.range,
       options: {
-        inlineClassName: 'grep-highlight',
+        inlineClassName: "grep-highlight",
         overviewRuler: {
           position: monacoRef.current!.editor.OverviewRulerLane.Center,
-          color: 'rgba(255, 200, 0, 0.8)'
-        }
-      }
+          color: "rgba(255, 200, 0, 0.8)",
+        },
+      },
     }));
 
-    decorationIds.current = editorRef.current.deltaDecorations(decorationIds.current, highlightDecorations);
+    decorationIds.current = editorRef.current.deltaDecorations(
+      decorationIds.current,
+      highlightDecorations,
+    );
 
     // Update visible line count
     const actualMatches = matchingLines.length > 0 ? visible.size : 0;
@@ -256,65 +280,68 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
   applyFilterRef.current = applyFilter;
 
   // Update tab title when filter changes
-  const updateTabTitle = useCallback((filterText: string) => {
-    const baseTitle = tab.title.replace(/ \(filtered\)$/, ''); // Remove existing filter suffix
-    const newTitle = filterText ? `${baseTitle} (filtered)` : baseTitle;
-    const isFiltered = !!filterText;
+  const updateTabTitle = useCallback(
+    (filterText: string) => {
+      const baseTitle = tab.title.replace(/ \(filtered\)$/, ""); // Remove existing filter suffix
+      const newTitle = filterText ? `${baseTitle} (filtered)` : baseTitle;
+      const isFiltered = !!filterText;
 
-    dispatch({
-      type: 'UPDATE_TAB',
-      id: tab.id,
-      updates: {
-        title: newTitle,
-        isFiltered,
-        filterText: filterText || undefined
-      }
-    });
-  }, [tab.id, tab.title, dispatch]);
+      dispatch({
+        type: "UPDATE_TAB",
+        id: tab.id,
+        updates: {
+          title: newTitle,
+          isFiltered,
+          filterText: filterText || undefined,
+        },
+      });
+    },
+    [tab.id, tab.title, dispatch],
+  );
 
   // Debounced filter application
   const debouncedApplyFilter = useRef(
     debounce((query: string, context: number) => {
       applyFilter(query, context);
       updateTabTitle(query);
-    }, 150)
+    }, 150),
   ).current;
 
   // Load file content
   const loadFile = useCallback(async () => {
     setLoading(true);
     setError(null);
-    setContent('');
+    setContent("");
     setProgress({ loaded: 0, total: 0, percent: 0 });
     setIsStreaming(true);
     setBinaryDetected(false);
-    setBinaryReason('');
-    setFileType('');
+    setBinaryReason("");
+    setFileType("");
     setUserOverrideBinary(false);
 
     try {
       // Get file path from filesIndex
       const fileEntry = state.filesIndex[tab.fileId];
       if (!fileEntry) {
-        throw new Error('File not found in index');
+        throw new Error("File not found in index");
       }
 
       if (!state.workerManager) {
-        throw new Error('WorkerManager not available');
+        throw new Error("WorkerManager not available");
       }
 
       // First check by extension
       const extensionResult = detectBinary(fileEntry.path);
       if (extensionResult.isBinary) {
         setBinaryDetected(true);
-        setBinaryReason(extensionResult.reason || 'Binary file detected');
+        setBinaryReason(extensionResult.reason || "Binary file detected");
         setFileType(getFileTypeDescription(extensionResult, fileEntry.path));
         setLoading(false);
         setIsStreaming(false);
         return;
       }
 
-      let accumulatedContent = '';
+      let accumulatedContent = "";
       let hasCheckedContent = false;
       const startTime = Date.now();
       let lastUpdateTime = startTime;
@@ -322,16 +349,26 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
 
       await state.workerManager.readFileStream(
         fileEntry.path,
-        (chunk: string, progressInfo: { loaded: number; total: number; done: boolean }) => {
+        (
+          chunk: string,
+          progressInfo: { loaded: number; total: number; done: boolean },
+        ) => {
           accumulatedContent += chunk;
 
           // Check content for binary on first chunk (if extension didn't already detect it)
           if (!hasCheckedContent && accumulatedContent.length >= 1024) {
-            const contentResult = detectBinary(fileEntry.path, accumulatedContent);
+            const contentResult = detectBinary(
+              fileEntry.path,
+              accumulatedContent,
+            );
             if (contentResult.isBinary) {
               setBinaryDetected(true);
-              setBinaryReason(contentResult.reason || 'Binary content detected');
-              setFileType(getFileTypeDescription(contentResult, fileEntry.path));
+              setBinaryReason(
+                contentResult.reason || "Binary content detected",
+              );
+              setFileType(
+                getFileTypeDescription(contentResult, fileEntry.path),
+              );
               setLoading(false);
               setIsStreaming(false);
               return; // Stop processing
@@ -339,17 +376,30 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
             hasCheckedContent = true;
           }
 
-          const percent = progressInfo.total > 0 ? Math.round((progressInfo.loaded / progressInfo.total) * 100) : 0;
-          setProgress({ loaded: progressInfo.loaded, total: progressInfo.total, percent });
+          const percent =
+            progressInfo.total > 0
+              ? Math.round((progressInfo.loaded / progressInfo.total) * 100)
+              : 0;
+          setProgress({
+            loaded: progressInfo.loaded,
+            total: progressInfo.total,
+            percent,
+          });
 
           const now = Date.now();
           // Set initial content immediately, then throttle to every 3 seconds, then final content
-          const shouldUpdate = !hasSetInitialContent ||
-                              (now - lastUpdateTime > 3000) ||
-                              progressInfo.done;
+          const shouldUpdate =
+            !hasSetInitialContent ||
+            now - lastUpdateTime > 3000 ||
+            progressInfo.done;
 
           if (shouldUpdate) {
-            console.log('📄 FileViewer: Setting content, accumulated length:', accumulatedContent.length, 'done:', progressInfo.done);
+            console.log(
+              "📄 FileViewer: Setting content, accumulated length:",
+              accumulatedContent.length,
+              "done:",
+              progressInfo.done,
+            );
             setContent(accumulatedContent);
             lastUpdateTime = now;
             hasSetInitialContent = true;
@@ -365,7 +415,10 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
           }
 
           if (progressInfo.done) {
-            console.log('📄 FileViewer: Streaming complete, final content length:', accumulatedContent.length);
+            console.log(
+              "📄 FileViewer: Streaming complete, final content length:",
+              accumulatedContent.length,
+            );
             setLoading(false);
             setIsStreaming(false);
             abortRef.current = null;
@@ -374,17 +427,22 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
             if (pendingLineNumber.current) {
               setTimeout(() => {
                 if (pendingLineNumber.current) {
-                  console.log('📄 FileViewer: Final retry for line navigation:', pendingLineNumber.current);
+                  console.log(
+                    "📄 FileViewer: Final retry for line navigation:",
+                    pendingLineNumber.current,
+                  );
                   navigateToLine(pendingLineNumber.current);
                 }
               }, 200); // Slightly longer delay for final attempt
             }
           }
-        }
+        },
       );
     } catch (err) {
-      console.error('Failed to read file:', err);
-      setError(`Failed to read file: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      console.error("Failed to read file:", err);
+      setError(
+        `Failed to read file: ${err instanceof Error ? err.message : "Unknown error"}`,
+      );
       setLoading(false);
       setIsStreaming(false);
       abortRef.current = null;
@@ -405,69 +463,72 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
 
   const handleBeforeMount = useCallback((monaco: Monaco) => {
     // Setup log language if this is a log file
-    if (languageRef.current === 'log') {
+    if (languageRef.current === "log") {
       setupLogLanguage(monaco);
     }
   }, []); // No dependencies - stable callback
 
-  const handleEditorDidMount = useCallback((editor: editor.IStandaloneCodeEditor, monaco: Monaco) => {
-    editorRef.current = editor;
-    monacoRef.current = monaco;
+  const handleEditorDidMount = useCallback(
+    (editor: editor.IStandaloneCodeEditor, monaco: Monaco) => {
+      editorRef.current = editor;
+      monacoRef.current = monaco;
 
-    const model = editor.getModel();
-    if (model) {
-      // Force set the language if it's wrong
-      if (languageRef.current === 'log' && model.getLanguageId() !== 'log') {
-        monaco.editor.setModelLanguage(model, 'log');
-      }
-    }
-
-    // Format JSON files
-    if (languageRef.current === 'json') {
-      const currentContent = editor.getValue();
-      if (currentContent) {
-        try {
-          const parsed = JSON.parse(currentContent);
-          const formatted = JSON.stringify(parsed, null, 2);
-          if (formatted !== currentContent) {
-            editor.setValue(formatted);
-          }
-        } catch {
-          // Not valid JSON, leave as is
+      const model = editor.getModel();
+      if (model) {
+        // Force set the language if it's wrong
+        if (languageRef.current === "log" && model.getLanguageId() !== "log") {
+          monaco.editor.setModelLanguage(model, "log");
         }
       }
-    }
 
-    // Configure JSON validation
-    if (languageRef.current === 'json') {
-      monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
-        validate: true,
-        schemas: [],
-        allowComments: true,
-        trailingCommas: 'ignore'
-      });
-    }
+      // Format JSON files
+      if (languageRef.current === "json") {
+        const currentContent = editor.getValue();
+        if (currentContent) {
+          try {
+            const parsed = JSON.parse(currentContent);
+            const formatted = JSON.stringify(parsed, null, 2);
+            if (formatted !== currentContent) {
+              editor.setValue(formatted);
+            }
+          } catch {
+            // Not valid JSON, leave as is
+          }
+        }
+      }
 
-    // Set initial line counts
-    if (model) {
-      const lineCount = model.getLineCount();
-      setTotalLineCount(lineCount);
-      setVisibleLineCount(lineCount);
-    }
+      // Configure JSON validation
+      if (languageRef.current === "json") {
+        monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
+          validate: true,
+          schemas: [],
+          allowComments: true,
+          trailingCommas: "ignore",
+        });
+      }
 
-    // Jump to specific line if provided (using the unified navigation function with retry logic)
-    if (tab.lineNumber && tab.lineNumber > 0) {
-      // Small delay to ensure model is ready
-      setTimeout(() => navigateToLine(tab.lineNumber!), 50);
-    }
+      // Set initial line counts
+      if (model) {
+        const lineCount = model.getLineCount();
+        setTotalLineCount(lineCount);
+        setVisibleLineCount(lineCount);
+      }
 
-    // Apply initial filter if any
-    if (initialFilterRef.current && applyFilterRef.current) {
-      const { text, context } = initialFilterRef.current;
-      applyFilterRef.current(text, context);
-      initialFilterRef.current = null; // Clear after use
-    }
-  }, [tab.lineNumber]); // Include lineNumber in dependencies
+      // Jump to specific line if provided (using the unified navigation function with retry logic)
+      if (tab.lineNumber && tab.lineNumber > 0) {
+        // Small delay to ensure model is ready
+        setTimeout(() => navigateToLine(tab.lineNumber!), 50);
+      }
+
+      // Apply initial filter if any
+      if (initialFilterRef.current && applyFilterRef.current) {
+        const { text, context } = initialFilterRef.current;
+        applyFilterRef.current(text, context);
+        initialFilterRef.current = null; // Clear after use
+      }
+    },
+    [tab.lineNumber],
+  ); // Include lineNumber in dependencies
 
   // Navigation function that can be called directly
   const navigateToLine = useCallback((lineNumber: number) => {
@@ -491,7 +552,13 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
     if (lineNumber > currentLineCount) {
       // Line not loaded yet, store for retry
       pendingLineNumber.current = lineNumber;
-      console.log('📄 FileViewer: Line', lineNumber, 'not yet loaded (current max:', currentLineCount, '), will retry');
+      console.log(
+        "📄 FileViewer: Line",
+        lineNumber,
+        "not yet loaded (current max:",
+        currentLineCount,
+        "), will retry",
+      );
       return false;
     }
 
@@ -505,14 +572,24 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
     // Only add visual effects if we're at the exact target line
     if (isExactLine) {
       // Highlight the target line briefly
-      const range = new monaco.Range(targetLine, 1, targetLine, model.getLineMaxColumn(targetLine) || 1);
-      const decorationIds = editor.deltaDecorations([], [{
-        range,
-        options: {
-          className: 'line-highlight-flash',
-          isWholeLine: true
-        }
-      }]);
+      const range = new monaco.Range(
+        targetLine,
+        1,
+        targetLine,
+        model.getLineMaxColumn(targetLine) || 1,
+      );
+      const decorationIds = editor.deltaDecorations(
+        [],
+        [
+          {
+            range,
+            options: {
+              className: "line-highlight-flash",
+              isWholeLine: true,
+            },
+          },
+        ],
+      );
 
       // Animate the line number - try multiple selectors to find the right element
       setTimeout(() => {
@@ -526,7 +603,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
           `.margin .line-numbers div:nth-child(${targetLine})`,
           `.margin .margin-view-overlays div:nth-child(${targetLine})`,
           `.margin-view-overlays .current-line`,
-          `.line-numbers .active-line-number`
+          `.line-numbers .active-line-number`,
         ];
 
         let lineNumberElement = null;
@@ -537,18 +614,20 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
 
         // If we can't find the specific line number, try to find all line number elements
         if (!lineNumberElement) {
-          const allLineNumbers = editorDom.querySelectorAll('.margin .line-numbers div');
+          const allLineNumbers = editorDom.querySelectorAll(
+            ".margin .line-numbers div",
+          );
           if (allLineNumbers && allLineNumbers[targetLine - 1]) {
             lineNumberElement = allLineNumbers[targetLine - 1];
           }
         }
 
         if (lineNumberElement && lineNumberElement instanceof HTMLElement) {
-          lineNumberElement.style.animation = 'lineNumberPop 0.5s ease-out';
-          lineNumberElement.style.transformOrigin = 'center';
+          lineNumberElement.style.animation = "lineNumberPop 0.5s ease-out";
+          lineNumberElement.style.transformOrigin = "center";
           setTimeout(() => {
-            lineNumberElement.style.animation = '';
-            lineNumberElement.style.transformOrigin = '';
+            lineNumberElement.style.animation = "";
+            lineNumberElement.style.transformOrigin = "";
           }, 500);
         }
       }, 200); // Delay to ensure DOM is ready
@@ -562,9 +641,17 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
 
       // Clear pending navigation since we succeeded with the exact line
       pendingLineNumber.current = null;
-      console.log('📄 FileViewer: Successfully navigated to exact line', lineNumber);
+      console.log(
+        "📄 FileViewer: Successfully navigated to exact line",
+        lineNumber,
+      );
     } else {
-      console.log('📄 FileViewer: Navigated to partial line', targetLine, 'waiting for line', lineNumber);
+      console.log(
+        "📄 FileViewer: Navigated to partial line",
+        targetLine,
+        "waiting for line",
+        lineNumber,
+      );
     }
 
     return isExactLine;
@@ -591,18 +678,21 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
   // because the model is stable and content updates would clear hidden areas
 
   // Handle filter input change
-  const handleFilterChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setFilterText(value);
-    const numericContext = contextLines === '' ? 0 : parseInt(contextLines, 10);
-    debouncedApplyFilter(value, numericContext);
-  }, [contextLines, debouncedApplyFilter]);
-
+  const handleFilterChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = e.target.value;
+      setFilterText(value);
+      const numericContext =
+        contextLines === "" ? 0 : parseInt(contextLines, 10);
+      debouncedApplyFilter(value, numericContext);
+    },
+    [contextLines, debouncedApplyFilter],
+  );
 
   // Open search with keyboard shortcut
   const openSearch = useCallback(() => {
     if (editorRef.current) {
-      editorRef.current.trigger('keyboard', 'actions.find', null);
+      editorRef.current.trigger("keyboard", "actions.find", null);
     }
   }, []);
 
@@ -616,8 +706,8 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
 
   // Keyboard shortcuts
   useKeyboardShortcuts([
-    { key: 'f', cmd: true, handler: openSearch },
-    { key: '/', handler: focusFilter },
+    { key: "f", cmd: true, handler: openSearch },
+    { key: "/", handler: focusFilter },
   ]);
 
   // Loading state
@@ -629,10 +719,14 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
           {progress.total > 0 && (
             <>
               <div className="progress-bar">
-                <div className="progress-fill" style={{ width: `${progress.percent}%` }} />
+                <div
+                  className="progress-fill"
+                  style={{ width: `${progress.percent}%` }}
+                />
               </div>
               <div className="progress-text">
-                {formatFileSize(progress.loaded)} / {formatFileSize(progress.total)} ({progress.percent}%)
+                {formatFileSize(progress.loaded)} /{" "}
+                {formatFileSize(progress.total)} ({progress.percent}%)
               </div>
             </>
           )}
@@ -660,9 +754,14 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
           <div className="binary-warning-icon">⚠️</div>
           <div className="binary-warning-content">
             <h3>Binary File Detected</h3>
-            <p><strong>{fileType}</strong></p>
+            <p>
+              <strong>{fileType}</strong>
+            </p>
             <p className="binary-reason">{binaryReason}</p>
-            <p>This file appears to contain binary data and may not display correctly as text.</p>
+            <p>
+              This file appears to contain binary data and may not display
+              correctly as text.
+            </p>
             <div className="binary-warning-actions">
               <button
                 className="btn btn-primary"
@@ -674,7 +773,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
                 className="btn btn-secondary"
                 onClick={() => {
                   // Close the tab
-                  dispatch({ type: 'CLOSE_TAB', id: tab.id });
+                  dispatch({ type: "CLOSE_TAB", id: tab.id });
                 }}
               >
                 Close
@@ -693,7 +792,9 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
       <div className="enhanced-file-viewer">
         <div className="binary-override-warning">
           <span className="warning-icon">⚠️</span>
-          <span>Displaying binary file as text - content may not render correctly</span>
+          <span>
+            Displaying binary file as text - content may not render correctly
+          </span>
         </div>
 
         {/* Filter controls */}
@@ -715,17 +816,18 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
               onChange={(e) => {
                 const value = e.target.value;
                 // Only allow empty string or numeric input
-                if (value === '' || /^\d+$/.test(value)) {
+                if (value === "" || /^\d+$/.test(value)) {
                   setContextLines(value);
-                  const numericValue = value === '' ? 0 : parseInt(value, 10);
+                  const numericValue = value === "" ? 0 : parseInt(value, 10);
                   debouncedApplyFilter(filterText, numericValue);
                 }
               }}
-              style={{ width: '120px' }}
+              style={{ width: "120px" }}
             />
             {filterText && (
               <span className="filter-status">
-                {visibleLineCount.toLocaleString()} / {totalLineCount.toLocaleString()} lines
+                {visibleLineCount.toLocaleString()} /{" "}
+                {totalLineCount.toLocaleString()} lines
               </span>
             )}
           </div>
@@ -747,15 +849,15 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
             fontSize: 13,
             fontFamily: 'Monaco, Menlo, "Courier New", monospace',
             automaticLayout: true,
-            wordWrap: 'off',
-            lineNumbers: 'on',
-            renderLineHighlight: 'all',
+            wordWrap: "off",
+            lineNumbers: "on",
+            renderLineHighlight: "all",
             scrollbar: {
-              vertical: 'visible',
-              horizontal: 'visible',
+              vertical: "visible",
+              horizontal: "visible",
               useShadows: false,
               verticalScrollbarSize: 10,
-              horizontalScrollbarSize: 10
+              horizontalScrollbarSize: 10,
             },
             folding: false, // Disable folding for binary files
             quickSuggestions: false,
@@ -766,19 +868,19 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
             occurrencesHighlight: "off",
             formatOnPaste: false,
             formatOnType: false,
-            renderValidationDecorations: 'off',
+            renderValidationDecorations: "off",
             smoothScrolling: true,
-            cursorBlinking: 'blink',
-            cursorSmoothCaretAnimation: 'off',
+            cursorBlinking: "blink",
+            cursorSmoothCaretAnimation: "off",
             unicodeHighlight: {
               ambiguousCharacters: false,
-              invisibleCharacters: false
+              invisibleCharacters: false,
             },
             find: {
-              seedSearchStringFromSelection: 'always',
-              autoFindInSelection: 'never',
-              addExtraSpaceOnTop: true
-            }
+              seedSearchStringFromSelection: "always",
+              autoFindInSelection: "never",
+              addExtraSpaceOnTop: true,
+            },
           }}
         />
 
@@ -816,17 +918,18 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
             onChange={(e) => {
               const value = e.target.value;
               // Only allow empty string or numeric input
-              if (value === '' || /^\d+$/.test(value)) {
+              if (value === "" || /^\d+$/.test(value)) {
                 setContextLines(value);
-                const numericValue = value === '' ? 0 : parseInt(value, 10);
+                const numericValue = value === "" ? 0 : parseInt(value, 10);
                 debouncedApplyFilter(filterText, numericValue);
               }
             }}
-            style={{ width: '120px' }}
+            style={{ width: "120px" }}
           />
           {filterText && (
             <span className="filter-status">
-              {visibleLineCount.toLocaleString()} / {totalLineCount.toLocaleString()} lines
+              {visibleLineCount.toLocaleString()} /{" "}
+              {totalLineCount.toLocaleString()} lines
             </span>
           )}
         </div>
@@ -838,37 +941,37 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
         value={content}
         path={tab.fileId} // stable path for the model
         keepCurrentModel={true}
-        theme={language === 'log' ? 'log-theme' : 'vs-dark'}
+        theme={language === "log" ? "log-theme" : "vs-dark"}
         beforeMount={handleBeforeMount}
         onMount={handleEditorDidMount}
         options={{
           readOnly: true,
           minimap: {
-            enabled: content.length > 10000 // Only show minimap for large files
+            enabled: content.length > 10000, // Only show minimap for large files
           },
           scrollBeyondLastLine: false,
           fontSize: 13,
           fontFamily: 'Monaco, Menlo, "Courier New", monospace',
           automaticLayout: true,
-          wordWrap: 'off',
-          lineNumbers: 'on',
-          renderLineHighlight: 'all',
+          wordWrap: "off",
+          lineNumbers: "on",
+          renderLineHighlight: "all",
           scrollbar: {
-            vertical: 'visible',
-            horizontal: 'visible',
+            vertical: "visible",
+            horizontal: "visible",
             useShadows: false,
             verticalScrollbarSize: 10,
-            horizontalScrollbarSize: 10
+            horizontalScrollbarSize: 10,
           },
           folding: true,
-          foldingStrategy: 'indentation',
-          showFoldingControls: 'always',
+          foldingStrategy: "indentation",
+          showFoldingControls: "always",
           bracketPairColorization: {
-            enabled: true
+            enabled: true,
           },
           guides: {
             bracketPairs: true,
-            indentation: true
+            indentation: true,
           },
           // Enable breadcrumbs for navigation - note: this should be set via Monaco configuration
           // 'breadcrumbs.enabled': true,
@@ -885,21 +988,21 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
           formatOnPaste: false,
           formatOnType: false,
           // Performance settings
-          renderValidationDecorations: 'on',
+          renderValidationDecorations: "on",
           smoothScrolling: true,
-          cursorBlinking: 'blink',
-          cursorSmoothCaretAnimation: 'on',
+          cursorBlinking: "blink",
+          cursorSmoothCaretAnimation: "on",
           // Disable unicode ambiguous character warnings for log files
           unicodeHighlight: {
-            ambiguousCharacters: language === 'log' ? false : true,
-            invisibleCharacters: language === 'log' ? false : true
+            ambiguousCharacters: language === "log" ? false : true,
+            invisibleCharacters: language === "log" ? false : true,
           },
           // Search settings
           find: {
-            seedSearchStringFromSelection: 'always',
-            autoFindInSelection: 'never',
-            addExtraSpaceOnTop: true
-          }
+            seedSearchStringFromSelection: "always",
+            autoFindInSelection: "never",
+            addExtraSpaceOnTop: true,
+          },
         }}
       />
 
@@ -917,9 +1020,9 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
 }
 
 function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 B';
+  if (bytes === 0) return "0 B";
   const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }

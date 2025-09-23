@@ -6,24 +6,24 @@ export interface ParsedKey {
 }
 
 export function parseKey(key: any): ParsedKey {
-  if (!key) return { type: 'Unknown', raw: String(key) };
+  if (!key) return { type: "Unknown", raw: String(key) };
 
   const keyStr = String(key);
-  const parts = keyStr.split('/').filter(Boolean);
+  const parts = keyStr.split("/").filter(Boolean);
 
-  if (parts.length === 0) return { type: 'Unknown', raw: keyStr };
+  if (parts.length === 0) return { type: "Unknown", raw: keyStr };
 
   const type = parts[0];
 
-  if (type === 'Table' && parts[1]) {
+  if (type === "Table" && parts[1]) {
     return { type, id: parts[1], raw: keyStr };
   }
 
-  if ((type === 'System' || type === 'Local') && parts.length > 1) {
-    return { type, detail: parts.slice(1).join('/'), raw: keyStr };
+  if ((type === "System" || type === "Local") && parts.length > 1) {
+    return { type, detail: parts.slice(1).join("/"), raw: keyStr };
   }
 
-  return { type: 'Unknown', raw: keyStr };
+  return { type: "Unknown", raw: keyStr };
 }
 
 export function parseTimestamp(value: any): Date | null {
@@ -49,7 +49,7 @@ export function parseTimestamp(value: any): Date | null {
   }
 
   // Handle regular numbers as milliseconds
-  if (typeof value === 'number' && !isNaN(value)) {
+  if (typeof value === "number" && !isNaN(value)) {
     return new Date(value);
   }
 
@@ -59,10 +59,10 @@ export function parseTimestamp(value: any): Date | null {
 }
 
 export function formatDuration(ms: any): string {
-  if (!ms || isNaN(ms)) return '0ms';
+  if (!ms || isNaN(ms)) return "0ms";
 
   const absMs = Math.abs(ms);
-  const sign = ms < 0 ? '-' : '';
+  const sign = ms < 0 ? "-" : "";
 
   if (absMs < 1000) return `${sign}${absMs}ms`;
   if (absMs < 60000) return `${sign}${(absMs / 1000).toFixed(1)}s`;
@@ -72,12 +72,12 @@ export function formatDuration(ms: any): string {
 }
 
 export function formatBytes(bytes: any): string {
-  if (!bytes || isNaN(bytes)) return '0 B';
+  if (!bytes || isNaN(bytes)) return "0 B";
 
   const absBytes = Math.abs(bytes);
-  const sign = bytes < 0 ? '-' : '';
+  const sign = bytes < 0 ? "-" : "";
 
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const units = ["B", "KB", "MB", "GB", "TB"];
   let unitIndex = 0;
   let value = absBytes;
 

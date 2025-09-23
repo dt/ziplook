@@ -1,16 +1,16 @@
-import { readFile } from 'fs/promises';
-import { ZipReader } from '../zip/ZipReader';
-import type { FileEntry } from '../state/types';
+import { readFile } from "fs/promises";
+import { ZipReader } from "../zip/ZipReader";
+import type { FileEntry } from "../state/types";
 
 let cachedDebugZip: ArrayBuffer | null = null;
 let cachedZipReader: ZipReader | null = null;
 
 export async function getDebugZip(): Promise<ArrayBuffer> {
   if (!cachedDebugZip) {
-    const buffer = await readFile('./debug.zip');
+    const buffer = await readFile("./debug.zip");
     cachedDebugZip = buffer.buffer.slice(
       buffer.byteOffset,
-      buffer.byteOffset + buffer.byteLength
+      buffer.byteOffset + buffer.byteLength,
     );
   }
   return cachedDebugZip;
@@ -28,7 +28,7 @@ export async function getDebugZipReader(): Promise<ZipReader> {
 export async function getFileFromDebugZip(path: string): Promise<Uint8Array> {
   const reader = await getDebugZipReader();
   const entries = reader.getEntries();
-  const entry = entries.find(e => e.filename === path);
+  const entry = entries.find((e) => e.filename === path);
   if (!entry) {
     throw new Error(`File not found in debug.zip: ${path}`);
   }
@@ -42,14 +42,14 @@ export async function getTextFromDebugZip(path: string): Promise<string> {
 
 export function createMockFileEntry(overrides?: Partial<FileEntry>): FileEntry {
   return {
-    filename: 'test.txt',
+    filename: "test.txt",
     compressedSize: 100,
     uncompressedSize: 200,
     compressionMethod: 8,
     isDirectory: false,
-    lastModified: new Date('2024-01-01'),
+    lastModified: new Date("2024-01-01"),
     crc32: 0x12345678,
-    ...overrides
+    ...overrides,
   };
 }
 
@@ -62,7 +62,17 @@ export function createMockCSVData(): string {
 
 export function createMockProtoData(): Uint8Array {
   return new Uint8Array([
-    0x08, 0x96, 0x01, // field 1, varint 150
-    0x12, 0x07, 0x74, 0x65, 0x73, 0x74, 0x69, 0x6e, 0x67, // field 2, string "testing"
+    0x08,
+    0x96,
+    0x01, // field 1, varint 150
+    0x12,
+    0x07,
+    0x74,
+    0x65,
+    0x73,
+    0x74,
+    0x69,
+    0x6e,
+    0x67, // field 2, string "testing"
   ]);
 }

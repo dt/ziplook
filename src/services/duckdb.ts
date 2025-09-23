@@ -1,10 +1,10 @@
-import * as duckdb from '@duckdb/duckdb-wasm';
-import { preprocessCSV, shouldPreprocess } from '../crdb/csvPreprocessor';
-import { getTableTypeHints } from '../crdb/columnTypeRegistry';
-import duckdb_wasm from '@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm?url';
-import mvp_worker from '@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url';
-import duckdb_wasm_eh from '@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url';
-import eh_worker from '@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url';
+import * as duckdb from "@duckdb/duckdb-wasm";
+import { preprocessCSV, shouldPreprocess } from "../crdb/csvPreprocessor";
+import { getTableTypeHints } from "../crdb/columnTypeRegistry";
+import duckdb_wasm from "@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm?url";
+import mvp_worker from "@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url";
+import duckdb_wasm_eh from "@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url";
+import eh_worker from "@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url";
 
 export class DuckDBService {
   protected db: duckdb.AsyncDuckDB | null = null;
@@ -44,8 +44,8 @@ export class DuckDBService {
       await this.db.open({
         query: {
           castBigIntToDouble: true,
-          castTimestampToDate: true  // Convert timestamps to JavaScript Date objects
-        }
+          castTimestampToDate: true, // Convert timestamps to JavaScript Date objects
+        },
       });
 
       // Create connection
@@ -55,13 +55,13 @@ export class DuckDBService {
       try {
         await this.conn.query("INSTALL json; LOAD json;");
       } catch (err) {
-        console.warn('Failed to preload JSON extension:', err);
+        console.warn("Failed to preload JSON extension:", err);
         // Continue anyway - extension will load on demand
       }
 
       this.initialized = true;
     } catch (error) {
-      console.error('Failed to initialize DuckDB:', error);
+      console.error("Failed to initialize DuckDB:", error);
       throw error;
     }
   }
@@ -69,10 +69,10 @@ export class DuckDBService {
   async loadTableFromText(
     tableName: string,
     content: string,
-    delimiter: string = '\t'
+    delimiter: string = "\t",
   ): Promise<number> {
     if (!this.conn) {
-      throw new Error('DuckDB not initialized');
+      throw new Error("DuckDB not initialized");
     }
 
     if (this.loadedTables.has(tableName)) {
@@ -80,7 +80,7 @@ export class DuckDBService {
       // Get and return existing row count
       const quotedTableName = `"${tableName}"`;
       const countResult = await this.conn.query(
-        `SELECT COUNT(*) as count FROM ${quotedTableName}`
+        `SELECT COUNT(*) as count FROM ${quotedTableName}`,
       );
       return countResult.toArray()[0].count;
     }
@@ -99,7 +99,7 @@ export class DuckDBService {
             tableName,
             delimiter,
             decodeKeys: true,
-            decodeProtos: true // Enable proto decoding
+            decodeProtos: true, // Enable proto decoding
           });
           usePreprocessed = true;
         } catch (err) {
@@ -110,11 +110,8 @@ export class DuckDBService {
 
       // Create table from CSV/TSV content
       // First, register the content as a virtual file
-      const fileBaseName = tableName.replace(/[^a-zA-Z0-9_]/g, '_');
-      await this.db!.registerFileText(
-        `${fileBaseName}.txt`,
-        processedContent
-      );
+      const fileBaseName = tableName.replace(/[^a-zA-Z0-9_]/g, "_");
+      await this.db!.registerFileText(`${fileBaseName}.txt`, processedContent);
 
       // Drop table if exists
       await this.conn.query(`DROP TABLE IF EXISTS ${quotedTableName}`);
@@ -128,17 +125,17 @@ export class DuckDBService {
 
         if (typeHints.size > 0) {
           // For tables with type hints, try explicit column definitions first
-          const firstLine = processedContent.split('\n')[0];
+          const firstLine = processedContent.split("\n")[0];
           const headers = firstLine.split(delimiter);
 
           // Build column definitions with type hints for ALL columns
-          const columnDefs = headers.map(header => {
+          const columnDefs = headers.map((header) => {
             const hint = typeHints.get(header.toLowerCase());
-            const columnType = hint || 'VARCHAR'; // Safe default for columns without hints
+            const columnType = hint || "VARCHAR"; // Safe default for columns without hints
             return `'${header}': '${columnType}'`;
           });
 
-          const columnsClause = columnDefs.join(', ');
+          const columnsClause = columnDefs.join(", ");
           sql = `
             CREATE TABLE ${quotedTableName} AS
             SELECT * FROM read_csv(
@@ -166,15 +163,15 @@ export class DuckDBService {
         await this.conn.query(sql);
       } catch (parseError: any) {
         // If preprocessing caused issues or CSV sniffing failed, try with original content
-        if (usePreprocessed && (parseError.message?.includes('sniffing file') ||
-                               parseError.message?.includes('Error when sniffing file'))) {
+        if (
+          usePreprocessed &&
+          (parseError.message?.includes("sniffing file") ||
+            parseError.message?.includes("Error when sniffing file"))
+        ) {
           // console.log(`Retrying ${tableName} without preprocessing due to parse error`);
 
           // Re-register with original content
-          await this.db!.registerFileText(
-            `${fileBaseName}.txt`,
-            content
-          );
+          await this.db!.registerFileText(`${fileBaseName}.txt`, content);
 
           const sql = `
             CREATE TABLE ${quotedTableName} AS
@@ -186,25 +183,33 @@ export class DuckDBService {
           `;
 
           await this.conn.query(sql);
-        } else if (parseError.message?.includes('Error when sniffing file') ||
-                   parseError.message?.includes('not possible to automatically detect') ||
-                   parseError.message?.includes('Could not convert string') ||
-                   parseError.message?.includes('Conversion Error: CSV Error')) {
+        } else if (
+          parseError.message?.includes("Error when sniffing file") ||
+          parseError.message?.includes(
+            "not possible to automatically detect",
+          ) ||
+          parseError.message?.includes("Could not convert string") ||
+          parseError.message?.includes("Conversion Error: CSV Error")
+        ) {
           // Some files have such complex data that DuckDB can't auto-detect them
           // Try with very explicit parameters and treat everything as VARCHAR
-          console.warn(`Cannot auto-detect CSV format for ${tableName}, using fallback`);
+          console.warn(
+            `Cannot auto-detect CSV format for ${tableName}, using fallback`,
+          );
 
           // Parse headers manually
-          const lines = content.split('\n');
+          const lines = content.split("\n");
           const headerLine = lines[0];
           const headers = headerLine.split(delimiter);
 
           // Apply type hints if available, otherwise use VARCHAR to avoid detection issues
-          const columnDefs = headers.map(header => {
-            const hint = typeHints.get(header.toLowerCase());
-            const safeType = hint || 'VARCHAR';
-            return `'${header}': '${safeType}'`;
-          }).join(', ');
+          const columnDefs = headers
+            .map((header) => {
+              const hint = typeHints.get(header.toLowerCase());
+              const safeType = hint || "VARCHAR";
+              return `'${header}': '${safeType}'`;
+            })
+            .join(", ");
 
           const fallbackSql = `
             CREATE TABLE ${quotedTableName} AS
@@ -221,7 +226,10 @@ export class DuckDBService {
           try {
             await this.conn.query(fallbackSql);
           } catch (fallbackError: any) {
-            console.error(`Even fallback failed for ${tableName}:`, fallbackError.message);
+            console.error(
+              `Even fallback failed for ${tableName}:`,
+              fallbackError.message,
+            );
             throw parseError; // Throw original error if fallback also fails
           }
         } else {
@@ -231,7 +239,7 @@ export class DuckDBService {
 
       // Get row count
       const countResult = await this.conn.query(
-        `SELECT COUNT(*) as count FROM ${quotedTableName}`
+        `SELECT COUNT(*) as count FROM ${quotedTableName}`,
       );
       const count = countResult.toArray()[0].count;
 
@@ -249,19 +257,28 @@ export class DuckDBService {
     let rewritten = sql;
 
     // Handle explicit schema.table references by quoting them
-    rewritten = rewritten.replace(/\bsystem\.([a-zA-Z0-9_]+)\b/gi, '"system.$1"');
-    rewritten = rewritten.replace(/\bcrdb_internal\.([a-zA-Z0-9_]+)\b/gi, '"crdb_internal.$1"');
+    rewritten = rewritten.replace(
+      /\bsystem\.([a-zA-Z0-9_]+)\b/gi,
+      '"system.$1"',
+    );
+    rewritten = rewritten.replace(
+      /\bcrdb_internal\.([a-zA-Z0-9_]+)\b/gi,
+      '"crdb_internal.$1"',
+    );
 
     // Handle per-node schema references like n1_system.table -> "n1_system.table"
     rewritten = rewritten.replace(/\bn\d+_system\.([a-zA-Z0-9_]+)\b/gi, '"$&"');
-    rewritten = rewritten.replace(/\bn\d+_crdb_internal\.([a-zA-Z0-9_]+)\b/gi, '"$&"');
+    rewritten = rewritten.replace(
+      /\bn\d+_crdb_internal\.([a-zA-Z0-9_]+)\b/gi,
+      '"$&"',
+    );
 
     return rewritten;
   }
 
   async query(sql: string): Promise<any> {
     if (!this.conn) {
-      throw new Error('DuckDB not initialized');
+      throw new Error("DuckDB not initialized");
     }
 
     try {
@@ -273,15 +290,19 @@ export class DuckDBService {
       // DuckDB returns timestamps as numbers (milliseconds since epoch)
       if (data.length > 0) {
         const firstRow = data[0];
-        Object.keys(firstRow).forEach(columnName => {
+        Object.keys(firstRow).forEach((columnName) => {
           const value = firstRow[columnName];
           // Check if this looks like a timestamp (large number in milliseconds range)
-          if (typeof value === 'number' && value > 1000000000000 && value < 2000000000000) {
+          if (
+            typeof value === "number" &&
+            value > 1000000000000 &&
+            value < 2000000000000
+          ) {
             // This is likely a timestamp in milliseconds, convert all rows
-            data.forEach(row => {
-              if (typeof row[columnName] === 'number') {
+            data.forEach((row) => {
+              if (typeof row[columnName] === "number") {
                 row[columnName] = new Date(row[columnName]);
-              } else if (typeof row[columnName] === 'bigint') {
+              } else if (typeof row[columnName] === "bigint") {
                 row[columnName] = new Date(Number(row[columnName]));
               }
             });
@@ -291,7 +312,7 @@ export class DuckDBService {
 
       return data;
     } catch (error) {
-      console.error('Query failed:', error);
+      console.error("Query failed:", error);
       throw error;
     }
   }
@@ -313,13 +334,15 @@ export class DuckDBService {
         FROM information_schema.tables
         WHERE table_schema = 'main'
       `);
-      return result.toArray().map(row => row.table_name);
+      return result.toArray().map((row) => row.table_name);
     } catch {
       return [];
     }
   }
 
-  async getDuckDBFunctions(): Promise<Array<{name: string; type: string; description?: string}>> {
+  async getDuckDBFunctions(): Promise<
+    Array<{ name: string; type: string; description?: string }>
+  > {
     if (!this.conn) return [];
 
     try {
@@ -333,35 +356,34 @@ export class DuckDBService {
         ORDER BY function_name
       `);
 
-      const functions = result.toArray().map(row => ({
+      const functions = result.toArray().map((row) => ({
         name: row.function_name.toUpperCase(),
-        type: row.function_type
+        type: row.function_type,
       }));
-
 
       return functions;
     } catch (err) {
-      console.warn('Failed to get DuckDB functions:', err);
+      console.warn("Failed to get DuckDB functions:", err);
       // Fallback to a basic set including TO_TIMESTAMP
       return [
-        { name: 'COUNT', type: 'aggregate' },
-        { name: 'SUM', type: 'aggregate' },
-        { name: 'AVG', type: 'aggregate' },
-        { name: 'MIN', type: 'aggregate' },
-        { name: 'MAX', type: 'aggregate' },
-        { name: 'CAST', type: 'scalar' },
-        { name: 'COALESCE', type: 'scalar' },
-        { name: 'UPPER', type: 'scalar' },
-        { name: 'LOWER', type: 'scalar' },
-        { name: 'LENGTH', type: 'scalar' },
-        { name: 'SUBSTRING', type: 'scalar' },
-        { name: 'REPLACE', type: 'scalar' },
-        { name: 'TRIM', type: 'scalar' },
-        { name: 'ABS', type: 'scalar' },
-        { name: 'ROUND', type: 'scalar' },
-        { name: 'TO_TIMESTAMP', type: 'scalar' },
-        { name: 'TO_DATE', type: 'scalar' },
-        { name: 'TO_CHAR', type: 'scalar' }
+        { name: "COUNT", type: "aggregate" },
+        { name: "SUM", type: "aggregate" },
+        { name: "AVG", type: "aggregate" },
+        { name: "MIN", type: "aggregate" },
+        { name: "MAX", type: "aggregate" },
+        { name: "CAST", type: "scalar" },
+        { name: "COALESCE", type: "scalar" },
+        { name: "UPPER", type: "scalar" },
+        { name: "LOWER", type: "scalar" },
+        { name: "LENGTH", type: "scalar" },
+        { name: "SUBSTRING", type: "scalar" },
+        { name: "REPLACE", type: "scalar" },
+        { name: "TRIM", type: "scalar" },
+        { name: "ABS", type: "scalar" },
+        { name: "ROUND", type: "scalar" },
+        { name: "TO_TIMESTAMP", type: "scalar" },
+        { name: "TO_DATE", type: "scalar" },
+        { name: "TO_CHAR", type: "scalar" },
       ];
     }
   }
@@ -375,14 +397,33 @@ export class DuckDBService {
         SELECT keyword_name FROM duckdb_keywords()
       `);
 
-      return result.toArray().map(row => row.keyword_name.toUpperCase());
+      return result.toArray().map((row) => row.keyword_name.toUpperCase());
     } catch (err) {
-      console.warn('Failed to get DuckDB keywords:', err);
+      console.warn("Failed to get DuckDB keywords:", err);
       // Fallback to basic SQL keywords
       return [
-        'SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT', 'RIGHT', 'INNER',
-        'GROUP', 'BY', 'ORDER', 'HAVING', 'LIMIT', 'OFFSET', 'AS',
-        'ON', 'AND', 'OR', 'NOT', 'IN', 'EXISTS', 'BETWEEN', 'LIKE'
+        "SELECT",
+        "FROM",
+        "WHERE",
+        "JOIN",
+        "LEFT",
+        "RIGHT",
+        "INNER",
+        "GROUP",
+        "BY",
+        "ORDER",
+        "HAVING",
+        "LIMIT",
+        "OFFSET",
+        "AS",
+        "ON",
+        "AND",
+        "OR",
+        "NOT",
+        "IN",
+        "EXISTS",
+        "BETWEEN",
+        "LIKE",
       ];
     }
   }

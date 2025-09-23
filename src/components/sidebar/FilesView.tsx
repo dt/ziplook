@@ -1,16 +1,22 @@
-import { useState } from 'react';
-import { useApp } from '../../state/AppContext';
-import FileTree from '../FileTree';
+import { useState } from "react";
+import { useApp } from "../../state/AppContext";
+import FileTree from "../FileTree";
 
 function FilesView() {
   const { state } = useApp();
-  const [filter, setFilter] = useState('');
+  const [filter, setFilter] = useState("");
 
   if (!state.zip) {
     return (
       <div className="empty-state">
         <p>No zip file loaded</p>
-        <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px' }}>
+        <p
+          style={{
+            fontSize: "11px",
+            color: "var(--text-muted)",
+            marginTop: "8px",
+          }}
+        >
           Drag and drop a debug.zip file to get started
         </p>
       </div>

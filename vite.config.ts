@@ -1,19 +1,19 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  base: process.env.NODE_ENV === 'production' ? './' : '/',
+  base: process.env.NODE_ENV === "production" ? "./" : "/",
   server: {
-    hmr: false // Disable hot module replacement but keep file watching for builds
+    hmr: false, // Disable hot module replacement but keep file watching for builds
   },
   worker: {
-    format: 'es'
+    format: "es",
   },
   define: {
     // Prevent Node.js globals from being included in browser build
-    global: 'globalThis',
+    global: "globalThis",
   },
   resolve: {
     alias: {
@@ -22,29 +22,29 @@ export default defineConfig({
       // Source: @protobufjs/inquire uses eval("quire".replace(/^/,"re")) to dynamically require() modules
       // Purpose: Allows protobufjs to conditionally load Node.js modules (like 'fs') without breaking bundlers
       // Browser safety: require() doesn't exist in browsers, so this always returns null anyway
-      '@protobufjs/inquire': '/src/utils/inquire-noop.js'
-    }
+      "@protobufjs/inquire": "/src/utils/inquire-noop.js",
+    },
   },
   build: {
-    minify: process.env.NODE_ENV === 'production',
+    minify: process.env.NODE_ENV === "production",
     sourcemap: false, // Disable source maps to prevent 404s for .js.map files
     // Ensure proper asset handling for GitHub Pages
-    assetsDir: 'assets',
+    assetsDir: "assets",
     rollupOptions: {
       output: {
         // Ensure consistent file naming for caching
-        entryFileNames: 'assets/[name]-[hash].js',
-        chunkFileNames: 'assets/[name]-[hash].js',
-        assetFileNames: 'assets/[name]-[hash].[ext]',
+        entryFileNames: "assets/[name]-[hash].js",
+        chunkFileNames: "assets/[name]-[hash].js",
+        assetFileNames: "assets/[name]-[hash].[ext]",
         manualChunks: {
           // Split Monaco Editor into separate chunk
-          monaco: ['@monaco-editor/react', 'monaco-editor'],
+          monaco: ["@monaco-editor/react", "monaco-editor"],
           // Split protobuf libraries
-          protobuf: ['protobufjs'],
+          protobuf: ["protobufjs"],
           // Split React vendor dependencies
-          vendor: ['react', 'react-dom']
-        }
-      }
-    }
-  }
-})
+          vendor: ["react", "react-dom"],
+        },
+      },
+    },
+  },
+});

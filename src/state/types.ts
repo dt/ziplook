@@ -11,10 +11,39 @@ export interface ZipEntryMeta {
 }
 
 export type ViewerTab =
-  | { kind: 'file'; id: string; fileId: ZipEntryId; title: string; content?: string; isFiltered?: boolean; filterText?: string; lineNumber?: number }
-  | { kind: 'sql'; id: string; title: string; query: string; isCustomQuery?: boolean; sourceTable?: string }
-  | { kind: 'error'; id: string; title: string; error: string; sourceFile: ZipEntryId; tableName: string }
-  | { kind: 'search'; id: string; title: string; query: string; results?: SearchResult[] };
+  | {
+      kind: "file";
+      id: string;
+      fileId: ZipEntryId;
+      title: string;
+      content?: string;
+      isFiltered?: boolean;
+      filterText?: string;
+      lineNumber?: number;
+    }
+  | {
+      kind: "sql";
+      id: string;
+      title: string;
+      query: string;
+      isCustomQuery?: boolean;
+      sourceTable?: string;
+    }
+  | {
+      kind: "error";
+      id: string;
+      title: string;
+      error: string;
+      sourceFile: ZipEntryId;
+      tableName: string;
+    }
+  | {
+      kind: "search";
+      id: string;
+      title: string;
+      query: string;
+      results?: SearchResult[];
+    };
 
 export interface TableMeta {
   name: string; // normalized (e.g., system_jobs)
@@ -37,7 +66,7 @@ export interface SearchResult {
   startLine: number;
   endLine: number;
   timestamp?: string;
-  level?: 'I' | 'W' | 'E' | 'F';
+  level?: "I" | "W" | "E" | "F";
   goroutineId?: string;
   tags?: string[];
   message: string;
@@ -47,9 +76,9 @@ export interface SearchResult {
 
 export interface SearchQuery {
   text: string;
-  type: 'keyword' | 'exact' | 'regex' | 'tag' | 'level' | 'goroutine' | 'file';
+  type: "keyword" | "exact" | "regex" | "tag" | "level" | "goroutine" | "file";
   filters?: {
-    level?: 'I' | 'W' | 'E' | 'F';
+    level?: "I" | "W" | "E" | "F";
     goroutineId?: string;
     file?: string;
     tags?: string[];
@@ -61,7 +90,7 @@ export interface FileIndexStatus {
   path: string;
   name: string;
   size: number;
-  status: 'unindexed' | 'indexing' | 'indexed' | 'error';
+  status: "unindexed" | "indexing" | "indexed" | "error";
   entries?: number;
   indexedAt?: Date;
   error?: string;
@@ -72,7 +101,7 @@ export interface PerfMeta {
   totalJSHeapSize: number;
   wasmMemorySize: number; // 0 if not applicable
   timestamp: number;
-  workerId: 'main' | 'db' | 'indexing' | 'zip';
+  workerId: "main" | "db" | "indexing" | "zip";
   maxSeenJSHeapSize?: number; // Track peak usage
   maxSeenWasmSize?: number; // Track peak WASM usage
 }
@@ -108,7 +137,11 @@ export interface AppState {
   searchIndex?: SearchIndex; // Log search index state
   workerManager?: any; // WorkerManager instance
   workersReady?: boolean; // Whether workers are initialized and ready
-  indexingStatus?: 'none' | 'indexing' | 'ready'; // Global indexing status
-  indexingProgress?: { current: number; total: number; fileName: string } | null; // Current indexing progress
+  indexingStatus?: "none" | "indexing" | "ready"; // Global indexing status
+  indexingProgress?: {
+    current: number;
+    total: number;
+    fileName: string;
+  } | null; // Current indexing progress
   indexingRuleDescription?: string; // Description of the rule used for indexing (e.g., "*.log")
 }

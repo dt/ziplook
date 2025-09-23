@@ -1,4 +1,4 @@
-import { useApp } from '../state/AppContext';
+import { useApp } from "../state/AppContext";
 
 interface ErrorViewerProps {
   error: string;
@@ -11,12 +11,12 @@ function ErrorViewer({ error, sourceFile, tableName }: ErrorViewerProps) {
 
   const handleViewFile = () => {
     dispatch({
-      type: 'OPEN_TAB',
+      type: "OPEN_TAB",
       tab: {
-        kind: 'file',
+        kind: "file",
         id: sourceFile,
         fileId: sourceFile,
-        title: sourceFile.split('/').pop() || sourceFile,
+        title: sourceFile.split("/").pop() || sourceFile,
       },
     });
   };
@@ -28,7 +28,9 @@ function ErrorViewer({ error, sourceFile, tableName }: ErrorViewerProps) {
     const lineNumber = lineMatch ? lineMatch[1] : null;
 
     // Look for "Original Line" content if present
-    const originalLineMatch = errorMsg.match(/Original Line[:\s]+(.+?)(?:\n|$)/i);
+    const originalLineMatch = errorMsg.match(
+      /Original Line[:\s]+(.+?)(?:\n|$)/i,
+    );
     const originalLine = originalLineMatch ? originalLineMatch[1] : null;
 
     return { lineNumber, originalLine, fullError: errorMsg };
@@ -80,7 +82,8 @@ function ErrorViewer({ error, sourceFile, tableName }: ErrorViewerProps) {
               <li>The file encoding is not UTF-8</li>
             </ul>
             <p className="hint-action">
-              Click "View Source File" above to inspect the raw data and identify the issue.
+              Click "View Source File" above to inspect the raw data and
+              identify the issue.
             </p>
           </div>
         </div>

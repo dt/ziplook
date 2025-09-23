@@ -3,30 +3,30 @@
  * Requests files from zip worker for table loading, executes queries
  */
 
-import * as duckdb from '@duckdb/duckdb-wasm';
-import { preprocessCSV, shouldPreprocess } from '../crdb/csvPreprocessor';
-import { getTableTypeHints } from '../crdb/columnTypeRegistry';
-import { ProtoDecoder } from '../crdb/protoDecoder';
-import * as protobuf from 'protobufjs';
-import crdbDescriptors from '../../public/crdb.json';
-import duckdb_wasm from '@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm?url';
-import mvp_worker from '@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url';
-import duckdb_wasm_eh from '@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url';
-import eh_worker from '@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url';
+import * as duckdb from "@duckdb/duckdb-wasm";
+import { preprocessCSV, shouldPreprocess } from "../crdb/csvPreprocessor";
+import { getTableTypeHints } from "../crdb/columnTypeRegistry";
+import { ProtoDecoder } from "../crdb/protoDecoder";
+import * as protobuf from "protobufjs";
+import crdbDescriptors from "../../public/crdb.json";
+import duckdb_wasm from "@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm?url";
+import mvp_worker from "@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url";
+import duckdb_wasm_eh from "@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url";
+import eh_worker from "@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url";
 
 // Message types
 interface SetZipWorkerPortMessage {
-  type: 'setZipWorkerPort';
+  type: "setZipWorkerPort";
   port: MessagePort;
 }
 
 interface InitializeDatabaseMessage {
-  type: 'initializeDatabase';
+  type: "initializeDatabase";
   id: string;
 }
 
 interface StartTableLoadingMessage {
-  type: 'startTableLoading';
+  type: "startTableLoading";
   id: string;
   tables: Array<{
     name: string;
@@ -39,7 +39,7 @@ interface StartTableLoadingMessage {
 }
 
 interface LoadSingleTableMessage {
-  type: 'loadSingleTable';
+  type: "loadSingleTable";
   id: string;
   table: {
     name: string;
@@ -52,34 +52,34 @@ interface LoadSingleTableMessage {
 }
 
 interface ExecuteQueryMessage {
-  type: 'executeQuery';
+  type: "executeQuery";
   id: string;
   sql: string;
 }
 
 interface GetTableSchemaMessage {
-  type: 'getTableSchema';
+  type: "getTableSchema";
   id: string;
   tableName: string;
 }
 
 interface GetLoadedTablesMessage {
-  type: 'getLoadedTables';
+  type: "getLoadedTables";
   id: string;
 }
 
 interface GetDuckDBFunctionsMessage {
-  type: 'getDuckDBFunctions';
+  type: "getDuckDBFunctions";
   id: string;
 }
 
 interface GetDuckDBKeywordsMessage {
-  type: 'getDuckDBKeywords';
+  type: "getDuckDBKeywords";
   id: string;
 }
 
 interface StopLoadingMessage {
-  type: 'stopLoading';
+  type: "stopLoading";
   id: string;
 }
 
@@ -97,17 +97,17 @@ type DBWorkerMessage =
 
 // Response types
 interface DatabaseInitializedResponse {
-  type: 'databaseInitialized';
+  type: "databaseInitialized";
   id: string;
   success: boolean;
   error?: string;
 }
 
 interface TableLoadProgressResponse {
-  type: 'tableLoadProgress';
+  type: "tableLoadProgress";
   id: string;
   tableName: string;
-  status: 'loading' | 'completed' | 'error' | 'deferred';
+  status: "loading" | "completed" | "error" | "deferred";
   rowCount?: number;
   error?: string;
   nodeId?: number;
@@ -117,7 +117,7 @@ interface TableLoadProgressResponse {
 }
 
 interface TableLoadingCompleteResponse {
-  type: 'tableLoadingComplete';
+  type: "tableLoadingComplete";
   id: string;
   success: boolean;
   tablesLoaded: number;
@@ -125,7 +125,7 @@ interface TableLoadingCompleteResponse {
 }
 
 interface QueryResultResponse {
-  type: 'queryResult';
+  type: "queryResult";
   id: string;
   success: boolean;
   data?: any[];
@@ -133,7 +133,7 @@ interface QueryResultResponse {
 }
 
 interface TableSchemaResponse {
-  type: 'tableSchema';
+  type: "tableSchema";
   id: string;
   success: boolean;
   schema?: any[];
@@ -141,7 +141,7 @@ interface TableSchemaResponse {
 }
 
 interface LoadedTablesResponse {
-  type: 'loadedTables';
+  type: "loadedTables";
   id: string;
   success: boolean;
   tables?: string[];
@@ -149,21 +149,20 @@ interface LoadedTablesResponse {
 }
 
 interface DuckDBFunctionsResponse {
-  type: 'duckDBFunctions';
+  type: "duckDBFunctions";
   id: string;
   success: boolean;
-  functions?: Array<{name: string; type: string; description?: string}>;
+  functions?: Array<{ name: string; type: string; description?: string }>;
   error?: string;
 }
 
 interface DuckDBKeywordsResponse {
-  type: 'duckDBKeywords';
+  type: "duckDBKeywords";
   id: string;
   success: boolean;
   keywords?: string[];
   error?: string;
 }
-
 
 // Global state
 let zipWorker: MessagePort | null = null;
@@ -179,29 +178,28 @@ let workerProtoDecoder: ProtoDecoder | null = null;
 
 const LARGE_FILE_THRESHOLD = 20 * 1024 * 1024; // 20MB
 
-
 function sendMessageToZipWorker(message: any): Promise<any> {
   return new Promise((resolve, reject) => {
     if (!zipWorker) {
-      reject(new Error('Zip worker not available'));
+      reject(new Error("Zip worker not available"));
       return;
     }
 
     const id = `zip_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const timeoutId = setTimeout(() => {
-      reject(new Error('Zip worker request timeout'));
+      reject(new Error("Zip worker request timeout"));
     }, 30000); // 30 second timeout
 
     const handler = (event: MessageEvent) => {
       const response = event.data;
       if (response.id === id) {
         clearTimeout(timeoutId);
-        zipWorker!.removeEventListener('message', handler);
+        zipWorker!.removeEventListener("message", handler);
         resolve(response);
       }
     };
 
-    zipWorker.addEventListener('message', handler);
+    zipWorker.addEventListener("message", handler);
     zipWorker.postMessage({ ...message, id });
   });
 }
@@ -218,7 +216,7 @@ async function initializeDatabase(message: InitializeDatabaseMessage) {
 
   if (initialized) {
     self.postMessage({
-      type: 'databaseInitialized',
+      type: "databaseInitialized",
       id,
       success: true,
     } as DatabaseInitializedResponse);
@@ -254,8 +252,8 @@ async function initializeDatabase(message: InitializeDatabaseMessage) {
     await db.open({
       query: {
         castBigIntToDouble: true,
-        castTimestampToDate: true  // Convert timestamps to JavaScript Date objects
-      }
+        castTimestampToDate: true, // Convert timestamps to JavaScript Date objects
+      },
     });
 
     // Create connection
@@ -265,7 +263,7 @@ async function initializeDatabase(message: InitializeDatabaseMessage) {
     try {
       await conn.query("INSTALL json; LOAD json;");
     } catch (err) {
-      console.warn('Failed to preload JSON extension:', err);
+      console.warn("Failed to preload JSON extension:", err);
       // Continue anyway - extension will load on demand
     }
 
@@ -277,25 +275,27 @@ async function initializeDatabase(message: InitializeDatabaseMessage) {
       (workerProtoDecoder as any).root = root;
       (workerProtoDecoder as any).loaded = true;
     } catch (protoError) {
-      console.warn('⚠️ Failed to initialize proto decoder in worker:', protoError);
+      console.warn(
+        "⚠️ Failed to initialize proto decoder in worker:",
+        protoError,
+      );
       workerProtoDecoder = null; // Preprocessing will skip proto decoding
     }
 
     initialized = true;
 
     self.postMessage({
-      type: 'databaseInitialized',
+      type: "databaseInitialized",
       id,
       success: true,
     } as DatabaseInitializedResponse);
-
   } catch (error) {
-    console.error('Failed to initialize DuckDB:', error);
+    console.error("Failed to initialize DuckDB:", error);
     self.postMessage({
-      type: 'databaseInitialized',
+      type: "databaseInitialized",
       id,
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: error instanceof Error ? error.message : "Unknown error",
     } as DatabaseInitializedResponse);
   }
 }
@@ -321,22 +321,21 @@ async function startTableLoading(message: StartTableLoadingMessage) {
 
     if (!shouldStop && currentLoadingId === id) {
       self.postMessage({
-        type: 'tableLoadingComplete',
+        type: "tableLoadingComplete",
         id,
         success: true,
         tablesLoaded,
-        } as TableLoadingCompleteResponse);
+      } as TableLoadingCompleteResponse);
     }
-
   } catch (error) {
     if (currentLoadingId === id) {
       self.postMessage({
-        type: 'tableLoadingComplete',
+        type: "tableLoadingComplete",
         id,
         success: false,
         tablesLoaded: 0,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        } as TableLoadingCompleteResponse);
+        error: error instanceof Error ? error.message : "Unknown error",
+      } as TableLoadingCompleteResponse);
     }
   }
 }
@@ -350,16 +349,16 @@ async function loadSingleTable(table: any, loadingId: string) {
   const { name: tableName, path, size, nodeId, originalName, isError } = table;
 
   if (!conn) {
-    throw new Error('Database not initialized');
+    throw new Error("Database not initialized");
   }
 
   try {
     // Send progress update - loading
     self.postMessage({
-      type: 'tableLoadProgress',
+      type: "tableLoadProgress",
       id: loadingId,
       tableName,
-      status: 'loading',
+      status: "loading",
       nodeId,
       originalName,
       isError,
@@ -370,76 +369,80 @@ async function loadSingleTable(table: any, loadingId: string) {
     if (loadedTables.has(tableName)) {
       const quotedTableName = `"${tableName}"`;
       const countResult = await conn.query(
-        `SELECT COUNT(*) as count FROM ${quotedTableName}`
+        `SELECT COUNT(*) as count FROM ${quotedTableName}`,
       );
       const rowCount = countResult.toArray()[0].count;
 
       self.postMessage({
-        type: 'tableLoadProgress',
+        type: "tableLoadProgress",
         id: loadingId,
         tableName,
-        status: 'completed',
+        status: "completed",
         rowCount,
         nodeId,
         originalName,
         isError,
-        } as TableLoadProgressResponse);
+      } as TableLoadProgressResponse);
       return;
     }
 
     // Check file size - defer loading if too large
     if (size > LARGE_FILE_THRESHOLD) {
-  
       self.postMessage({
-        type: 'tableLoadProgress',
+        type: "tableLoadProgress",
         id: loadingId,
         tableName,
-        status: 'deferred',
+        status: "deferred",
         nodeId,
         originalName,
         isError,
         size,
-        } as TableLoadProgressResponse);
+      } as TableLoadProgressResponse);
       return;
     }
 
     // Request file from zip worker
     const fileResponse = await sendMessageToZipWorker({
-      type: 'readFile',
-      path
+      type: "readFile",
+      path,
     });
 
     if (!fileResponse.success) {
-      throw new Error(fileResponse.error || 'Failed to read file from zip');
+      throw new Error(fileResponse.error || "Failed to read file from zip");
     }
 
     if (!fileResponse.result?.text) {
-      throw new Error('No text content found in file');
+      throw new Error("No text content found in file");
     }
 
     // Load table using DuckDB logic (from duckdb.ts)
-    const rowCount = await loadTableFromText(tableName, fileResponse.result.text, '\t', originalName);
+    const rowCount = await loadTableFromText(
+      tableName,
+      fileResponse.result.text,
+      "\t",
+      originalName,
+    );
 
     self.postMessage({
-      type: 'tableLoadProgress',
+      type: "tableLoadProgress",
       id: loadingId,
       tableName,
-      status: 'completed',
+      status: "completed",
       rowCount,
       nodeId,
       originalName,
       isError,
     } as TableLoadProgressResponse);
-
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
     console.error(`Failed to load table ${tableName}:`, error);
 
     self.postMessage({
-      type: 'tableLoadProgress',
+      type: "tableLoadProgress",
       id: loadingId,
       tableName,
-      status: 'error',
+      status: "error",
       error: errorMessage,
       nodeId,
       originalName,
@@ -451,18 +454,18 @@ async function loadSingleTable(table: any, loadingId: string) {
 async function loadTableFromText(
   tableName: string,
   content: string,
-  delimiter: string = '\t',
-  originalName?: string
+  delimiter: string = "\t",
+  originalName?: string,
 ): Promise<number> {
   if (!conn || !db) {
-    throw new Error('DuckDB not initialized');
+    throw new Error("DuckDB not initialized");
   }
 
   if (loadedTables.has(tableName)) {
     // Get and return existing row count
     const quotedTableName = `"${tableName}"`;
     const countResult = await conn.query(
-      `SELECT COUNT(*) as count FROM ${quotedTableName}`
+      `SELECT COUNT(*) as count FROM ${quotedTableName}`,
     );
     return countResult.toArray()[0].count;
   }
@@ -484,7 +487,7 @@ async function loadTableFromText(
           delimiter,
           decodeKeys: true,
           decodeProtos: workerProtoDecoder ? true : false, // Only enable if we have a decoder
-          protoDecoder: workerProtoDecoder || undefined // Use worker-specific decoder
+          protoDecoder: workerProtoDecoder || undefined, // Use worker-specific decoder
         });
         usePreprocessed = true;
       } catch (err) {
@@ -495,11 +498,8 @@ async function loadTableFromText(
 
     // Create table from CSV/TSV content
     // First, register the content as a virtual file
-    const fileBaseName = tableName.replace(/[^a-zA-Z0-9_]/g, '_');
-    await db.registerFileText(
-      `${fileBaseName}.txt`,
-      processedContent
-    );
+    const fileBaseName = tableName.replace(/[^a-zA-Z0-9_]/g, "_");
+    await db.registerFileText(`${fileBaseName}.txt`, processedContent);
 
     // Drop table if exists
     await conn.query(`DROP TABLE IF EXISTS ${quotedTableName}`);
@@ -513,17 +513,17 @@ async function loadTableFromText(
 
       if (typeHints.size > 0) {
         // For tables with type hints, try explicit column definitions first
-        const firstLine = processedContent.split('\n')[0];
+        const firstLine = processedContent.split("\n")[0];
         const headers = firstLine.split(delimiter);
 
         // Build column definitions with type hints for ALL columns
-        const columnDefs = headers.map(header => {
+        const columnDefs = headers.map((header) => {
           const hint = typeHints.get(header.toLowerCase());
-          const columnType = hint || 'VARCHAR'; // Safe default for columns without hints
+          const columnType = hint || "VARCHAR"; // Safe default for columns without hints
           return `'${header}': '${columnType}'`;
         });
 
-        const columnsClause = columnDefs.join(', ');
+        const columnsClause = columnDefs.join(", ");
         sql = `
           CREATE TABLE ${quotedTableName} AS
           SELECT * FROM read_csv(
@@ -551,14 +551,13 @@ async function loadTableFromText(
       await conn.query(sql);
     } catch (parseError: any) {
       // If preprocessing caused issues or CSV sniffing failed, try with original content
-      if (usePreprocessed && (parseError.message?.includes('sniffing file') ||
-                             parseError.message?.includes('Error when sniffing file'))) {
-
+      if (
+        usePreprocessed &&
+        (parseError.message?.includes("sniffing file") ||
+          parseError.message?.includes("Error when sniffing file"))
+      ) {
         // Re-register with original content
-        await db.registerFileText(
-          `${fileBaseName}.txt`,
-          content
-        );
+        await db.registerFileText(`${fileBaseName}.txt`, content);
 
         const sql = `
           CREATE TABLE ${quotedTableName} AS
@@ -570,25 +569,31 @@ async function loadTableFromText(
         `;
 
         await conn.query(sql);
-      } else if (parseError.message?.includes('Error when sniffing file') ||
-                 parseError.message?.includes('not possible to automatically detect') ||
-                 parseError.message?.includes('Could not convert string') ||
-                 parseError.message?.includes('Conversion Error: CSV Error')) {
+      } else if (
+        parseError.message?.includes("Error when sniffing file") ||
+        parseError.message?.includes("not possible to automatically detect") ||
+        parseError.message?.includes("Could not convert string") ||
+        parseError.message?.includes("Conversion Error: CSV Error")
+      ) {
         // Some files have such complex data that DuckDB can't auto-detect them
         // Try with very explicit parameters and treat everything as VARCHAR
-        console.warn(`Cannot auto-detect CSV format for ${tableName}, using fallback`);
+        console.warn(
+          `Cannot auto-detect CSV format for ${tableName}, using fallback`,
+        );
 
         // Parse headers manually
-        const lines = content.split('\n');
+        const lines = content.split("\n");
         const headerLine = lines[0];
         const headers = headerLine.split(delimiter);
 
         // Apply type hints if available, otherwise use VARCHAR to avoid detection issues
-        const columnDefs = headers.map(header => {
-          const hint = typeHints.get(header.toLowerCase());
-          const safeType = hint || 'VARCHAR';
-          return `'${header}': '${safeType}'`;
-        }).join(', ');
+        const columnDefs = headers
+          .map((header) => {
+            const hint = typeHints.get(header.toLowerCase());
+            const safeType = hint || "VARCHAR";
+            return `'${header}': '${safeType}'`;
+          })
+          .join(", ");
 
         const fallbackSql = `
           CREATE TABLE ${quotedTableName} AS
@@ -605,7 +610,10 @@ async function loadTableFromText(
         try {
           await conn.query(fallbackSql);
         } catch (fallbackError: any) {
-          console.error(`Even fallback failed for ${tableName}:`, fallbackError.message);
+          console.error(
+            `Even fallback failed for ${tableName}:`,
+            fallbackError.message,
+          );
           throw parseError; // Throw original error if fallback also fails
         }
       } else {
@@ -615,7 +623,7 @@ async function loadTableFromText(
 
     // Get row count
     const countResult = await conn.query(
-      `SELECT COUNT(*) as count FROM ${quotedTableName}`
+      `SELECT COUNT(*) as count FROM ${quotedTableName}`,
     );
     const count = countResult.toArray()[0].count;
 
@@ -633,11 +641,17 @@ function rewriteQuery(sql: string): string {
 
   // Handle explicit schema.table references by quoting them
   rewritten = rewritten.replace(/\bsystem\.([a-zA-Z0-9_]+)\b/gi, '"system.$1"');
-  rewritten = rewritten.replace(/\bcrdb_internal\.([a-zA-Z0-9_]+)\b/gi, '"crdb_internal.$1"');
+  rewritten = rewritten.replace(
+    /\bcrdb_internal\.([a-zA-Z0-9_]+)\b/gi,
+    '"crdb_internal.$1"',
+  );
 
   // Handle per-node schema references like n1_system.table -> "n1_system.table"
   rewritten = rewritten.replace(/\bn\d+_system\.([a-zA-Z0-9_]+)\b/gi, '"$&"');
-  rewritten = rewritten.replace(/\bn\d+_crdb_internal\.([a-zA-Z0-9_]+)\b/gi, '"$&"');
+  rewritten = rewritten.replace(
+    /\bn\d+_crdb_internal\.([a-zA-Z0-9_]+)\b/gi,
+    '"$&"',
+  );
 
   return rewritten;
 }
@@ -647,10 +661,10 @@ async function executeQuery(message: ExecuteQueryMessage) {
 
   if (!conn) {
     self.postMessage({
-      type: 'queryResult',
+      type: "queryResult",
       id,
       success: false,
-      error: 'Database not initialized',
+      error: "Database not initialized",
     } as QueryResultResponse);
     return;
   }
@@ -664,15 +678,19 @@ async function executeQuery(message: ExecuteQueryMessage) {
     // DuckDB returns timestamps as numbers (milliseconds since epoch)
     if (data.length > 0) {
       const firstRow = data[0];
-      Object.keys(firstRow).forEach(columnName => {
+      Object.keys(firstRow).forEach((columnName) => {
         const value = firstRow[columnName];
         // Check if this looks like a timestamp (large number in milliseconds range)
-        if (typeof value === 'number' && value > 1000000000000 && value < 2000000000000) {
+        if (
+          typeof value === "number" &&
+          value > 1000000000000 &&
+          value < 2000000000000
+        ) {
           // This is likely a timestamp in milliseconds, convert all rows
-          data.forEach(row => {
-            if (typeof row[columnName] === 'number') {
+          data.forEach((row) => {
+            if (typeof row[columnName] === "number") {
               row[columnName] = new Date(row[columnName]);
-            } else if (typeof row[columnName] === 'bigint') {
+            } else if (typeof row[columnName] === "bigint") {
               row[columnName] = new Date(Number(row[columnName]));
             }
           });
@@ -681,7 +699,7 @@ async function executeQuery(message: ExecuteQueryMessage) {
     }
 
     // Sanitize data to ensure it can be cloned for postMessage
-    const sanitizedData = data.map(row => {
+    const sanitizedData = data.map((row) => {
       const sanitizedRow: any = {};
       for (const [key, value] of Object.entries(row)) {
         try {
@@ -697,18 +715,18 @@ async function executeQuery(message: ExecuteQueryMessage) {
     });
 
     self.postMessage({
-      type: 'queryResult',
+      type: "queryResult",
       id,
       success: true,
       data: sanitizedData,
     } as QueryResultResponse);
   } catch (error) {
-    console.error('Query failed:', error);
+    console.error("Query failed:", error);
     self.postMessage({
-      type: 'queryResult',
+      type: "queryResult",
       id,
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: error instanceof Error ? error.message : "Unknown error",
     } as QueryResultResponse);
   }
 }
@@ -724,17 +742,17 @@ async function getTableSchema(message: GetTableSchemaMessage) {
     `);
 
     self.postMessage({
-      type: 'tableSchema',
+      type: "tableSchema",
       id,
       success: true,
       schema: data,
     } as TableSchemaResponse);
   } catch (error) {
     self.postMessage({
-      type: 'tableSchema',
+      type: "tableSchema",
       id,
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: error instanceof Error ? error.message : "Unknown error",
     } as TableSchemaResponse);
   }
 }
@@ -744,10 +762,10 @@ async function getLoadedTables(message: GetLoadedTablesMessage) {
 
   if (!conn) {
     self.postMessage({
-      type: 'loadedTables',
+      type: "loadedTables",
       id,
       success: false,
-      error: 'Database not initialized',
+      error: "Database not initialized",
     } as LoadedTablesResponse);
     return;
   }
@@ -758,20 +776,20 @@ async function getLoadedTables(message: GetLoadedTablesMessage) {
       FROM information_schema.tables
       WHERE table_schema = 'main'
     `);
-    const tables = result.toArray().map(row => row.table_name);
+    const tables = result.toArray().map((row) => row.table_name);
 
     self.postMessage({
-      type: 'loadedTables',
+      type: "loadedTables",
       id,
       success: true,
       tables,
     } as LoadedTablesResponse);
   } catch (error) {
     self.postMessage({
-      type: 'loadedTables',
+      type: "loadedTables",
       id,
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: error instanceof Error ? error.message : "Unknown error",
     } as LoadedTablesResponse);
   }
 }
@@ -781,10 +799,10 @@ async function getDuckDBFunctions(message: GetDuckDBFunctionsMessage) {
 
   if (!conn) {
     self.postMessage({
-      type: 'duckDBFunctions',
+      type: "duckDBFunctions",
       id,
       success: false,
-      error: 'Database not initialized',
+      error: "Database not initialized",
     } as DuckDBFunctionsResponse);
     return;
   }
@@ -800,43 +818,43 @@ async function getDuckDBFunctions(message: GetDuckDBFunctionsMessage) {
       ORDER BY function_name
     `);
 
-    const functions = result.toArray().map(row => ({
+    const functions = result.toArray().map((row) => ({
       name: row.function_name.toUpperCase(),
-      type: row.function_type
+      type: row.function_type,
     }));
 
     self.postMessage({
-      type: 'duckDBFunctions',
+      type: "duckDBFunctions",
       id,
       success: true,
       functions,
     } as DuckDBFunctionsResponse);
   } catch (err) {
-    console.warn('Failed to get DuckDB functions:', err);
+    console.warn("Failed to get DuckDB functions:", err);
     // Fallback to a basic set including TO_TIMESTAMP
     const fallbackFunctions = [
-      { name: 'COUNT', type: 'aggregate' },
-      { name: 'SUM', type: 'aggregate' },
-      { name: 'AVG', type: 'aggregate' },
-      { name: 'MIN', type: 'aggregate' },
-      { name: 'MAX', type: 'aggregate' },
-      { name: 'CAST', type: 'scalar' },
-      { name: 'COALESCE', type: 'scalar' },
-      { name: 'UPPER', type: 'scalar' },
-      { name: 'LOWER', type: 'scalar' },
-      { name: 'LENGTH', type: 'scalar' },
-      { name: 'SUBSTRING', type: 'scalar' },
-      { name: 'REPLACE', type: 'scalar' },
-      { name: 'TRIM', type: 'scalar' },
-      { name: 'ABS', type: 'scalar' },
-      { name: 'ROUND', type: 'scalar' },
-      { name: 'TO_TIMESTAMP', type: 'scalar' },
-      { name: 'TO_DATE', type: 'scalar' },
-      { name: 'TO_CHAR', type: 'scalar' }
+      { name: "COUNT", type: "aggregate" },
+      { name: "SUM", type: "aggregate" },
+      { name: "AVG", type: "aggregate" },
+      { name: "MIN", type: "aggregate" },
+      { name: "MAX", type: "aggregate" },
+      { name: "CAST", type: "scalar" },
+      { name: "COALESCE", type: "scalar" },
+      { name: "UPPER", type: "scalar" },
+      { name: "LOWER", type: "scalar" },
+      { name: "LENGTH", type: "scalar" },
+      { name: "SUBSTRING", type: "scalar" },
+      { name: "REPLACE", type: "scalar" },
+      { name: "TRIM", type: "scalar" },
+      { name: "ABS", type: "scalar" },
+      { name: "ROUND", type: "scalar" },
+      { name: "TO_TIMESTAMP", type: "scalar" },
+      { name: "TO_DATE", type: "scalar" },
+      { name: "TO_CHAR", type: "scalar" },
     ];
 
     self.postMessage({
-      type: 'duckDBFunctions',
+      type: "duckDBFunctions",
       id,
       success: true,
       functions: fallbackFunctions,
@@ -849,10 +867,10 @@ async function getDuckDBKeywords(message: GetDuckDBKeywordsMessage) {
 
   if (!conn) {
     self.postMessage({
-      type: 'duckDBKeywords',
+      type: "duckDBKeywords",
       id,
       success: false,
-      error: 'Database not initialized',
+      error: "Database not initialized",
     } as DuckDBKeywordsResponse);
     return;
   }
@@ -863,25 +881,46 @@ async function getDuckDBKeywords(message: GetDuckDBKeywordsMessage) {
       SELECT keyword_name FROM duckdb_keywords()
     `);
 
-    const keywords = result.toArray().map(row => row.keyword_name.toUpperCase());
+    const keywords = result
+      .toArray()
+      .map((row) => row.keyword_name.toUpperCase());
 
     self.postMessage({
-      type: 'duckDBKeywords',
+      type: "duckDBKeywords",
       id,
       success: true,
       keywords,
     } as DuckDBKeywordsResponse);
   } catch (err) {
-    console.warn('Failed to get DuckDB keywords:', err);
+    console.warn("Failed to get DuckDB keywords:", err);
     // Fallback to basic SQL keywords
     const fallbackKeywords = [
-      'SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT', 'RIGHT', 'INNER',
-      'GROUP', 'BY', 'ORDER', 'HAVING', 'LIMIT', 'OFFSET', 'AS',
-      'ON', 'AND', 'OR', 'NOT', 'IN', 'EXISTS', 'BETWEEN', 'LIKE'
+      "SELECT",
+      "FROM",
+      "WHERE",
+      "JOIN",
+      "LEFT",
+      "RIGHT",
+      "INNER",
+      "GROUP",
+      "BY",
+      "ORDER",
+      "HAVING",
+      "LIMIT",
+      "OFFSET",
+      "AS",
+      "ON",
+      "AND",
+      "OR",
+      "NOT",
+      "IN",
+      "EXISTS",
+      "BETWEEN",
+      "LIKE",
     ];
 
     self.postMessage({
-      type: 'duckDBKeywords',
+      type: "duckDBKeywords",
       id,
       success: true,
       keywords: fallbackKeywords,
@@ -891,7 +930,7 @@ async function getDuckDBKeywords(message: GetDuckDBKeywordsMessage) {
 
 async function query(sql: string): Promise<any> {
   if (!conn) {
-    throw new Error('DuckDB not initialized');
+    throw new Error("DuckDB not initialized");
   }
 
   const rewrittenSql = rewriteQuery(sql);
@@ -913,38 +952,38 @@ self.onmessage = (event: MessageEvent<DBWorkerMessage>) => {
   const message = event.data;
 
   switch (message.type) {
-    case 'setZipWorkerPort':
+    case "setZipWorkerPort":
       setZipWorkerPort(message);
       break;
-    case 'initializeDatabase':
+    case "initializeDatabase":
       initializeDatabase(message);
       break;
-    case 'startTableLoading':
+    case "startTableLoading":
       startTableLoading(message);
       break;
-    case 'loadSingleTable':
+    case "loadSingleTable":
       loadSingleTableFromMessage(message);
       break;
-    case 'executeQuery':
+    case "executeQuery":
       executeQuery(message);
       break;
-    case 'getTableSchema':
+    case "getTableSchema":
       getTableSchema(message);
       break;
-    case 'getLoadedTables':
+    case "getLoadedTables":
       getLoadedTables(message);
       break;
-    case 'getDuckDBFunctions':
+    case "getDuckDBFunctions":
       getDuckDBFunctions(message);
       break;
-    case 'getDuckDBKeywords':
+    case "getDuckDBKeywords":
       getDuckDBKeywords(message);
       break;
-    case 'stopLoading':
+    case "stopLoading":
       stopLoading(message);
       break;
     default:
-      console.error('Unknown DB worker message type:', (message as any).type);
+      console.error("Unknown DB worker message type:", (message as any).type);
   }
 };
 

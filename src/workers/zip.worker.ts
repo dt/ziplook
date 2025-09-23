@@ -1,14 +1,20 @@
-import * as fflate from 'fflate';
+import * as fflate from "fflate";
 
 type WorkerMessage =
-  | { type: 'loadFile'; path: string; zipData: Uint8Array }
-  | { type: 'cancel' };
+  | { type: "loadFile"; path: string; zipData: Uint8Array }
+  | { type: "cancel" };
 
 type WorkerResponse =
-  | { type: 'progress'; loaded: number; total: number; percent: number }
-  | { type: 'chunk'; data: string; loaded: number; total: number; done: boolean }
-  | { type: 'error'; error: string }
-  | { type: 'complete'; text: string };
+  | { type: "progress"; loaded: number; total: number; percent: number }
+  | {
+      type: "chunk";
+      data: string;
+      loaded: number;
+      total: number;
+      done: boolean;
+    }
+  | { type: "error"; error: string }
+  | { type: "complete"; text: string };
 
 let currentOperation: AbortController | null = null;
 
@@ -22,8 +28,8 @@ async function streamFile(path: string, zipData: Uint8Array) {
     let accumulatedData = new Uint8Array(0);
     let fileSize = 0;
     let processedBytes = 0;
-    const decoder = new TextDecoder('utf-8');
-    let fullText = '';
+    const decoder = new TextDecoder("utf-8");
+    let fullText = "";
 
     await new Promise<void>((resolve, reject) => {
       // Create unzipper
@@ -41,10 +47,10 @@ async function streamFile(path: string, zipData: Uint8Array) {
 
           // Send initial progress
           self.postMessage({
-            type: 'progress',
+            type: "progress",
             loaded: 0,
             total: fileSize,
-            percent: 0
+            percent: 0,
           } as WorkerResponse);
 
           // Set up streaming handler for this file
@@ -55,13 +61,15 @@ async function streamFile(path: string, zipData: Uint8Array) {
             }
 
             if (signal.aborted) {
-              reject(new Error('Operation cancelled'));
+              reject(new Error("Operation cancelled"));
               return;
             }
 
             // Accumulate data
             if (chunk) {
-              const newData = new Uint8Array(accumulatedData.length + chunk.length);
+              const newData = new Uint8Array(
+                accumulatedData.length + chunk.length,
+              );
               newData.set(accumulatedData);
               newData.set(chunk, accumulatedData.length);
               accumulatedData = newData;
@@ -73,19 +81,19 @@ async function streamFile(path: string, zipData: Uint8Array) {
 
               // Send chunk to main thread
               self.postMessage({
-                type: 'chunk',
+                type: "chunk",
                 data: decodedChunk,
                 loaded: processedBytes,
                 total: fileSize,
-                done: final
+                done: final,
               } as WorkerResponse);
             }
 
             if (final) {
               // Send complete message
               self.postMessage({
-                type: 'complete',
-                text: fullText
+                type: "complete",
+                text: fullText,
               } as WorkerResponse);
               resolve();
             }
@@ -103,7 +111,7 @@ async function streamFile(path: string, zipData: Uint8Array) {
 
       const pushNextChunk = () => {
         if (signal.aborted) {
-          reject(new Error('Operation cancelled'));
+          reject(new Error("Operation cancelled"));
           return;
         }
 
@@ -124,12 +132,11 @@ async function streamFile(path: string, zipData: Uint8Array) {
 
       pushNextChunk();
     });
-
   } catch (error) {
     if (!signal.aborted) {
       self.postMessage({
-        type: 'error',
-        error: error instanceof Error ? error.message : 'Unknown error'
+        type: "error",
+        error: error instanceof Error ? error.message : "Unknown error",
       } as WorkerResponse);
     }
   } finally {
@@ -138,16 +145,16 @@ async function streamFile(path: string, zipData: Uint8Array) {
 }
 
 // Handle messages from main thread
-self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
+self.addEventListener("message", async (event: MessageEvent<WorkerMessage>) => {
   const { type } = event.data;
 
   switch (type) {
-    case 'loadFile':
+    case "loadFile":
       const { path, zipData } = event.data;
       await streamFile(path, zipData);
       break;
 
-    case 'cancel':
+    case "cancel":
       if (currentOperation) {
         currentOperation.abort();
         currentOperation = null;

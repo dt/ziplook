@@ -1,11 +1,11 @@
-import { useMemo } from 'react';
-import FilesView from './sidebar/FilesView';
-import TablesView from './sidebar/TablesView';
-import SearchView from './sidebar/SearchView';
-import { useApp } from '../state/AppContext';
+import { useMemo } from "react";
+import FilesView from "./sidebar/FilesView";
+import TablesView from "./sidebar/TablesView";
+import SearchView from "./sidebar/SearchView";
+import { useApp } from "../state/AppContext";
 
 interface SidebarProps {
-  activeView: 'files' | 'tables' | 'search' | 'stackgazer';
+  activeView: "files" | "tables" | "search" | "stackgazer";
   isVisible: boolean;
   width: number;
 }
@@ -15,18 +15,20 @@ function Sidebar({ activeView, isVisible, width }: SidebarProps) {
 
   // Calculate loading progress for tables view
   const tablesProgress = useMemo(() => {
-    if (activeView !== 'tables') return null;
+    if (activeView !== "tables") return null;
 
     const tables = Object.values(state.tables);
-    const loadableTables = tables.filter(t => !t.isError);
+    const loadableTables = tables.filter((t) => !t.isError);
     if (loadableTables.length === 0) return null;
 
     // Only count non-deferred tables (deferred tables aren't loaded until clicked)
-    const autoLoadTables = loadableTables.filter(t => !t.deferred);
+    const autoLoadTables = loadableTables.filter((t) => !t.deferred);
     if (autoLoadTables.length === 0) return null;
 
     // Count tables that are either loaded or failed
-    const completedCount = autoLoadTables.filter(t => t.loaded || t.loadError).length;
+    const completedCount = autoLoadTables.filter(
+      (t) => t.loaded || t.loadError,
+    ).length;
     const totalCount = autoLoadTables.length;
 
     // If all tables are completed, hide the progress
@@ -37,25 +39,33 @@ function Sidebar({ activeView, isVisible, width }: SidebarProps) {
 
   const getTitle = () => {
     switch (activeView) {
-      case 'files': return 'Files';
-      case 'tables': return 'Tables';
-      case 'search': return 'Search';
-      case 'stackgazer': return 'Stack Traces';
+      case "files":
+        return "Files";
+      case "tables":
+        return "Tables";
+      case "search":
+        return "Search";
+      case "stackgazer":
+        return "Stack Traces";
     }
   };
 
   const getContent = () => {
     switch (activeView) {
-      case 'files': return <FilesView />;
-      case 'tables': return <TablesView />;
-      case 'search': return <SearchView />;
-      case 'stackgazer': return null; // No sidebar content for stackgazer
+      case "files":
+        return <FilesView />;
+      case "tables":
+        return <TablesView />;
+      case "search":
+        return <SearchView />;
+      case "stackgazer":
+        return null; // No sidebar content for stackgazer
     }
   };
 
   return (
     <div
-      className={`sidebar ${!isVisible ? 'collapsed' : ''}`}
+      className={`sidebar ${!isVisible ? "collapsed" : ""}`}
       style={{ width: isVisible ? `${width}px` : 0 }}
     >
       <div className="sidebar-header">
@@ -66,9 +76,7 @@ function Sidebar({ activeView, isVisible, width }: SidebarProps) {
           </span>
         )}
       </div>
-      <div className="sidebar-content">
-        {getContent()}
-      </div>
+      <div className="sidebar-content">{getContent()}</div>
     </div>
   );
 }

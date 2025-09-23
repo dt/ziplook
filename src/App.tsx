@@ -1,24 +1,24 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import './styles/global.css';
-import './styles/App.css';
-import './styles/crdb.css';
-import './styles/error-viewer.css';
-import './styles/navigation.css';
-import IconRail from './components/IconRail';
-import Sidebar from './components/Sidebar';
-import MainPanel from './components/MainPanel';
-import StackgazerView from './components/StackgazerView';
-import { MemoryMonitor } from './components/MemoryMonitor';
-import { AppProvider, useApp } from './state/AppContext';
-import { NavigationProvider } from './components/NavigationProvider';
-import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
-import { useKeyboardNavigation } from './hooks/useKeyboardNavigation';
+import { useState, useCallback, useRef, useEffect } from "react";
+import "./styles/global.css";
+import "./styles/App.css";
+import "./styles/crdb.css";
+import "./styles/error-viewer.css";
+import "./styles/navigation.css";
+import IconRail from "./components/IconRail";
+import Sidebar from "./components/Sidebar";
+import MainPanel from "./components/MainPanel";
+import StackgazerView from "./components/StackgazerView";
+import { MemoryMonitor } from "./components/MemoryMonitor";
+import { AppProvider, useApp } from "./state/AppContext";
+import { NavigationProvider } from "./components/NavigationProvider";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { useKeyboardNavigation } from "./hooks/useKeyboardNavigation";
 
-type ActiveView = 'files' | 'tables' | 'search' | 'stackgazer';
+type ActiveView = "files" | "tables" | "search" | "stackgazer";
 
 function AppContent() {
   const { state, dispatch } = useApp();
-  const [activeView, setActiveView] = useState<ActiveView>('tables');
+  const [activeView, setActiveView] = useState<ActiveView>("tables");
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(360);
   const [memoryMonitorOpen, setMemoryMonitorOpen] = useState(false);
@@ -37,7 +37,9 @@ function AppContent() {
     }
 
     // Find the preloaded iframe
-    const preloadedIframe = document.getElementById('stackgazer-preload') as HTMLIFrameElement;
+    const preloadedIframe = document.getElementById(
+      "stackgazer-preload",
+    ) as HTMLIFrameElement;
     if (!preloadedIframe) return;
 
     // Wait a bit for iframe to be ready, then send data one file at a time
@@ -46,15 +48,18 @@ function AppContent() {
         if (preloadedIframe.contentWindow) {
           // Send each file individually
           for (const [path, content] of Object.entries(state.stackData || {})) {
-            preloadedIframe.contentWindow.postMessage({
-              type: 'LOAD_STACK_FILE',
-              path: path,
-              content: content
-            }, window.location.origin);
+            preloadedIframe.contentWindow.postMessage(
+              {
+                type: "LOAD_STACK_FILE",
+                path: path,
+                content: content,
+              },
+              window.location.origin,
+            );
           }
         }
       } catch (error) {
-        console.error('App: Error sending data to stackgazer iframe:', error);
+        console.error("App: Error sending data to stackgazer iframe:", error);
       }
     }, 100);
   }, [state.zip, state.stackData, state.tablesLoading]);
@@ -75,11 +80,13 @@ function AppContent() {
 
   // Global keyboard shortcuts
   const toggleSidebar = useCallback(() => {
-    setSidebarVisible(prev => !prev);
+    setSidebarVisible((prev) => !prev);
   }, []);
 
   const focusFilterInput = useCallback(() => {
-    const filterInput = document.querySelector('.filter-input') as HTMLInputElement;
+    const filterInput = document.querySelector(
+      ".filter-input",
+    ) as HTMLInputElement;
     if (filterInput) {
       filterInput.focus();
       filterInput.select();
@@ -90,7 +97,11 @@ function AppContent() {
 
   const handleArrowDown = useCallback(() => {
     const activeElement = document.activeElement as HTMLElement;
-    if (activeElement && (activeElement.classList.contains('filter-input') || activeElement.classList.contains('search-input'))) {
+    if (
+      activeElement &&
+      (activeElement.classList.contains("filter-input") ||
+        activeElement.classList.contains("search-input"))
+    ) {
       // Focus is in filter input, move to first result
       navigation.setNavigating(true);
       navigation.highlightIndex(0);
@@ -125,32 +136,44 @@ function AppContent() {
     }
   }, [navigation]);
 
-  const handleTabSwitch = useCallback((tabNumber: number) => {
-    if (tabNumber >= 1 && tabNumber <= 9) {
-      const tabIndex = tabNumber - 1;
-      if (state.openTabs[tabIndex]) {
-        dispatch({ type: 'SET_ACTIVE_TAB', id: state.openTabs[tabIndex].id });
+  const handleTabSwitch = useCallback(
+    (tabNumber: number) => {
+      if (tabNumber >= 1 && tabNumber <= 9) {
+        const tabIndex = tabNumber - 1;
+        if (state.openTabs[tabIndex]) {
+          dispatch({ type: "SET_ACTIVE_TAB", id: state.openTabs[tabIndex].id });
+        }
       }
-    }
-  }, [state.openTabs, dispatch]);
+    },
+    [state.openTabs, dispatch],
+  );
 
   // Sidebar resize functionality
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-    dragRef.current = {
-      startX: e.clientX,
-      startWidth: sidebarWidth
-    };
-  }, [sidebarWidth]);
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      setIsDragging(true);
+      dragRef.current = {
+        startX: e.clientX,
+        startWidth: sidebarWidth,
+      };
+    },
+    [sidebarWidth],
+  );
 
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isDragging || !dragRef.current) return;
+  const handleMouseMove = useCallback(
+    (e: MouseEvent) => {
+      if (!isDragging || !dragRef.current) return;
 
-    const deltaX = e.clientX - dragRef.current.startX;
-    const newWidth = Math.max(200, Math.min(600, dragRef.current.startWidth + deltaX));
-    setSidebarWidth(newWidth);
-  }, [isDragging]);
+      const deltaX = e.clientX - dragRef.current.startX;
+      const newWidth = Math.max(
+        200,
+        Math.min(600, dragRef.current.startWidth + deltaX),
+      );
+      setSidebarWidth(newWidth);
+    },
+    [isDragging],
+  );
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
@@ -160,97 +183,125 @@ function AppContent() {
   // Add global mouse event listeners for dragging
   useEffect(() => {
     if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
     } else {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
     }
 
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
     };
   }, [isDragging, handleMouseMove, handleMouseUp]);
 
   useKeyboardShortcuts([
-    { key: '/', handler: focusFilterInput },
-    { key: 'b', cmd: true, handler: toggleSidebar },
-    { key: 'ArrowDown', handler: handleArrowDown },
-    { key: 'ArrowUp', handler: handleArrowUp },
-    { key: 'Enter', handler: handleEnterOrRight },
-    { key: 'ArrowRight', handler: handleEnterOrRight },
+    { key: "/", handler: focusFilterInput },
+    { key: "b", cmd: true, handler: toggleSidebar },
+    { key: "ArrowDown", handler: handleArrowDown },
+    { key: "ArrowUp", handler: handleArrowUp },
+    { key: "Enter", handler: handleEnterOrRight },
+    { key: "ArrowRight", handler: handleEnterOrRight },
     // Tab switching with cmd-number
-    { key: '1', cmd: true, handler: () => handleTabSwitch(1) },
-    { key: '2', cmd: true, handler: () => handleTabSwitch(2) },
-    { key: '3', cmd: true, handler: () => handleTabSwitch(3) },
-    { key: '4', cmd: true, handler: () => handleTabSwitch(4) },
-    { key: '5', cmd: true, handler: () => handleTabSwitch(5) },
-    { key: '6', cmd: true, handler: () => handleTabSwitch(6) },
-    { key: '7', cmd: true, handler: () => handleTabSwitch(7) },
-    { key: '8', cmd: true, handler: () => handleTabSwitch(8) },
-    { key: '9', cmd: true, handler: () => handleTabSwitch(9) },
+    { key: "1", cmd: true, handler: () => handleTabSwitch(1) },
+    { key: "2", cmd: true, handler: () => handleTabSwitch(2) },
+    { key: "3", cmd: true, handler: () => handleTabSwitch(3) },
+    { key: "4", cmd: true, handler: () => handleTabSwitch(4) },
+    { key: "5", cmd: true, handler: () => handleTabSwitch(5) },
+    { key: "6", cmd: true, handler: () => handleTabSwitch(6) },
+    { key: "7", cmd: true, handler: () => handleTabSwitch(7) },
+    { key: "8", cmd: true, handler: () => handleTabSwitch(8) },
+    { key: "9", cmd: true, handler: () => handleTabSwitch(9) },
   ]);
 
   return (
     <>
-      <div className={`app-container ${!sidebarVisible || activeView === 'stackgazer' ? 'sidebar-collapsed' : ''}`}>
-      <IconRail
-        activeView={activeView}
-        onViewChange={handleViewChange}
-        onMemoryMonitorOpen={() => setMemoryMonitorOpen(true)}
-      />
-      {activeView !== 'stackgazer' && (
-        <>
-          <Sidebar
-            activeView={activeView}
-            isVisible={sidebarVisible}
-            width={sidebarWidth}
-          />
-          {sidebarVisible && (
-            <div
-              className="sidebar-resize-handle"
-              onMouseDown={handleMouseDown}
-            />
-          )}
-        </>
-      )}
-      {activeView === 'stackgazer' ? (
-        state.zip && state.stackData ? <StackgazerView /> : <MainPanel />
-      ) : <MainPanel />}
-      {/* Preloaded iframe that gets repositioned when stackgazer is active */}
       <div
-        id="stackgazer-iframe-container"
-        style={{
-          position: activeView === 'stackgazer' && state.zip && state.stackData ? 'static' : 'absolute',
-          left: activeView === 'stackgazer' && state.zip && state.stackData ? 'auto' : '-9999px',
-          top: activeView === 'stackgazer' && state.zip && state.stackData ? 'auto' : '-9999px',
-          width: activeView === 'stackgazer' && state.zip && state.stackData ? '100%' : '1px',
-          height: activeView === 'stackgazer' && state.zip && state.stackData ? '100%' : '1px',
-          flex: activeView === 'stackgazer' && state.zip && state.stackData ? 1 : 'none',
-          display: activeView === 'stackgazer' && state.zip && state.stackData ? 'flex' : 'block',
-          flexDirection: 'column',
-          overflow: 'hidden'
-        }}
+        className={`app-container ${!sidebarVisible || activeView === "stackgazer" ? "sidebar-collapsed" : ""}`}
       >
-        <iframe
-          src="./stackgazer.html"
-          style={{
-            width: '100%',
-            height: '100%',
-            border: 'none',
-            backgroundColor: 'white'
-          }}
-          id="stackgazer-preload"
+        <IconRail
+          activeView={activeView}
+          onViewChange={handleViewChange}
+          onMemoryMonitorOpen={() => setMemoryMonitorOpen(true)}
         />
-      </div>
-
+        {activeView !== "stackgazer" && (
+          <>
+            <Sidebar
+              activeView={activeView}
+              isVisible={sidebarVisible}
+              width={sidebarWidth}
+            />
+            {sidebarVisible && (
+              <div
+                className="sidebar-resize-handle"
+                onMouseDown={handleMouseDown}
+              />
+            )}
+          </>
+        )}
+        {activeView === "stackgazer" ? (
+          state.zip && state.stackData ? (
+            <StackgazerView />
+          ) : (
+            <MainPanel />
+          )
+        ) : (
+          <MainPanel />
+        )}
+        {/* Preloaded iframe that gets repositioned when stackgazer is active */}
+        <div
+          id="stackgazer-iframe-container"
+          style={{
+            position:
+              activeView === "stackgazer" && state.zip && state.stackData
+                ? "static"
+                : "absolute",
+            left:
+              activeView === "stackgazer" && state.zip && state.stackData
+                ? "auto"
+                : "-9999px",
+            top:
+              activeView === "stackgazer" && state.zip && state.stackData
+                ? "auto"
+                : "-9999px",
+            width:
+              activeView === "stackgazer" && state.zip && state.stackData
+                ? "100%"
+                : "1px",
+            height:
+              activeView === "stackgazer" && state.zip && state.stackData
+                ? "100%"
+                : "1px",
+            flex:
+              activeView === "stackgazer" && state.zip && state.stackData
+                ? 1
+                : "none",
+            display:
+              activeView === "stackgazer" && state.zip && state.stackData
+                ? "flex"
+                : "block",
+            flexDirection: "column",
+            overflow: "hidden",
+          }}
+        >
+          <iframe
+            src="./stackgazer.html"
+            style={{
+              width: "100%",
+              height: "100%",
+              border: "none",
+              backgroundColor: "white",
+            }}
+            id="stackgazer-preload"
+          />
+        </div>
       </div>
 
       {/* Memory Monitor Modal - rendered outside app container for proper overlay */}
@@ -272,4 +323,4 @@ function App() {
   );
 }
 
-export default App
+export default App;

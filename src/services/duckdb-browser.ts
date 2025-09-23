@@ -1,5 +1,9 @@
-import { type DuckDBService, type DuckDBConnection, type DuckDBQueryResult } from './duckdb-interface';
-import { DuckDBService as OriginalDuckDBService } from './duckdb';
+import {
+  type DuckDBService,
+  type DuckDBConnection,
+  type DuckDBQueryResult,
+} from "./duckdb-interface";
+import { DuckDBService as OriginalDuckDBService } from "./duckdb";
 
 class BrowserDuckDBQueryResult implements DuckDBQueryResult {
   private data: any[];
@@ -36,14 +40,17 @@ class BrowserDuckDBConnectionImpl implements DuckDBConnection {
   }
 }
 
-export class BrowserDuckDBService extends OriginalDuckDBService implements DuckDBService {
+export class BrowserDuckDBService
+  extends OriginalDuckDBService
+  implements DuckDBService
+{
   async connect(): Promise<DuckDBConnection> {
     return new BrowserDuckDBConnectionImpl(this);
   }
 
   async registerFileText(filename: string, content: string): Promise<void> {
     if (!this.db) {
-      throw new Error('DuckDB not initialized');
+      throw new Error("DuckDB not initialized");
     }
     await this.db.registerFileText(filename, content);
   }

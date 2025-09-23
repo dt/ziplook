@@ -4,61 +4,68 @@
  * Manages FlexSearch index for fast text search
  */
 
-import { LogSearchIndex } from '../services/logSearchIndex';
-import { LogParser } from '../services/logParser';
-import { QueryParser } from '../services/queryParser';
+import { LogSearchIndex } from "../services/logSearchIndex";
+import { LogParser } from "../services/logParser";
+import { QueryParser } from "../services/queryParser";
 
 interface SetZipWorkerPortMessage {
-  type: 'setZipWorkerPort';
+  type: "setZipWorkerPort";
   port: MessagePort;
 }
 
 interface RegisterFilesMessage {
-  type: 'registerFiles';
+  type: "registerFiles";
   id: string;
   files: Array<{ path: string; name: string; size: number }>;
 }
 
 interface StartIndexingMessage {
-  type: 'startIndexing';
+  type: "startIndexing";
   id: string;
   filePaths: string[]; // Just paths of already-registered files to index
 }
 
 interface IndexSingleFileMessage {
-  type: 'indexSingleFile';
+  type: "indexSingleFile";
   id: string;
   file: { path: string; name: string; size: number };
 }
 
 interface StopIndexingMessage {
-  type: 'stopIndexing';
+  type: "stopIndexing";
   id: string;
 }
 
 interface SearchMessage {
-  type: 'search';
+  type: "search";
   id: string;
   query: string;
 }
 
 interface GetFileStatusesMessage {
-  type: 'getFileStatuses';
+  type: "getFileStatuses";
   id: string;
 }
 
 interface SearchResponseMessage {
-  type: 'searchResponse';
+  type: "searchResponse";
   id: string;
   success: boolean;
   results?: any[];
   error?: string;
 }
 
-type IndexingWorkerMessage = SetZipWorkerPortMessage | RegisterFilesMessage | StartIndexingMessage | IndexSingleFileMessage | StopIndexingMessage | SearchMessage | GetFileStatusesMessage;
+type IndexingWorkerMessage =
+  | SetZipWorkerPortMessage
+  | RegisterFilesMessage
+  | StartIndexingMessage
+  | IndexSingleFileMessage
+  | StopIndexingMessage
+  | SearchMessage
+  | GetFileStatusesMessage;
 
 interface IndexingProgressResponse {
-  type: 'indexingProgress';
+  type: "indexingProgress";
   id: string;
   current: number;
   total: number;
@@ -66,7 +73,7 @@ interface IndexingProgressResponse {
 }
 
 interface IndexingCompleteResponse {
-  type: 'indexingComplete';
+  type: "indexingComplete";
   id: string;
   success: boolean;
   totalEntries: number;
@@ -75,34 +82,33 @@ interface IndexingCompleteResponse {
 }
 
 interface IndexingFileResultResponse {
-  type: 'indexingFileResult';
+  type: "indexingFileResult";
   id: string;
   filePath: string;
   entries: any[];
 }
 
 interface IndexingErrorResponse {
-  type: 'indexingError';
+  type: "indexingError";
   id: string;
   error: string;
 }
 
 interface FileStatusesResponse {
-  type: 'fileStatuses';
+  type: "fileStatuses";
   id: string;
   success: boolean;
   fileStatuses?: Array<{
     path: string;
     name: string;
     size: number;
-    status: 'unindexed' | 'indexing' | 'indexed' | 'error';
+    status: "unindexed" | "indexing" | "indexed" | "error";
     entries?: number;
     indexedAt?: Date;
     error?: string;
   }>;
   error?: string;
 }
-
 
 // Global state
 let zipWorker: MessagePort | null = null;
@@ -113,129 +119,24 @@ let globalEntryIdCounter = 0; // Global counter to ensure unique IDs across all 
 // Initialize search index when worker boots
 const searchIndex = new LogSearchIndex();
 
-
 // Using imported LogParser instead of local WorkerLogParser
-
-/*
-// Legacy WorkerLogParser class (TODO: remove after confirming LogParser works)
-class WorkerLogParser {
-  private static readonly LOG_REGEX_WITH_COUNTER = /^([IWEF])([0-9: ]{15})(\.\d+)( \d+ )(\d+@)([^:]+)(:\d+)( ⋮ )(\[[^\]]*\]) (\d+) (.*)$/;
-  private static readonly LOG_REGEX_WITHOUT_COUNTER = /^([IWEF])([0-9: ]{15})(\.\d+)( \d+ )([^@:]+)(:\d+)( ⋮ )(\[[^\]]*\]) (.*)$/;
-
-  parseLogFile(content: string, sourceFile: string) {
-    const lines = content.split('\n');
-    const entries = [];
-    let currentEntry: any = null;
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const parsed = this.parseLogLine(line, i + 1, sourceFile);
-
-      if (parsed) {
-        // New log entry
-        if (currentEntry) {
-          entries.push(currentEntry);
-        }
-        currentEntry = {
-          id: `${sourceFile}:${i + 1}`,
-          ...parsed,
-          rawMessage: line,
-          message: parsed.message || '',
-          sourceFile,
-          startLine: i + 1,
-          endLine: i + 1
-        };
-      } else if (currentEntry) {
-        // Continuation line
-        currentEntry.rawMessage += '\n' + line;
-        currentEntry.message += '\n' + line;
-        currentEntry.endLine = i + 1;
-      }
-    }
-
-    if (currentEntry) {
-      entries.push(currentEntry);
-    }
-
-    return { entries, stats: { parsedEntries: entries.length } };
-  }
-
-  private parseLogLine(line: string, _lineNum: number, _sourceFile: string) {
-    // Try regex with counter first
-    let match = line.match(WorkerLogParser.LOG_REGEX_WITH_COUNTER);
-
-    if (!match) {
-      // Try regex without counter
-      match = line.match(WorkerLogParser.LOG_REGEX_WITHOUT_COUNTER);
-      if (!match) {
-        return null;
-      }
-    }
-
-    const [, level, dateTime, microseconds, , goroutineInfo, file, lineInfo, , tagsStr, counterOrMessage, message] = match;
-
-    // Extract goroutine ID
-    const goroutineId = goroutineInfo ? goroutineInfo.replace('@', '') : '';
-
-    // Parse tags
-    const tags = this.parseTags(tagsStr);
-
-    return {
-      level: level as 'I' | 'W' | 'E' | 'F',
-      timestamp: `${dateTime.trim()}${microseconds}`,
-      goroutineId,
-      file: file + lineInfo,
-      tags: tags.tags,
-      tagMap: tags.tagMap,
-      message: message || counterOrMessage
-    };
-  }
-
-  private parseTags(tagsStr: string) {
-    const tags: string[] = [];
-    const tagMap: Record<string, string> = {};
-
-    if (!tagsStr || tagsStr === '[]') {
-      return { tags, tagMap };
-    }
-
-    // Remove brackets and split by comma
-    const cleanTags = tagsStr.slice(1, -1);
-    const tagParts = cleanTags.split(',');
-
-    for (const part of tagParts) {
-      const trimmed = part.trim();
-      if (trimmed) {
-        tags.push(trimmed);
-
-        // Try to parse key=value pairs
-        const equalIndex = trimmed.indexOf('=');
-        if (equalIndex > 0) {
-          const key = trimmed.slice(0, equalIndex);
-          const value = trimmed.slice(equalIndex + 1);
-          tagMap[key] = value;
-        }
-      }
-    }
-
-    return { tags, tagMap };
-  }
-}
-*/
 
 function sendMessageToZipWorker(message: any): Promise<any> {
   return new Promise((resolve, reject) => {
     if (!zipWorker) {
-      console.error('🔧 Indexing worker: Zip worker not available!');
-      reject(new Error('Zip worker not available'));
+      console.error("🔧 Indexing worker: Zip worker not available!");
+      reject(new Error("Zip worker not available"));
       return;
     }
 
     const id = `zip_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     const timeoutId = setTimeout(() => {
-      console.error('🔧 Indexing worker: Zip worker request timeout for', message.type);
-      reject(new Error('Zip worker request timeout'));
+      console.error(
+        "🔧 Indexing worker: Zip worker request timeout for",
+        message.type,
+      );
+      reject(new Error("Zip worker request timeout"));
     }, 30000); // 30 second timeout
 
     const handler = (event: MessageEvent) => {
@@ -272,24 +173,25 @@ async function registerFiles(message: RegisterFilesMessage) {
   const { id, files } = message;
 
   // Register all files in the search index as unindexed
-  files.forEach(file => {
+  files.forEach((file) => {
     searchIndex.registerFile(file.path, file.name, file.size);
   });
 
   // Auto-queue log files for indexing
-  const logFiles = files.filter(file =>
-    file.path.endsWith('.log') ||
-    file.path.includes('cockroach.log') ||
-    file.path.includes('stderr') ||
-    file.path.includes('stdout')
+  const logFiles = files.filter(
+    (file) =>
+      file.path.endsWith(".log") ||
+      file.path.includes("cockroach.log") ||
+      file.path.includes("stderr") ||
+      file.path.includes("stdout"),
   );
 
   if (logFiles.length > 0) {
     // Start indexing the log files automatically
     await startIndexing({
-      type: 'startIndexing',
+      type: "startIndexing",
       id: `auto_${id}`,
-      filePaths: logFiles.map(f => f.path)
+      filePaths: logFiles.map((f) => f.path),
     });
   }
 }
@@ -302,7 +204,7 @@ async function startIndexing(message: StartIndexingMessage) {
 
   // Get file info from search index registry
   const stats = searchIndex.getIndexStats();
-  const filesToIndex = filePaths.map(path => {
+  const filesToIndex = filePaths.map((path) => {
     const fileStatus = stats.fileStatuses.get(path);
     if (!fileStatus) {
       throw new Error(`File ${path} not registered in search index`);
@@ -310,7 +212,7 @@ async function startIndexing(message: StartIndexingMessage) {
     return {
       path: fileStatus.path,
       name: fileStatus.name,
-      size: fileStatus.size
+      size: fileStatus.size,
     };
   });
 
@@ -320,7 +222,6 @@ async function startIndexing(message: StartIndexingMessage) {
   let totalEntries = 0;
 
   try {
-
     // Process each log file individually
     for (let i = 0; i < actualLogFiles.length; i++) {
       if (shouldStop || currentIndexingId !== id) {
@@ -331,22 +232,25 @@ async function startIndexing(message: StartIndexingMessage) {
 
       // Send progress update
       self.postMessage({
-        type: 'indexingProgress',
+        type: "indexingProgress",
         id,
         current: i + 1,
         total: actualLogFiles.length,
         fileName: logFile.name,
-        } as IndexingProgressResponse);
+      } as IndexingProgressResponse);
 
       try {
         // Request this single file from zip worker
         const fileResponse = await sendMessageToZipWorker({
-          type: 'readFile',
-          path: logFile.path
+          type: "readFile",
+          path: logFile.path,
         });
 
         if (!fileResponse.success) {
-          console.warn(`🔧 Indexing worker: Failed to read ${logFile.path}:`, fileResponse.error);
+          console.warn(
+            `🔧 Indexing worker: Failed to read ${logFile.path}:`,
+            fileResponse.error,
+          );
           continue;
         }
 
@@ -355,7 +259,10 @@ async function startIndexing(message: StartIndexingMessage) {
           searchIndex.markFileAsIndexing(logFile.path);
 
           // Parse the log file
-          const parseResult = parser.parseLogFile(fileResponse.result.text, logFile.path);
+          const parseResult = parser.parseLogFile(
+            fileResponse.result.text,
+            logFile.path,
+          );
           totalEntries += parseResult.entries.length;
 
           // Add entries to search index with globally unique IDs
@@ -366,43 +273,47 @@ async function startIndexing(message: StartIndexingMessage) {
           });
 
           // Mark file as indexed
-          searchIndex.markFileAsIndexed(logFile.path, parseResult.entries.length);
+          searchIndex.markFileAsIndexed(
+            logFile.path,
+            parseResult.entries.length,
+          );
 
           // Send result notification (but not the entries themselves)
           self.postMessage({
-            type: 'indexingFileResult',
+            type: "indexingFileResult",
             id,
             filePath: logFile.path,
             entries: parseResult.entries,
-                } as IndexingFileResultResponse);
+          } as IndexingFileResultResponse);
         }
 
         // Brief pause to keep worker responsive and avoid overwhelming the system
-        await new Promise(resolve => setTimeout(resolve, 50));
-
+        await new Promise((resolve) => setTimeout(resolve, 50));
       } catch (fileError) {
-        console.warn(`🔧 Indexing worker: Error processing ${logFile.path}:`, fileError);
+        console.warn(
+          `🔧 Indexing worker: Error processing ${logFile.path}:`,
+          fileError,
+        );
         continue;
       }
     }
 
     if (!shouldStop && currentIndexingId === id) {
       self.postMessage({
-        type: 'indexingComplete',
+        type: "indexingComplete",
         id,
         success: true,
         totalEntries,
-        ruleDescription: actualLogFiles.length > 0 ? '(*.log)' : undefined,
-        } as IndexingCompleteResponse);
+        ruleDescription: actualLogFiles.length > 0 ? "(*.log)" : undefined,
+      } as IndexingCompleteResponse);
     }
-
   } catch (error) {
     if (currentIndexingId === id) {
       self.postMessage({
-        type: 'indexingError',
+        type: "indexingError",
         id,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        } as IndexingErrorResponse);
+        error: error instanceof Error ? error.message : "Unknown error",
+      } as IndexingErrorResponse);
     }
   }
 }
@@ -427,7 +338,7 @@ async function indexSingleFile(message: IndexSingleFileMessage) {
 
     // Send progress update
     self.postMessage({
-      type: 'indexingProgress',
+      type: "indexingProgress",
       id,
       current: 1,
       total: 1,
@@ -436,19 +347,25 @@ async function indexSingleFile(message: IndexSingleFileMessage) {
 
     // Request file content from zip worker
     const fileResponse = await sendMessageToZipWorker({
-      type: 'readFile',
-      path: file.path
+      type: "readFile",
+      path: file.path,
     });
 
     if (!fileResponse.success) {
-      searchIndex.markFileAsError(file.path, fileResponse.error || 'Failed to read file');
+      searchIndex.markFileAsError(
+        file.path,
+        fileResponse.error || "Failed to read file",
+      );
       return;
     }
 
     if (fileResponse.result?.text) {
       // Parse the log file
       const parser = new LogParser();
-      const parseResult = parser.parseLogFile(fileResponse.result.text, file.path);
+      const parseResult = parser.parseLogFile(
+        fileResponse.result.text,
+        file.path,
+      );
 
       // Add entries to search index with globally unique IDs
       parseResult.entries.forEach((entry) => {
@@ -461,27 +378,27 @@ async function indexSingleFile(message: IndexSingleFileMessage) {
 
       // Send completion notification
       self.postMessage({
-        type: 'indexingFileResult',
+        type: "indexingFileResult",
         id,
         filePath: file.path,
         entries: parseResult.entries,
-        } as IndexingFileResultResponse);
+      } as IndexingFileResultResponse);
 
       self.postMessage({
-        type: 'indexingComplete',
+        type: "indexingComplete",
         id,
         success: true,
         totalEntries: parseResult.entries.length,
         ruleDescription: undefined, // Single file indexing doesn't include rule description
-        } as IndexingCompleteResponse);
+      } as IndexingCompleteResponse);
     }
-
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
     searchIndex.markFileAsError(file.path, errorMessage);
 
     self.postMessage({
-      type: 'indexingError',
+      type: "indexingError",
       id,
       error: errorMessage,
     } as IndexingErrorResponse);
@@ -496,13 +413,13 @@ async function performSearch(message: SearchMessage) {
   try {
     // Check if search index is ready
     if (!searchIndex.isIndexReady()) {
-      console.log('🔍 Search index not ready');
+      console.log("🔍 Search index not ready");
       self.postMessage({
-        type: 'searchResponse',
+        type: "searchResponse",
         id,
         success: false,
-        error: 'Search index not ready',
-        } as SearchResponseMessage);
+        error: "Search index not ready",
+      } as SearchResponseMessage);
       return;
     }
 
@@ -511,7 +428,7 @@ async function performSearch(message: SearchMessage) {
     console.log(`🔍 Search index stats:`, {
       totalEntries: stats.totalEntries,
       indexedFiles: stats.indexedFiles.size,
-      fileStatusesCount: stats.fileStatuses.size
+      fileStatusesCount: stats.fileStatuses.size,
     });
 
     // Parse the query
@@ -524,29 +441,31 @@ async function performSearch(message: SearchMessage) {
 
     // Log sample results
     if (results.length > 0) {
-      console.log(`🔍 Sample results:`, results.slice(0, 3).map(r => ({
-        id: r.id,
-        file: r.file,
-        startLine: r.startLine,
-        messagePreview: r.message.substring(0, 100) + '...'
-      })));
+      console.log(
+        `🔍 Sample results:`,
+        results.slice(0, 3).map((r) => ({
+          id: r.id,
+          file: r.file,
+          startLine: r.startLine,
+          messagePreview: r.message.substring(0, 100) + "...",
+        })),
+      );
     }
 
     // Send results back
     self.postMessage({
-      type: 'searchResponse',
+      type: "searchResponse",
       id,
       success: true,
       results,
     } as SearchResponseMessage);
-
   } catch (error) {
-    console.error('🔍 Indexing worker: Search error:', error);
+    console.error("🔍 Indexing worker: Search error:", error);
     self.postMessage({
-      type: 'searchResponse',
+      type: "searchResponse",
       id,
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown search error',
+      error: error instanceof Error ? error.message : "Unknown search error",
     } as SearchResponseMessage);
   }
 }
@@ -559,19 +478,18 @@ async function getFileStatuses(message: GetFileStatusesMessage) {
     const fileStatuses = Array.from(stats.fileStatuses.values());
 
     self.postMessage({
-      type: 'fileStatuses',
+      type: "fileStatuses",
       id,
       success: true,
       fileStatuses,
     } as FileStatusesResponse);
-
   } catch (error) {
-    console.error('🔍 Indexing worker: Get file statuses error:', error);
+    console.error("🔍 Indexing worker: Get file statuses error:", error);
     self.postMessage({
-      type: 'fileStatuses',
+      type: "fileStatuses",
       id,
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: error instanceof Error ? error.message : "Unknown error",
     } as FileStatusesResponse);
   }
 }
@@ -580,31 +498,33 @@ async function getFileStatuses(message: GetFileStatusesMessage) {
 self.onmessage = (event: MessageEvent<IndexingWorkerMessage>) => {
   const message = event.data;
 
-
   switch (message.type) {
-    case 'setZipWorkerPort':
+    case "setZipWorkerPort":
       setZipWorkerPort(message);
       break;
-    case 'registerFiles':
+    case "registerFiles":
       registerFiles(message);
       break;
-    case 'startIndexing':
+    case "startIndexing":
       startIndexing(message);
       break;
-    case 'indexSingleFile':
+    case "indexSingleFile":
       indexSingleFile(message);
       break;
-    case 'stopIndexing':
+    case "stopIndexing":
       stopIndexing(message);
       break;
-    case 'search':
+    case "search":
       performSearch(message);
       break;
-    case 'getFileStatuses':
+    case "getFileStatuses":
       getFileStatuses(message);
       break;
     default:
-      console.error('Unknown indexing worker message type:', (message as any).type);
+      console.error(
+        "Unknown indexing worker message type:",
+        (message as any).type,
+      );
   }
 };
 

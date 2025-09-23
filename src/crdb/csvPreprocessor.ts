@@ -1,15 +1,15 @@
-import { protoDecoder, ProtoDecoder } from './protoDecoder';
-import { prettyKey } from './prettyKey';
-import { findProtoType } from './protoRegistry';
+import { protoDecoder, ProtoDecoder } from "./protoDecoder";
+import { prettyKey } from "./prettyKey";
+import { findProtoType } from "./protoRegistry";
 
 // Utility function to try replacing a value with its pretty key representation
 function tryReplaceWithPrettyKey(value: string): string {
-  if (!value || typeof value !== 'string') {
+  if (!value || typeof value !== "string") {
     return value;
   }
 
   // Handle hex keys (start with \x)
-  if (value === '\\x' || value.startsWith('\\x')) {
+  if (value === "\\x" || value.startsWith("\\x")) {
     try {
       const decoded = prettyKey(value);
       return decoded.pretty;
@@ -27,10 +27,16 @@ function tryReplaceWithPrettyKey(value: string): string {
       for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i);
       }
-      const hexStr = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+      const hexStr = Array.from(bytes)
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
 
       // For base64-decoded keys, try to format even short values
-      if (hexStr.length >= 2 && hexStr.length % 2 === 0 && /^[0-9a-fA-F]+$/.test(hexStr)) {
+      if (
+        hexStr.length >= 2 &&
+        hexStr.length % 2 === 0 &&
+        /^[0-9a-fA-F]+$/.test(hexStr)
+      ) {
         // Single byte values are likely table IDs
         if (hexStr.length === 2) {
           const tableId = parseInt(hexStr, 16);
@@ -62,13 +68,13 @@ function processObjectForKeys(obj: any): any {
   }
 
   if (Array.isArray(obj)) {
-    return obj.map(item => processObjectForKeys(item));
+    return obj.map((item) => processObjectForKeys(item));
   }
 
-  if (typeof obj === 'object') {
+  if (typeof obj === "object") {
     const result: any = {};
     for (const [key, value] of Object.entries(obj)) {
-      if (key.toLowerCase().includes('key') && typeof value === 'string') {
+      if (key.toLowerCase().includes("key") && typeof value === "string") {
         result[key] = tryReplaceWithPrettyKey(value);
       } else {
         result[key] = processObjectForKeys(value);
@@ -89,14 +95,17 @@ export interface PreprocessOptions {
 }
 
 // Parse CSV/TSV content and return header and rows
-function parseDelimited(content: string, delimiter: string = '\t'): { headers: string[]; rows: string[][] } {
-  const lines = content.trim().split('\n');
+function parseDelimited(
+  content: string,
+  delimiter: string = "\t",
+): { headers: string[]; rows: string[][] } {
+  const lines = content.trim().split("\n");
   if (lines.length === 0) {
     return { headers: [], rows: [] };
   }
 
   const headers = lines[0].split(delimiter);
-  const rows = lines.slice(1).map(line => line.split(delimiter));
+  const rows = lines.slice(1).map((line) => line.split(delimiter));
 
   return { headers, rows };
 }
@@ -104,10 +113,10 @@ function parseDelimited(content: string, delimiter: string = '\t'): { headers: s
 // Convert hex string to Uint8Array
 function hexToBytes(hex: string): Uint8Array {
   // Remove \x prefix if present
-  hex = hex.replace(/^\\x/i, '');
+  hex = hex.replace(/^\\x/i, "");
 
   if (hex.length % 2 !== 0) {
-    throw new Error('Invalid hex string');
+    throw new Error("Invalid hex string");
   }
 
   const bytes = new Uint8Array(hex.length / 2);
@@ -123,7 +132,7 @@ function createFallbackJson(hexValue: string): string {
     const bytes = hexToBytes(hexValue);
 
     // Try to decode as UTF-8
-    const decoder = new TextDecoder('utf-8', { fatal: true });
+    const decoder = new TextDecoder("utf-8", { fatal: true });
     const utf8String = decoder.decode(bytes);
 
     // If successful, return JSON with the string value
@@ -141,13 +150,12 @@ function createFallbackJson(hexValue: string): string {
   }
 }
 
-
 // Main preprocessing function - transforms keys in place
 export function preprocessCSV(
   content: string,
-  options: PreprocessOptions
+  options: PreprocessOptions,
 ): string {
-  const delimiter = options.delimiter || '\t';
+  const delimiter = options.delimiter || "\t";
   const decoder = options.protoDecoder || protoDecoder; // Use provided decoder or fallback to global
   const { headers, rows } = parseDelimited(content, delimiter);
 
@@ -160,38 +168,44 @@ export function preprocessCSV(
   const protoColumns = new Map<number, string | null>(); // Map column index to proto type (or null if no mapping)
   let infoKeyColumnIndex = -1; // For dynamic proto resolution in job_info table
 
-
   headers.forEach((header, index) => {
     const columnName = header.toLowerCase();
 
     // Check for key columns
     if (options.decodeKeys) {
-      if (columnName.includes('key') ||
-          columnName === 'start' ||
-          columnName === 'end' ||
-          columnName.includes('start_key') ||
-          columnName.includes('end_key')) {
+      if (
+        columnName.includes("key") ||
+        columnName === "start" ||
+        columnName === "end" ||
+        columnName.includes("start_key") ||
+        columnName.includes("end_key")
+      ) {
         keyColumns.add(index);
       }
     }
 
     // Track info_key column for job_info tables
-    if (columnName === 'info_key' && options.tableName.toLowerCase().includes('job_info')) {
+    if (
+      columnName === "info_key" &&
+      options.tableName.toLowerCase().includes("job_info")
+    ) {
       infoKeyColumnIndex = index;
     }
 
     // Check for proto columns
     if (options.decodeProtos) {
-      if (columnName === 'config' || columnName === 'descriptor' ||
-          columnName === 'payload' || columnName === 'progress' || columnName === 'value') {
+      if (
+        columnName === "config" ||
+        columnName === "descriptor" ||
+        columnName === "payload" ||
+        columnName === "progress" ||
+        columnName === "value"
+      ) {
         const mapping = findProtoType(options.tableName, header);
         protoColumns.set(index, mapping?.protoType || null);
       }
     }
   });
-
-
-
 
   // If no columns need processing and we're not doing JSON key processing, return original content
   if (keyColumns.size === 0 && protoColumns.size === 0 && !options.decodeKeys) {
@@ -202,11 +216,10 @@ export function preprocessCSV(
 
   const processedRows = rows.map((row) => {
     return row.map((value, colIndex) => {
-
       // Transform key columns
       if (keyColumns.has(colIndex)) {
         // Handle null/empty differently from \x (which is a valid empty key)
-        if (value === '\\N' || value === 'NULL') {
+        if (value === "\\N" || value === "NULL") {
           return value;
         }
         return tryReplaceWithPrettyKey(value);
@@ -216,58 +229,59 @@ export function preprocessCSV(
       let protoType = protoColumns.get(colIndex);
       if (protoType !== undefined && options.decodeProtos) {
         // Handle dynamic proto type resolution for job_info table
-        if (protoType === 'dynamic:job_info' && infoKeyColumnIndex >= 0) {
+        if (protoType === "dynamic:job_info" && infoKeyColumnIndex >= 0) {
           const infoKey = row[infoKeyColumnIndex];
-          if (infoKey === 'legacy_payload') {
-            protoType = 'cockroach.sql.jobs.jobspb.Payload';
-          } else if (infoKey === 'legacy_progress') {
-            protoType = 'cockroach.sql.jobs.jobspb.Progress';
+          if (infoKey === "legacy_payload") {
+            protoType = "cockroach.sql.jobs.jobspb.Payload";
+          } else if (infoKey === "legacy_progress") {
+            protoType = "cockroach.sql.jobs.jobspb.Progress";
           } else {
             // Unknown info_key type - use fallback JSON wrapper
-            if (value && value !== '\\N' && value !== 'NULL') {
+            if (value && value !== "\\N" && value !== "NULL") {
               return createFallbackJson(value);
             }
             return value;
           }
-
         }
 
-        if (value && value !== '\\N' && value !== 'NULL') {
+        if (value && value !== "\\N" && value !== "NULL") {
           // Special case: job_info table might have JSON-like strings that aren't protobuf
-          if (value.startsWith('{') && value.endsWith('}')) {
+          if (value.startsWith("{") && value.endsWith("}")) {
             // This is already JSON or JSON-like, leave it as is
             return value;
           }
 
           // If we have an explicit proto mapping, decode it
-          if (protoType && protoType !== 'dynamic:job_info') {
-              try {
+          if (protoType && protoType !== "dynamic:job_info") {
+            try {
+              const bytes = hexToBytes(value);
 
-                const bytes = hexToBytes(value);
+              const decoded = decoder.decode(bytes, protoType);
 
+              // Don't use fallback for job_info - if the specific proto fails, leave as hex
+              // The fallback was incorrectly decoding Progress data as SpanConfig
 
-                const decoded = decoder.decode(bytes, protoType);
-
-                // Don't use fallback for job_info - if the specific proto fails, leave as hex
-                // The fallback was incorrectly decoding Progress data as SpanConfig
-
-                if (decoded.decoded && !decoded.error) {
-                  // Return as compact JSON string
-                  return JSON.stringify(decoded.decoded);
-                }
-              } catch {
-                // Don't let protobuf errors stop processing of subsequent rows
+              if (decoded.decoded && !decoded.error) {
+                // Return as compact JSON string
+                return JSON.stringify(decoded.decoded);
               }
+            } catch {
+              // Don't let protobuf errors stop processing of subsequent rows
+            }
           }
         }
       }
 
       // Process JSON columns for key fields (handle both regular and escaped JSON)
-      if (value && typeof value === 'string') {
+      if (value && typeof value === "string") {
         let jsonStr = value.trim();
 
         // Check for quoted JSON with doubled quotes inside
-        if (jsonStr.startsWith('"{') && jsonStr.endsWith('}"') && jsonStr.includes('""')) {
+        if (
+          jsonStr.startsWith('"{') &&
+          jsonStr.endsWith('}"') &&
+          jsonStr.includes('""')
+        ) {
           try {
             // Remove outer quotes
             jsonStr = jsonStr.slice(1, -1);
@@ -279,14 +293,18 @@ export function preprocessCSV(
         }
 
         // Now check if we have JSON (either direct or processed)
-        if (jsonStr.startsWith('{') && jsonStr.endsWith('}')) {
+        if (jsonStr.startsWith("{") && jsonStr.endsWith("}")) {
           try {
             const jsonObj = JSON.parse(jsonStr);
             const processedObj = processObjectForKeys(jsonObj);
             const result = JSON.stringify(processedObj);
 
             // If it was originally quoted JSON with doubled quotes, restore the format
-            if (value.startsWith('"{') && value.endsWith('}"') && value.includes('""')) {
+            if (
+              value.startsWith('"{') &&
+              value.endsWith('}"') &&
+              value.includes('""')
+            ) {
               return '"' + result.replace(/"/g, '""') + '"';
             }
             return result;
@@ -303,11 +321,10 @@ export function preprocessCSV(
   // Reconstruct the CSV with transformed values
   const processedLines = [
     headers.join(delimiter),
-    ...processedRows.map(row => row.join(delimiter))
+    ...processedRows.map((row) => row.join(delimiter)),
   ];
 
-
-  return processedLines.join('\n');
+  return processedLines.join("\n");
 }
 
 // Check if preprocessing would be beneficial for this table
@@ -316,25 +333,25 @@ export function shouldPreprocess(tableName: string, content: string): boolean {
 
   // Check for known CRDB system tables with proto/hex data
   const knownTables = [
-    'span_config',  // matches span_configurations, span_configs, etc.
-    'zones',
-    'descriptor',
-    'jobs',
-    'job_info',
-    'lease',
-    'rangelog',
-    'replication_stats'
+    "span_config", // matches span_configurations, span_configs, etc.
+    "zones",
+    "descriptor",
+    "jobs",
+    "job_info",
+    "lease",
+    "rangelog",
+    "replication_stats",
   ];
 
-  const isKnownTable = knownTables.some(t => normalizedName.includes(t));
+  const isKnownTable = knownTables.some((t) => normalizedName.includes(t));
   if (isKnownTable) {
     return true;
   }
 
   // Sample first few lines to check for hex data
-  const lines = content.split('\n').slice(0, 5);
+  const lines = content.split("\n").slice(0, 5);
   for (const line of lines) {
-    if (line.includes('\\x')) {
+    if (line.includes("\\x")) {
       return true;
     }
   }

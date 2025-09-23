@@ -1,8 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
-import { useKeyboardShortcuts, KeyboardShortcut } from './useKeyboardShortcuts';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { renderHook, act } from "@testing-library/react";
+import { useKeyboardShortcuts, KeyboardShortcut } from "./useKeyboardShortcuts";
 
-describe('useKeyboardShortcuts', () => {
+describe("useKeyboardShortcuts", () => {
   let mockHandlers: any;
 
   beforeEach(() => {
@@ -12,22 +12,22 @@ describe('useKeyboardShortcuts', () => {
       onCloseTab: vi.fn(),
       onSwitchTab: vi.fn(),
       onToggleSidebar: vi.fn(),
-      onSearch: vi.fn()
+      onSearch: vi.fn(),
     };
   });
 
-  describe('keyboard event handling', () => {
-    it('Cmd+Enter executes query', () => {
+  describe("keyboard event handling", () => {
+    it("Cmd+Enter executes query", () => {
       const shortcuts: KeyboardShortcut[] = [
-        { key: 'Enter', cmd: true, handler: mockHandlers.onExecuteQuery }
+        { key: "Enter", cmd: true, handler: mockHandlers.onExecuteQuery },
       ];
 
       renderHook(() => useKeyboardShortcuts(shortcuts));
 
-      const event = new KeyboardEvent('keydown', {
-        key: 'Enter',
+      const event = new KeyboardEvent("keydown", {
+        key: "Enter",
         metaKey: true,
-        bubbles: true
+        bubbles: true,
       });
 
       act(() => {
@@ -37,17 +37,17 @@ describe('useKeyboardShortcuts', () => {
       expect(mockHandlers.onExecuteQuery).toHaveBeenCalledTimes(1);
     });
 
-    it('Ctrl+Enter executes query', () => {
+    it("Ctrl+Enter executes query", () => {
       const shortcuts: KeyboardShortcut[] = [
-        { key: 'Enter', ctrl: true, handler: mockHandlers.onExecuteQuery }
+        { key: "Enter", ctrl: true, handler: mockHandlers.onExecuteQuery },
       ];
 
       renderHook(() => useKeyboardShortcuts(shortcuts));
 
-      const event = new KeyboardEvent('keydown', {
-        key: 'Enter',
+      const event = new KeyboardEvent("keydown", {
+        key: "Enter",
         ctrlKey: true,
-        bubbles: true
+        bubbles: true,
       });
 
       act(() => {
@@ -57,17 +57,17 @@ describe('useKeyboardShortcuts', () => {
       expect(mockHandlers.onExecuteQuery).toHaveBeenCalledTimes(1);
     });
 
-    it('Cmd+O opens file', () => {
+    it("Cmd+O opens file", () => {
       const shortcuts: KeyboardShortcut[] = [
-        { key: 'o', cmd: true, handler: mockHandlers.onOpenFile }
+        { key: "o", cmd: true, handler: mockHandlers.onOpenFile },
       ];
 
       renderHook(() => useKeyboardShortcuts(shortcuts));
 
-      const event = new KeyboardEvent('keydown', {
-        key: 'o',
+      const event = new KeyboardEvent("keydown", {
+        key: "o",
         metaKey: true,
-        bubbles: true
+        bubbles: true,
       });
 
       act(() => {
@@ -77,16 +77,16 @@ describe('useKeyboardShortcuts', () => {
       expect(mockHandlers.onOpenFile).toHaveBeenCalledTimes(1);
     });
 
-    it('should not trigger for non-matching shortcuts', () => {
+    it("should not trigger for non-matching shortcuts", () => {
       const shortcuts: KeyboardShortcut[] = [
-        { key: 'Enter', cmd: true, handler: mockHandlers.onExecuteQuery }
+        { key: "Enter", cmd: true, handler: mockHandlers.onExecuteQuery },
       ];
 
       renderHook(() => useKeyboardShortcuts(shortcuts));
 
-      const event = new KeyboardEvent('keydown', {
-        key: 'a',
-        bubbles: true
+      const event = new KeyboardEvent("keydown", {
+        key: "a",
+        bubbles: true,
       });
 
       act(() => {
@@ -97,43 +97,46 @@ describe('useKeyboardShortcuts', () => {
     });
   });
 
-  describe('cleanup', () => {
-    it('should remove event listener on unmount', () => {
-      const removeEventListenerSpy = vi.spyOn(window, 'removeEventListener');
+  describe("cleanup", () => {
+    it("should remove event listener on unmount", () => {
+      const removeEventListenerSpy = vi.spyOn(window, "removeEventListener");
 
       const shortcuts: KeyboardShortcut[] = [
-        { key: 'Enter', cmd: true, handler: mockHandlers.onExecuteQuery }
+        { key: "Enter", cmd: true, handler: mockHandlers.onExecuteQuery },
       ];
 
       const { unmount } = renderHook(() => useKeyboardShortcuts(shortcuts));
 
       unmount();
 
-      expect(removeEventListenerSpy).toHaveBeenCalledWith('keydown', expect.any(Function));
+      expect(removeEventListenerSpy).toHaveBeenCalledWith(
+        "keydown",
+        expect.any(Function),
+      );
     });
   });
 
-  describe('edge cases', () => {
-    it('should ignore shortcuts when typing in input (without modifiers)', () => {
+  describe("edge cases", () => {
+    it("should ignore shortcuts when typing in input (without modifiers)", () => {
       const shortcuts: KeyboardShortcut[] = [
-        { key: 'a', handler: mockHandlers.onExecuteQuery }
+        { key: "a", handler: mockHandlers.onExecuteQuery },
       ];
 
       renderHook(() => useKeyboardShortcuts(shortcuts));
 
-      const input = document.createElement('input');
+      const input = document.createElement("input");
       document.body.appendChild(input);
       input.focus();
 
-      const event = new KeyboardEvent('keydown', {
-        key: 'a',
-        bubbles: true
+      const event = new KeyboardEvent("keydown", {
+        key: "a",
+        bubbles: true,
       });
 
       // Set target manually since jsdom doesn't handle focus properly
-      Object.defineProperty(event, 'target', {
+      Object.defineProperty(event, "target", {
         value: input,
-        enumerable: true
+        enumerable: true,
       });
 
       act(() => {
@@ -146,27 +149,27 @@ describe('useKeyboardShortcuts', () => {
       document.body.removeChild(input);
     });
 
-    it('should allow shortcuts with modifiers when typing in input', () => {
+    it("should allow shortcuts with modifiers when typing in input", () => {
       const shortcuts: KeyboardShortcut[] = [
-        { key: 'Enter', cmd: true, handler: mockHandlers.onExecuteQuery }
+        { key: "Enter", cmd: true, handler: mockHandlers.onExecuteQuery },
       ];
 
       renderHook(() => useKeyboardShortcuts(shortcuts));
 
-      const input = document.createElement('input');
+      const input = document.createElement("input");
       document.body.appendChild(input);
       input.focus();
 
-      const event = new KeyboardEvent('keydown', {
-        key: 'Enter',
+      const event = new KeyboardEvent("keydown", {
+        key: "Enter",
         metaKey: true,
-        bubbles: true
+        bubbles: true,
       });
 
       // Set target manually since jsdom doesn't handle focus properly
-      Object.defineProperty(event, 'target', {
+      Object.defineProperty(event, "target", {
         value: input,
-        enumerable: true
+        enumerable: true,
       });
 
       act(() => {
@@ -179,7 +182,7 @@ describe('useKeyboardShortcuts', () => {
       document.body.removeChild(input);
     });
 
-    it('should handle empty shortcuts array', () => {
+    it("should handle empty shortcuts array", () => {
       expect(() => {
         renderHook(() => useKeyboardShortcuts([]));
       }).not.toThrow();

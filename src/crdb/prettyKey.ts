@@ -96,49 +96,49 @@ const descendingNullWithinArrayKey = 0xfe;
 
 // CRDB System Tables (preserved from original implementation)
 const SYSTEM_TABLES: Record<number, string> = {
-  0: 'NamespaceTable',
-  1: 'DescriptorTable',
-  2: 'UsersTable',
-  3: 'ZonesTable',
-  4: 'SettingsTable',
-  5: 'SystemDatabaseID',
-  11: 'TenantsTable',
-  12: 'SystemUITable',
-  13: 'PrivilegeTable',
-  14: 'EventLogTable',
-  15: 'RangeEventTable',
-  20: 'RoleOptionsTable',
-  21: 'StatementDiagnosticsRequestsTable',
-  22: 'StatementDiagnosticsTable',
-  23: 'ScheduledJobsTable',
-  24: 'SqllivenessTable',
-  25: 'MigrationsTable',
-  26: 'JoinTokensTable',
-  27: 'StatementStatisticsTable',
-  28: 'TransactionStatisticsTable',
-  29: 'DatabaseRoleSettingsTable',
-  30: 'TenantUsageTable',
-  31: 'SqlInstancesTable',
-  32: 'SpanConfigurationsTable',
-  33: 'TaskPayloadsTable',
-  34: 'TenantSettingsTable',
-  35: 'SpanCountTable',
-  36: 'SystemPrivilegeTable',
-  37: 'ExternalConnectionsTable',
-  38: 'SystemExternalConnectionsPrivilegeTable',
-  39: 'JobInfoTable',
-  40: 'JobStatusTable',
-  41: 'RegionsTable',
-  42: 'RoleMembersTable',
-  43: 'ReplicationConstraintStatsTable',
-  44: 'ReplicationStatsTable',
-  45: 'ReplicationCriticalLocalitiesTable',
-  46: 'TenantTasksTable',
-  47: 'ActivityTable',
-  48: 'SystemTransactionActivityTable',
-  49: 'SystemStatementActivityTable',
-  50: 'ActivityUpdateJobTable',
-  51: 'MVCCStatisticsTable'
+  0: "NamespaceTable",
+  1: "DescriptorTable",
+  2: "UsersTable",
+  3: "ZonesTable",
+  4: "SettingsTable",
+  5: "SystemDatabaseID",
+  11: "TenantsTable",
+  12: "SystemUITable",
+  13: "PrivilegeTable",
+  14: "EventLogTable",
+  15: "RangeEventTable",
+  20: "RoleOptionsTable",
+  21: "StatementDiagnosticsRequestsTable",
+  22: "StatementDiagnosticsTable",
+  23: "ScheduledJobsTable",
+  24: "SqllivenessTable",
+  25: "MigrationsTable",
+  26: "JoinTokensTable",
+  27: "StatementStatisticsTable",
+  28: "TransactionStatisticsTable",
+  29: "DatabaseRoleSettingsTable",
+  30: "TenantUsageTable",
+  31: "SqlInstancesTable",
+  32: "SpanConfigurationsTable",
+  33: "TaskPayloadsTable",
+  34: "TenantSettingsTable",
+  35: "SpanCountTable",
+  36: "SystemPrivilegeTable",
+  37: "ExternalConnectionsTable",
+  38: "SystemExternalConnectionsPrivilegeTable",
+  39: "JobInfoTable",
+  40: "JobStatusTable",
+  41: "RegionsTable",
+  42: "RoleMembersTable",
+  43: "ReplicationConstraintStatsTable",
+  44: "ReplicationStatsTable",
+  45: "ReplicationCriticalLocalitiesTable",
+  46: "TenantTasksTable",
+  47: "ActivityTable",
+  48: "SystemTransactionActivityTable",
+  49: "SystemStatementActivityTable",
+  50: "ActivityUpdateJobTable",
+  51: "MVCCStatisticsTable",
 };
 
 // Type enum values
@@ -189,16 +189,16 @@ const Type = {
   JsonEmptyArrayDesc: 43,
   PGVector: 44,
   LTree: 45,
-  LTreeDesc: 46
+  LTreeDesc: 46,
 } as const;
-type TypeValue = typeof Type[keyof typeof Type];
+type TypeValue = (typeof Type)[keyof typeof Type];
 
 // Direction enum
 const Direction = {
   Ascending: 1,
-  Descending: 2
+  Descending: 2,
 } as const;
-type DirectionValue = typeof Direction[keyof typeof Direction];
+type DirectionValue = (typeof Direction)[keyof typeof Direction];
 
 // PeekType implementation matching the Go version
 function peekType(b: Uint8Array): TypeValue {
@@ -238,7 +238,12 @@ function peekType(b: Uint8Array): TypeValue {
   if (m === Type.Array) return Type.Array;
   if (m === Type.True) return Type.True;
   if (m === Type.False) return Type.False;
-  if (m === durationBigNegMarker || m === durationMarker || m === durationBigPosMarker) return Type.Duration;
+  if (
+    m === durationBigNegMarker ||
+    m === durationMarker ||
+    m === durationBigPosMarker
+  )
+    return Type.Duration;
   if (m >= IntMin && m <= IntMax) return Type.Int;
   if (m >= floatNaN && m <= floatNaNDesc) return Type.Float;
   if (m >= decimalNaN && m <= decimalNaNDesc) return Type.Decimal;
@@ -255,7 +260,9 @@ function decodeVarintDescending(b: Uint8Array): [Uint8Array, number, Error?] {
   return [leftover, ~v, err];
 }
 
-function decodeUnsafeStringAscending(b: Uint8Array): [Uint8Array, string, Error?] {
+function decodeUnsafeStringAscending(
+  b: Uint8Array,
+): [Uint8Array, string, Error?] {
   if (b.length === 0 || b[0] !== bytesMarker) {
     return [b, "", new Error("not a bytes marker")];
   }
@@ -288,13 +295,19 @@ function decodeUnsafeStringAscending(b: Uint8Array): [Uint8Array, string, Error?
       }
       // Return the buffer after the terminator
       const finalRemaining = remaining.slice(i + 2);
-      const decoder = new TextDecoder('utf-8', { fatal: false });
+      const decoder = new TextDecoder("utf-8", { fatal: false });
       const str = decoder.decode(new Uint8Array(result));
       return [finalRemaining, str, undefined];
     }
 
     if (v !== escaped00) {
-      return [new Uint8Array(), "", new Error(`unknown escape sequence: ${escape.toString(16)} ${v.toString(16)}`)];
+      return [
+        new Uint8Array(),
+        "",
+        new Error(
+          `unknown escape sequence: ${escape.toString(16)} ${v.toString(16)}`,
+        ),
+      ];
     }
 
     // It's an escaped 0x00: append everything before the escape, then append 0x00
@@ -306,7 +319,9 @@ function decodeUnsafeStringAscending(b: Uint8Array): [Uint8Array, string, Error?
   }
 }
 
-function decodeUnsafeStringDescending(b: Uint8Array): [Uint8Array, string, Error?] {
+function decodeUnsafeStringDescending(
+  b: Uint8Array,
+): [Uint8Array, string, Error?] {
   if (b.length === 0 || b[0] !== bytesDescMarker) {
     return [b, "", new Error("not a bytes desc marker")];
   }
@@ -365,7 +380,11 @@ function decodeFloatAscending(buf: Uint8Array): [Uint8Array, number, Error?] {
       const floatVal2 = view2.getFloat64(0, false);
       return [b2, floatVal2, undefined];
     default:
-      return [new Uint8Array(), 0, new Error(`unknown prefix of the encoded byte slice: ${buf[0]}`)];
+      return [
+        new Uint8Array(),
+        0,
+        new Error(`unknown prefix of the encoded byte slice: ${buf[0]}`),
+      ];
   }
 }
 
@@ -382,11 +401,16 @@ function decodeDecimalAscending(buf: Uint8Array): [Uint8Array, string, Error?] {
   return decodeDecimal(buf, false);
 }
 
-function decodeDecimalDescending(buf: Uint8Array): [Uint8Array, string, Error?] {
+function decodeDecimalDescending(
+  buf: Uint8Array,
+): [Uint8Array, string, Error?] {
   return decodeDecimal(buf, true);
 }
 
-function decodeDecimal(buf: Uint8Array, invert: boolean): [Uint8Array, string, Error?] {
+function decodeDecimal(
+  buf: Uint8Array,
+  invert: boolean,
+): [Uint8Array, string, Error?] {
   if (buf.length === 0) {
     return [buf, "", new Error("insufficient bytes to decode decimal")];
   }
@@ -410,9 +434,15 @@ function decodeDecimal(buf: Uint8Array, invert: boolean): [Uint8Array, string, E
 }
 
 // Duration decoding functions - basic implementation
-function decodeDurationAscending(buf: Uint8Array): [Uint8Array, string, Error?] {
+function decodeDurationAscending(
+  buf: Uint8Array,
+): [Uint8Array, string, Error?] {
   if (peekType(buf) !== Type.Duration) {
-    return [new Uint8Array(), "", new Error(`did not find marker ${buf[0].toString(16)}`)];
+    return [
+      new Uint8Array(),
+      "",
+      new Error(`did not find marker ${buf[0].toString(16)}`),
+    ];
   }
 
   let b = buf.slice(1);
@@ -446,7 +476,9 @@ function decodeDurationAscending(buf: Uint8Array): [Uint8Array, string, Error?] 
   return [b3, result.trim(), undefined];
 }
 
-function decodeDurationDescending(buf: Uint8Array): [Uint8Array, string, Error?] {
+function decodeDurationDescending(
+  buf: Uint8Array,
+): [Uint8Array, string, Error?] {
   if (peekType(buf) !== Type.Duration) {
     return [new Uint8Array(), "", new Error("did not find marker")];
   }
@@ -484,12 +516,16 @@ function decodeDurationDescending(buf: Uint8Array): [Uint8Array, string, Error?]
 // Helper function to decode uint64 - needed for float decoding
 function decodeUint64Ascending(b: Uint8Array): [Uint8Array, number, Error?] {
   if (b.length < 8) {
-    return [new Uint8Array(), 0, new Error("insufficient bytes to decode uint64 int value")];
+    return [
+      new Uint8Array(),
+      0,
+      new Error("insufficient bytes to decode uint64 int value"),
+    ];
   }
 
   let v = 0;
   for (let i = 0; i < 8; i++) {
-    v = (v * 256) + b[i];
+    v = v * 256 + b[i];
   }
 
   return [b.slice(8), v, undefined];
@@ -502,9 +538,15 @@ function decodeUvarintDescending(b: Uint8Array): [Uint8Array, number, Error?] {
 }
 
 // BitArray decoding functions - basic implementation
-function decodeBitArrayAscending(buf: Uint8Array): [Uint8Array, string, Error?] {
+function decodeBitArrayAscending(
+  buf: Uint8Array,
+): [Uint8Array, string, Error?] {
   if (peekType(buf) !== Type.BitArray) {
-    return [new Uint8Array(), "", new Error(`did not find marker ${buf[0].toString(16)}`)];
+    return [
+      new Uint8Array(),
+      "",
+      new Error(`did not find marker ${buf[0].toString(16)}`),
+    ];
   }
 
   // For now, provide a basic implementation that at least consumes the correct bytes
@@ -532,7 +574,9 @@ function decodeBitArrayAscending(buf: Uint8Array): [Uint8Array, string, Error?] 
   return [b, "B<bitarray>", undefined];
 }
 
-function decodeBitArrayDescending(buf: Uint8Array): [Uint8Array, string, Error?] {
+function decodeBitArrayDescending(
+  buf: Uint8Array,
+): [Uint8Array, string, Error?] {
   if (peekType(buf) !== Type.BitArrayDesc) {
     return [new Uint8Array(), "", new Error(`did not find marker`)];
   }
@@ -542,12 +586,14 @@ function decodeBitArrayDescending(buf: Uint8Array): [Uint8Array, string, Error?]
 
   try {
     while (b.length > 0) {
-      const [remaining, _, err] = decodeUvarintDescending ? decodeUvarintDescending(b) : decodeUvarintAscending(b);
+      const [remaining, _, err] = decodeUvarintDescending
+        ? decodeUvarintDescending(b)
+        : decodeUvarintAscending(b);
       if (err) break;
       b = remaining;
 
       // Check for terminator
-      if (b.length > 0 && b[0] === 0xFF) {
+      if (b.length > 0 && b[0] === 0xff) {
         b = b.slice(1);
         break;
       }
@@ -560,9 +606,13 @@ function decodeBitArrayDescending(buf: Uint8Array): [Uint8Array, string, Error?]
 }
 
 // Helper functions for array key processing - exact implementations from Go
-function validateAndConsumeArrayKeyMarker(buf: Uint8Array, dir: DirectionValue): [Uint8Array, Error?] {
+function validateAndConsumeArrayKeyMarker(
+  buf: Uint8Array,
+  dir: DirectionValue,
+): [Uint8Array, Error?] {
   const typ = peekType(buf);
-  const expected = (dir === Direction.Descending) ? Type.ArrayKeyDesc : Type.ArrayKeyAsc;
+  const expected =
+    dir === Direction.Descending ? Type.ArrayKeyDesc : Type.ArrayKeyAsc;
   if (typ !== expected) {
     return [new Uint8Array(), new Error(`invalid type found ${typ}`)];
   }
@@ -570,17 +620,29 @@ function validateAndConsumeArrayKeyMarker(buf: Uint8Array, dir: DirectionValue):
 }
 
 function isArrayKeyDone(buf: Uint8Array, dir: DirectionValue): boolean {
-  const expected = (dir === Direction.Descending) ? arrayKeyDescendingTerminator : arrayKeyTerminator;
+  const expected =
+    dir === Direction.Descending
+      ? arrayKeyDescendingTerminator
+      : arrayKeyTerminator;
   return buf[0] === expected;
 }
 
-function isNextByteArrayEncodedNull(buf: Uint8Array, dir: DirectionValue): boolean {
-  const expected = (dir === Direction.Descending) ? descendingNullWithinArrayKey : ascendingNullWithinArrayKey;
+function isNextByteArrayEncodedNull(
+  buf: Uint8Array,
+  dir: DirectionValue,
+): boolean {
+  const expected =
+    dir === Direction.Descending
+      ? descendingNullWithinArrayKey
+      : ascendingNullWithinArrayKey;
   return buf[0] === expected;
 }
 
 // prettyPrintFirstValue implementation matching Go version
-function prettyPrintFirstValue(dir: DirectionValue, b: Uint8Array): [Uint8Array, string, Error?] {
+function prettyPrintFirstValue(
+  dir: DirectionValue,
+  b: Uint8Array,
+): [Uint8Array, string, Error?] {
   if (b.length === 0) return [b, "", new Error("empty buffer")];
 
   const typ = peekType(b);
@@ -600,7 +662,8 @@ function prettyPrintFirstValue(dir: DirectionValue, b: Uint8Array): [Uint8Array,
 
     case Type.ArrayKeyAsc:
     case Type.ArrayKeyDesc:
-      const encDir = (typ === Type.ArrayKeyDesc) ? Direction.Descending : Direction.Ascending;
+      const encDir =
+        typ === Type.ArrayKeyDesc ? Direction.Descending : Direction.Ascending;
       const [buf, arrayErr] = validateAndConsumeArrayKeyMarker(b, encDir);
       if (arrayErr) {
         return [new Uint8Array(), "", arrayErr];
@@ -614,7 +677,11 @@ function prettyPrintFirstValue(dir: DirectionValue, b: Uint8Array): [Uint8Array,
       // to keyside.Decode, just make a recursive call.
       while (true) {
         if (currentBuf.length === 0) {
-          return [new Uint8Array(), "", new Error("invalid array (unterminated)")];
+          return [
+            new Uint8Array(),
+            "",
+            new Error("invalid array (unterminated)"),
+          ];
         }
         if (isArrayKeyDone(currentBuf, encDir)) {
           currentBuf = currentBuf.slice(1);
@@ -626,7 +693,10 @@ function prettyPrintFirstValue(dir: DirectionValue, b: Uint8Array): [Uint8Array,
           next = "NULL";
           currentBuf = currentBuf.slice(1);
         } else {
-          const [nextBuf, nextStr, nextErr] = prettyPrintFirstValue(dir, currentBuf);
+          const [nextBuf, nextStr, nextErr] = prettyPrintFirstValue(
+            dir,
+            currentBuf,
+          );
           if (nextErr) {
             return [new Uint8Array(), "", nextErr];
           }
@@ -647,30 +717,37 @@ function prettyPrintFirstValue(dir: DirectionValue, b: Uint8Array): [Uint8Array,
       return [b.slice(1), "!NULL", undefined];
 
     case Type.Int:
-      let [remaining, intVal, err] = (dir === Direction.Descending)
-        ? decodeVarintDescending(b)
-        : decodeVarintAscending(b);
+      let [remaining, intVal, err] =
+        dir === Direction.Descending
+          ? decodeVarintDescending(b)
+          : decodeVarintAscending(b);
       if (err) return [b, "", err];
       return [remaining, intVal.toString(), undefined];
 
     case Type.Float:
-      let [floatRemaining, f, floatErr] = (dir === Direction.Descending)
-        ? decodeFloatDescending(b)
-        : decodeFloatAscending(b);
+      let [floatRemaining, f, floatErr] =
+        dir === Direction.Descending
+          ? decodeFloatDescending(b)
+          : decodeFloatAscending(b);
       if (floatErr) return [b, "", floatErr];
       // Format float using 'g' format like Go's strconv.FormatFloat(f, 'g', -1, 64)
       return [floatRemaining, f.toString(), undefined];
 
     case Type.Decimal:
-      let [decimalRemaining, decimalStr, decimalErr] = (dir === Direction.Descending)
-        ? decodeDecimalDescending(b)
-        : decodeDecimalAscending(b);
+      let [decimalRemaining, decimalStr, decimalErr] =
+        dir === Direction.Descending
+          ? decodeDecimalDescending(b)
+          : decodeDecimalAscending(b);
       if (decimalErr) return [b, "", decimalErr];
       return [decimalRemaining, decimalStr, undefined];
 
     case Type.Bytes:
       if (dir === Direction.Descending) {
-        return [b, "", new Error("descending bytes column dir but ascending bytes encoding")];
+        return [
+          b,
+          "",
+          new Error("descending bytes column dir but ascending bytes encoding"),
+        ];
       }
       let [bytesRemaining, str, bytesErr] = decodeUnsafeStringAscending(b);
       if (bytesErr) return [b, "", bytesErr];
@@ -678,28 +755,35 @@ function prettyPrintFirstValue(dir: DirectionValue, b: Uint8Array): [Uint8Array,
 
     case Type.BytesDesc:
       if (dir === Direction.Ascending) {
-        return [b, "", new Error("ascending bytes column dir but descending bytes encoding")];
+        return [
+          b,
+          "",
+          new Error("ascending bytes column dir but descending bytes encoding"),
+        ];
       }
-      let [bytesDescRemaining, descStr, bytesDescErr] = decodeUnsafeStringDescending(b);
+      let [bytesDescRemaining, descStr, bytesDescErr] =
+        decodeUnsafeStringDescending(b);
       if (bytesDescErr) return [b, "", bytesDescErr];
       return [bytesDescRemaining, JSON.stringify(descStr), undefined];
 
     case Type.Time:
       // Decode time: skip marker, then decode unix seconds and nanoseconds
       const timeB = b.slice(1); // skip time marker
-      const [remaining1, sec, err1] = (dir === Direction.Descending)
-        ? decodeVarintDescending(timeB)
-        : decodeVarintAscending(timeB);
+      const [remaining1, sec, err1] =
+        dir === Direction.Descending
+          ? decodeVarintDescending(timeB)
+          : decodeVarintAscending(timeB);
       if (err1) return [b, "", err1];
 
-      const [remaining2, nsec, err2] = (dir === Direction.Descending)
-        ? decodeVarintDescending(remaining1)
-        : decodeVarintAscending(remaining1);
+      const [remaining2, nsec, err2] =
+        dir === Direction.Descending
+          ? decodeVarintDescending(remaining1)
+          : decodeVarintAscending(remaining1);
       if (err2) return [b, "", err2];
 
       // For descending, invert the values
-      const finalSec = (dir === Direction.Descending) ? ~sec : sec;
-      const finalNsec = (dir === Direction.Descending) ? ~nsec : nsec;
+      const finalSec = dir === Direction.Descending ? ~sec : sec;
+      const finalNsec = dir === Direction.Descending ? ~nsec : nsec;
 
       // Create JavaScript Date from unix timestamp
       const date = new Date(finalSec * 1000 + finalNsec / 1000000);
@@ -714,38 +798,61 @@ function prettyPrintFirstValue(dir: DirectionValue, b: Uint8Array): [Uint8Array,
       }
 
     case Type.Duration:
-      let [durationRemaining, durationStr, durationErr] = (dir === Direction.Descending)
-        ? decodeDurationDescending(b)
-        : decodeDurationAscending(b);
+      let [durationRemaining, durationStr, durationErr] =
+        dir === Direction.Descending
+          ? decodeDurationDescending(b)
+          : decodeDurationAscending(b);
       if (durationErr) return [b, "", durationErr];
       return [durationRemaining, durationStr, undefined];
 
     case Type.BitArray:
       if (dir === Direction.Descending) {
-        return [b, "", new Error("descending bit column dir but ascending bit array encoding")];
+        return [
+          b,
+          "",
+          new Error(
+            "descending bit column dir but ascending bit array encoding",
+          ),
+        ];
       }
-      let [bitArrayRemaining, bitArrayStr, bitArrayErr] = decodeBitArrayAscending(b);
+      let [bitArrayRemaining, bitArrayStr, bitArrayErr] =
+        decodeBitArrayAscending(b);
       if (bitArrayErr) return [b, "", bitArrayErr];
       return [bitArrayRemaining, bitArrayStr, undefined];
 
     case Type.BitArrayDesc:
       if (dir === Direction.Ascending) {
-        return [b, "", new Error("ascending bit column dir but descending bit array encoding")];
+        return [
+          b,
+          "",
+          new Error(
+            "ascending bit column dir but descending bit array encoding",
+          ),
+        ];
       }
-      let [bitArrayDescRemaining, bitArrayDescStr, bitArrayDescErr] = decodeBitArrayDescending(b);
+      let [bitArrayDescRemaining, bitArrayDescStr, bitArrayDescErr] =
+        decodeBitArrayDescending(b);
       if (bitArrayDescErr) return [b, "", bitArrayDescErr];
       return [bitArrayDescRemaining, bitArrayDescStr, undefined];
 
     case Type.LTree:
       if (dir === Direction.Descending) {
-        return [b, "", new Error("ascending ltree column dir but descending ltree encoding")];
+        return [
+          b,
+          "",
+          new Error("ascending ltree column dir but descending ltree encoding"),
+        ];
       }
       // TODO: Implement DecodeLTreeAscending - currently stubbed
       return [b.slice(1), `<ltree:${b[0].toString(16)}>`, undefined];
 
     case Type.LTreeDesc:
       if (dir === Direction.Ascending) {
-        return [b, "", new Error("descending ltree column dir but ascending ltree encoding")];
+        return [
+          b,
+          "",
+          new Error("descending ltree column dir but ascending ltree encoding"),
+        ];
       }
       // TODO: Implement DecodeLTreeDescending - currently stubbed
       return [b.slice(1), `<ltree_desc:${b[0].toString(16)}>`, undefined];
@@ -774,18 +881,22 @@ function prettyPrintFirstValue(dir: DirectionValue, b: Uint8Array): [Uint8Array,
 
       if (printableCount < b.length * 0.3) {
         // Mostly binary data - show as hex
-        const hexStr = Array.from(b).map(x => x.toString(16).padStart(2, '0')).join('');
+        const hexStr = Array.from(b)
+          .map((x) => x.toString(16).padStart(2, "0"))
+          .join("");
         return [new Uint8Array(), "\\x" + hexStr, undefined];
       } else {
         // Mostly printable - quote as string (matching Go behavior)
         // But handle binary bytes properly by converting to hex when they're not valid UTF-8
         try {
-          const decoder = new TextDecoder('utf-8', { fatal: true });
+          const decoder = new TextDecoder("utf-8", { fatal: true });
           const str = decoder.decode(b);
           return [new Uint8Array(), JSON.stringify(str), undefined];
         } catch {
           // Not valid UTF-8, show as hex
-          const hexStr = Array.from(b).map(x => x.toString(16).padStart(2, '0')).join('');
+          const hexStr = Array.from(b)
+            .map((x) => x.toString(16).padStart(2, "0"))
+            .join("");
           return [new Uint8Array(), "\\x" + hexStr, undefined];
         }
       }
@@ -793,13 +904,18 @@ function prettyPrintFirstValue(dir: DirectionValue, b: Uint8Array): [Uint8Array,
 }
 
 // prettyPrintValueImpl implementation matching Go version
-function prettyPrintValueImpl(valDirs: DirectionValue[], b: Uint8Array, _sep: string): [string[], boolean] {
+function prettyPrintValueImpl(
+  valDirs: DirectionValue[],
+  b: Uint8Array,
+  _sep: string,
+): [string[], boolean] {
   const result: string[] = [];
   let allDecoded = true;
   let currentDirs = [...valDirs];
 
   while (b.length > 0) {
-    const valDir = currentDirs.length > 0 ? currentDirs.shift()! : Direction.Ascending;
+    const valDir =
+      currentDirs.length > 0 ? currentDirs.shift()! : Direction.Ascending;
 
     const [bb, s, err] = prettyPrintFirstValue(valDir, b);
     if (err) {
@@ -824,7 +940,11 @@ function prettyPrintValueImpl(valDirs: DirectionValue[], b: Uint8Array, _sep: st
 }
 
 // Main PrettyPrintValue implementation matching Go version
-function prettyPrintValue(valDirs: DirectionValue[], b: Uint8Array, sep: string): string {
+function prettyPrintValue(
+  valDirs: DirectionValue[],
+  b: Uint8Array,
+  sep: string,
+): string {
   const [parts, allDecoded] = prettyPrintValueImpl(valDirs, b, sep);
 
   if (allDecoded) {
@@ -839,14 +959,18 @@ function prettyPrintValue(valDirs: DirectionValue[], b: Uint8Array, sep: string)
     let tryBytes = new Uint8Array(undoPrefixEndBytes);
 
     for (let i = 0; i < cap; i++) {
-      const [retryParts, retryAllDecoded] = prettyPrintValueImpl(valDirs, tryBytes, sep);
+      const [retryParts, retryAllDecoded] = prettyPrintValueImpl(
+        valDirs,
+        tryBytes,
+        sep,
+      );
       if (retryAllDecoded) {
         return retryParts.join(sep) + sep + "PrefixEnd";
       }
       // Add 0xFF and try again
       const newTryBytes = new Uint8Array(tryBytes.length + 1);
       newTryBytes.set(tryBytes);
-      newTryBytes[tryBytes.length] = 0xFF;
+      newTryBytes[tryBytes.length] = 0xff;
       tryBytes = newTryBytes;
     }
   }
@@ -857,7 +981,11 @@ function prettyPrintValue(valDirs: DirectionValue[], b: Uint8Array, sep: string)
 // DecodeUvarintAscending - exact implementation from Go
 function decodeUvarintAscending(b: Uint8Array): [Uint8Array, number, Error?] {
   if (b.length === 0) {
-    return [new Uint8Array(), 0, new Error("insufficient bytes to decode uvarint value")];
+    return [
+      new Uint8Array(),
+      0,
+      new Error("insufficient bytes to decode uvarint value"),
+    ];
   }
 
   const intZero = 136; // IntMin + intMaxWidth = 128 + 8 = 136
@@ -872,9 +1000,17 @@ function decodeUvarintAscending(b: Uint8Array): [Uint8Array, number, Error?] {
 
   length -= intSmall;
   if (length < 0 || length > 8) {
-    return [new Uint8Array(), 0, new Error(`invalid uvarint length of ${length}`)];
+    return [
+      new Uint8Array(),
+      0,
+      new Error(`invalid uvarint length of ${length}`),
+    ];
   } else if (remaining.length < length) {
-    return [new Uint8Array(), 0, new Error("insufficient bytes to decode uvarint value")];
+    return [
+      new Uint8Array(),
+      0,
+      new Error("insufficient bytes to decode uvarint value"),
+    ];
   }
 
   let v = 0;
@@ -890,7 +1026,11 @@ function decodeUvarintAscending(b: Uint8Array): [Uint8Array, number, Error?] {
 // DecodeVarintAscending - exact implementation from Go
 function decodeVarintAscending(b: Uint8Array): [Uint8Array, number, Error?] {
   if (b.length === 0) {
-    return [new Uint8Array(), 0, new Error("insufficient bytes to decode varint value")];
+    return [
+      new Uint8Array(),
+      0,
+      new Error("insufficient bytes to decode varint value"),
+    ];
   }
 
   const intZero = 136; // IntMin + intMaxWidth = 128 + 8 = 136
@@ -900,7 +1040,11 @@ function decodeVarintAscending(b: Uint8Array): [Uint8Array, number, Error?] {
     length = -length;
     const remB = b.slice(1);
     if (remB.length < length) {
-      return [new Uint8Array(), 0, new Error("insufficient bytes to decode varint value")];
+      return [
+        new Uint8Array(),
+        0,
+        new Error("insufficient bytes to decode varint value"),
+      ];
     }
 
     let v = 0;
@@ -908,7 +1052,7 @@ function decodeVarintAscending(b: Uint8Array): [Uint8Array, number, Error?] {
     // up a positive number, then take the ones-complement again to
     // arrive at our negative value.
     for (let i = 0; i < length; i++) {
-      v = (v << 8) | (~remB[i] & 0xFF);
+      v = (v << 8) | (~remB[i] & 0xff);
     }
 
     return [remB.slice(length), ~v, undefined];
@@ -922,7 +1066,11 @@ function decodeVarintAscending(b: Uint8Array): [Uint8Array, number, Error?] {
 
   // Check for overflow (JavaScript numbers are safe up to 2^53)
   if (uv > Number.MAX_SAFE_INTEGER) {
-    return [new Uint8Array(), 0, new Error(`varint ${uv} overflows safe integer`)];
+    return [
+      new Uint8Array(),
+      0,
+      new Error(`varint ${uv} overflows safe integer`),
+    ];
   }
 
   return [remaining, uv, undefined];
@@ -930,7 +1078,7 @@ function decodeVarintAscending(b: Uint8Array): [Uint8Array, number, Error?] {
 
 // Helper function for bytes to string conversion
 function bytesToString(bytes: Uint8Array): string {
-  const decoder = new TextDecoder('utf-8', { fatal: false });
+  const decoder = new TextDecoder("utf-8", { fatal: false });
   return decoder.decode(bytes);
 }
 
@@ -939,9 +1087,9 @@ function decodeShortKey(bytes: Uint8Array): DecodedKey | null {
   // Handle empty key
   if (bytes.length === 0) {
     return {
-      raw: '',
-      pretty: '/Min',
-      parts: [{ type: 'boundary', value: 'Min', raw: 'Min' }]
+      raw: "",
+      pretty: "/Min",
+      parts: [{ type: "boundary", value: "Min", raw: "Min" }],
     };
   }
 
@@ -959,49 +1107,49 @@ function decodeShortKey(bytes: Uint8Array): DecodedKey | null {
     if (byte >= 0x88 && byte <= 0xa5) {
       const tableId = byte - 0x88;
       return {
-        raw: byte.toString(16).padStart(2, '0'),
+        raw: byte.toString(16).padStart(2, "0"),
         pretty: `/Table/${tableId}`,
-        parts: [{ type: 'table', value: tableId, raw: `Table/${tableId}` }]
+        parts: [{ type: "table", value: tableId, raw: `Table/${tableId}` }],
       };
     } else if (byte === 0xa6) {
       // Special case: NamespaceTable/30
       return {
-        raw: byte.toString(16).padStart(2, '0'),
-        pretty: '/NamespaceTable/30',
-        parts: [{ type: 'table', value: 30, raw: 'NamespaceTable/30' }]
+        raw: byte.toString(16).padStart(2, "0"),
+        pretty: "/NamespaceTable/30",
+        parts: [{ type: "table", value: 30, raw: "NamespaceTable/30" }],
       };
     } else if (byte === 0xa7) {
       return {
-        raw: byte.toString(16).padStart(2, '0'),
-        pretty: '/NamespaceTable/Max',
-        parts: [{ type: 'boundary', value: 'Max', raw: 'NamespaceTable/Max' }]
+        raw: byte.toString(16).padStart(2, "0"),
+        pretty: "/NamespaceTable/Max",
+        parts: [{ type: "boundary", value: "Max", raw: "NamespaceTable/Max" }],
       };
     } else if (byte >= 0xa8 && byte <= 0xf5) {
       const tableId = byte - 0x88;
       return {
-        raw: byte.toString(16).padStart(2, '0'),
+        raw: byte.toString(16).padStart(2, "0"),
         pretty: `/Table/${tableId}`,
-        parts: [{ type: 'table', value: tableId, raw: `Table/${tableId}` }]
+        parts: [{ type: "table", value: tableId, raw: `Table/${tableId}` }],
       };
     } else if (byte === 0xf6) {
       return {
-        raw: byte.toString(16).padStart(2, '0'),
-        pretty: '/Table/109/PrefixEnd',
-        parts: [{ type: 'table', value: 109, raw: 'Table/109/PrefixEnd' }]
+        raw: byte.toString(16).padStart(2, "0"),
+        pretty: "/Table/109/PrefixEnd",
+        parts: [{ type: "table", value: 109, raw: "Table/109/PrefixEnd" }],
       };
     } else if (byte === 0xf7) {
       return {
-        raw: byte.toString(16).padStart(2, '0'),
-        pretty: '/Table/255/PrefixEnd',
-        parts: [{ type: 'table', value: 255, raw: 'Table/255/PrefixEnd' }]
+        raw: byte.toString(16).padStart(2, "0"),
+        pretty: "/Table/255/PrefixEnd",
+        parts: [{ type: "table", value: 255, raw: "Table/255/PrefixEnd" }],
       };
     }
 
     // Default for other single bytes
     return {
-      raw: byte.toString(16).padStart(2, '0'),
+      raw: byte.toString(16).padStart(2, "0"),
       pretty: `/${byte}`,
-      parts: [{ type: 'value', value: byte, raw: byte.toString() }]
+      parts: [{ type: "value", value: byte, raw: byte.toString() }],
     };
   }
 
@@ -1014,26 +1162,34 @@ function decodeShortKey(bytes: Uint8Array): DecodedKey | null {
       // 0xf6 followed by a byte: interpret as table ID
       const tableId = secondByte;
       return {
-        raw: Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(''),
+        raw: Array.from(bytes)
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join(""),
         pretty: `/Table/${tableId}`,
-        parts: [{ type: 'table', value: tableId, raw: `Table/${tableId}` }]
+        parts: [{ type: "table", value: tableId, raw: `Table/${tableId}` }],
       };
     } else if (firstByte === 0xf7) {
       // 0xf7 followed by a byte: calculate table ID with PrefixEnd
       // Pattern: (secondByte << 8) - 1
       const tableId = (secondByte << 8) - 1;
       return {
-        raw: Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(''),
+        raw: Array.from(bytes)
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join(""),
         pretty: `/Table/${tableId}/PrefixEnd`,
-        parts: [{ type: 'table', value: tableId, raw: `Table/${tableId}/PrefixEnd` }]
+        parts: [
+          { type: "table", value: tableId, raw: `Table/${tableId}/PrefixEnd` },
+        ],
       };
     }
   }
 
-
   // Check for multi-byte table keys starting with table prefix bytes
   const firstByte = bytes[0];
-  if ((firstByte >= 0x88 && firstByte <= 0xa5) || (firstByte >= 0xa8 && firstByte <= 0xf5)) {
+  if (
+    (firstByte >= 0x88 && firstByte <= 0xa5) ||
+    (firstByte >= 0xa8 && firstByte <= 0xf5)
+  ) {
     const tableId = firstByte - 0x88;
 
     // If it's just the table byte alone, it was handled above in single-byte case
@@ -1044,12 +1200,14 @@ function decodeShortKey(bytes: Uint8Array): DecodedKey | null {
       const remainingResult = prettyPrintValue([], remainingBytes, "/");
 
       return {
-        raw: Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(''),
+        raw: Array.from(bytes)
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join(""),
         pretty: `/Table/${tableId}/${remainingResult}`,
         parts: [
-          { type: 'table', value: tableId, raw: `Table/${tableId}` },
-          { type: 'decoded', value: remainingResult, raw: remainingResult }
-        ]
+          { type: "table", value: tableId, raw: `Table/${tableId}` },
+          { type: "decoded", value: remainingResult, raw: remainingResult },
+        ],
       };
     }
   }
@@ -1060,54 +1218,86 @@ function decodeShortKey(bytes: Uint8Array): DecodedKey | null {
 
     // Special meta keys
     const remaining = bytes.slice(pos);
-    const remainingHex = Array.from(remaining).map(b => b.toString(16).padStart(2, '0')).join('');
+    const remainingHex = Array.from(remaining)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
 
     // Known patterns from CRDB
-    if (remainingHex === '006c6976656e6573732d') {
+    if (remainingHex === "006c6976656e6573732d") {
       return {
-        raw: Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(''),
-        pretty: '/System/NodeLiveness',
-        parts: [{ type: 'system', value: 'NodeLiveness', raw: 'System/NodeLiveness' }]
+        raw: Array.from(bytes)
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join(""),
+        pretty: "/System/NodeLiveness",
+        parts: [
+          { type: "system", value: "NodeLiveness", raw: "System/NodeLiveness" },
+        ],
       };
-    } else if (remainingHex === '006c6976656e6573732e') {
+    } else if (remainingHex === "006c6976656e6573732e") {
       return {
-        raw: Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(''),
-        pretty: '/System/NodeLivenessMax',
-        parts: [{ type: 'system', value: 'NodeLivenessMax', raw: 'System/NodeLivenessMax' }]
+        raw: Array.from(bytes)
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join(""),
+        pretty: "/System/NodeLivenessMax",
+        parts: [
+          {
+            type: "system",
+            value: "NodeLivenessMax",
+            raw: "System/NodeLivenessMax",
+          },
+        ],
       };
-    } else if (remainingHex === '747364') {
+    } else if (remainingHex === "747364") {
       return {
-        raw: Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(''),
-        pretty: '/System/tsd',
-        parts: [{ type: 'system', value: 'tsd', raw: 'System/tsd' }]
+        raw: Array.from(bytes)
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join(""),
+        pretty: "/System/tsd",
+        parts: [{ type: "system", value: "tsd", raw: "System/tsd" }],
       };
-    } else if (remainingHex === '747365') {
+    } else if (remainingHex === "747365") {
       return {
-        raw: Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(''),
-        pretty: '/System/tse',
-        parts: [{ type: 'system', value: 'tse', raw: 'System/tse' }]
+        raw: Array.from(bytes)
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join(""),
+        pretty: "/System/tse",
+        parts: [{ type: "system", value: "tse", raw: "System/tse" }],
       };
-    } else if (remainingHex === 'ff7379732d73636667') {
+    } else if (remainingHex === "ff7379732d73636667") {
       return {
-        raw: Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(''),
-        pretty: '/System/SystemSpanConfigKeys',
-        parts: [{ type: 'system', value: 'SystemSpanConfigKeys', raw: 'System/SystemSpanConfigKeys' }]
+        raw: Array.from(bytes)
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join(""),
+        pretty: "/System/SystemSpanConfigKeys",
+        parts: [
+          {
+            type: "system",
+            value: "SystemSpanConfigKeys",
+            raw: "System/SystemSpanConfigKeys",
+          },
+        ],
       };
     }
 
     // Try to extract ASCII string
     let asciiEnd = pos;
-    while (asciiEnd < bytes.length && bytes[asciiEnd] >= 32 && bytes[asciiEnd] <= 126) {
+    while (
+      asciiEnd < bytes.length &&
+      bytes[asciiEnd] >= 32 &&
+      bytes[asciiEnd] <= 126
+    ) {
       asciiEnd++;
     }
 
     if (asciiEnd > pos) {
-      const decoder = new TextDecoder('utf-8', { fatal: false });
+      const decoder = new TextDecoder("utf-8", { fatal: false });
       const metaKey = decoder.decode(bytes.slice(pos, asciiEnd));
       return {
-        raw: Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(''),
+        raw: Array.from(bytes)
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join(""),
         pretty: `/meta/${metaKey}`,
-        parts: [{ type: 'meta', value: metaKey, raw: `meta/${metaKey}` }]
+        parts: [{ type: "meta", value: metaKey, raw: `meta/${metaKey}` }],
       };
     }
   }
@@ -1119,19 +1309,23 @@ function decodeShortKey(bytes: Uint8Array): DecodedKey | null {
   if (bytes[pos] === 0x12) {
     pos++;
 
-    const [remaining1, tableId, err1] = decodeUvarintAscending(bytes.slice(pos));
+    const [remaining1, tableId, err1] = decodeUvarintAscending(
+      bytes.slice(pos),
+    );
     if (err1) throw err1;
     pos = bytes.length - remaining1.length;
 
     const tableName = SYSTEM_TABLES[tableId] || `Table${tableId}`;
-    parts.push({ type: 'table', value: tableId, raw: tableName });
+    parts.push({ type: "table", value: tableId, raw: tableName });
 
     if (pos < bytes.length && bytes[pos] === 0x13) {
       pos++;
-      const [remaining2, indexId, err2] = decodeUvarintAscending(bytes.slice(pos));
+      const [remaining2, indexId, err2] = decodeUvarintAscending(
+        bytes.slice(pos),
+      );
       if (err2) throw err2;
       pos = bytes.length - remaining2.length;
-      parts.push({ type: 'index', value: indexId });
+      parts.push({ type: "index", value: indexId });
 
       while (pos < bytes.length && bytes[pos] === 0x12) {
         pos++;
@@ -1139,27 +1333,34 @@ function decodeShortKey(bytes: Uint8Array): DecodedKey | null {
         if (endPos === -1) break;
 
         const columnValue = bytesToString(bytes.slice(pos, endPos));
-        parts.push({ type: 'column', value: columnValue });
+        parts.push({ type: "column", value: columnValue });
         pos = endPos + 1;
       }
     }
   }
 
   if (parts.length > 0) {
-    const prettyParts = parts.map(p => {
+    const prettyParts = parts.map((p) => {
       switch (p.type) {
-        case 'meta': return `/${p.raw}`;
-        case 'table': return `/${p.raw}`;
-        case 'index': return `/Index${p.value}`;
-        case 'column': return `/${p.value}`;
-        default: return `/${p.value}`;
+        case "meta":
+          return `/${p.raw}`;
+        case "table":
+          return `/${p.raw}`;
+        case "index":
+          return `/Index${p.value}`;
+        case "column":
+          return `/${p.value}`;
+        default:
+          return `/${p.value}`;
       }
     });
 
     return {
-      raw: Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(''),
-      pretty: prettyParts.join(''),
-      parts
+      raw: Array.from(bytes)
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join(""),
+      pretty: prettyParts.join(""),
+      parts,
     };
   }
 
@@ -1168,14 +1369,17 @@ function decodeShortKey(bytes: Uint8Array): DecodedKey | null {
 
 export function prettyKey(hexString: string): DecodedKey {
   // Handle \x prefix (PostgreSQL/CRDB hex format)
-  hexString = hexString.replace(/\\x/gi, '').replace(/^0x/i, '').replace(/\s/g, '');
+  hexString = hexString
+    .replace(/\\x/gi, "")
+    .replace(/^0x/i, "")
+    .replace(/\s/g, "");
 
   // Handle empty key
   if (hexString.length === 0) {
     return {
-      raw: '',
-      pretty: '/Min',
-      parts: [{ type: 'boundary', value: 'Min', raw: 'Min' }]
+      raw: "",
+      pretty: "/Min",
+      parts: [{ type: "boundary", value: "Min", raw: "Min" }],
     };
   }
 
@@ -1183,7 +1387,7 @@ export function prettyKey(hexString: string): DecodedKey {
     return {
       raw: hexString,
       pretty: `<invalid hex: ${hexString}>`,
-      parts: []
+      parts: [],
     };
   }
 
@@ -1205,15 +1409,17 @@ export function prettyKey(hexString: string): DecodedKey {
   if (prettyResult && prettyResult.includes("???")) {
     // We have partially decoded data - the ??? indicates where decoding failed
     // Replace ??? with hex representation of remaining data
-    const cleanResult = prettyResult.replace(/\/\?\?\?.*$/, ''); // Remove ??? and everything after
-    const hexSuffix = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    const cleanResult = prettyResult.replace(/\/\?\?\?.*$/, ""); // Remove ??? and everything after
+    const hexSuffix = Array.from(bytes)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
     return {
       raw: hexString,
       pretty: "/" + cleanResult + "/\\x" + hexSuffix,
       parts: [
-        { type: 'partial', value: cleanResult, raw: cleanResult },
-        { type: 'hex', value: hexSuffix, raw: hexSuffix }
-      ]
+        { type: "partial", value: cleanResult, raw: cleanResult },
+        { type: "hex", value: hexSuffix, raw: hexSuffix },
+      ],
     };
   }
 
@@ -1222,7 +1428,7 @@ export function prettyKey(hexString: string): DecodedKey {
     return {
       raw: hexString,
       pretty: "/" + prettyResult,
-      parts: [{ type: 'decoded', value: prettyResult, raw: prettyResult }]
+      parts: [{ type: "decoded", value: prettyResult, raw: prettyResult }],
     };
   }
 
@@ -1231,21 +1437,25 @@ export function prettyKey(hexString: string): DecodedKey {
   return {
     raw: hexString,
     pretty: "\\x" + hexString,
-    parts: [{ type: 'hex', value: hexString, raw: hexString }]
+    parts: [{ type: "hex", value: hexString, raw: hexString }],
   };
 }
 
 export function isProbablyHexKey(value: string): boolean {
-  if (!value || typeof value !== 'string') return false;
+  if (!value || typeof value !== "string") return false;
 
   // Handle \x prefix (PostgreSQL/CRDB hex format) - always treat as hex
-  if (value.startsWith('\\x')) {
-    const cleaned = value.replace(/^\\x/i, '').replace(/\s/g, '');
-    return cleaned.length >= 0 && cleaned.length % 2 === 0 && /^[0-9a-fA-F]*$/.test(cleaned);
+  if (value.startsWith("\\x")) {
+    const cleaned = value.replace(/^\\x/i, "").replace(/\s/g, "");
+    return (
+      cleaned.length >= 0 &&
+      cleaned.length % 2 === 0 &&
+      /^[0-9a-fA-F]*$/.test(cleaned)
+    );
   }
 
   // For non-\x prefixed values, apply stricter rules
-  const cleaned = value.replace(/^0x/i, '').replace(/\s/g, '');
+  const cleaned = value.replace(/^0x/i, "").replace(/\s/g, "");
 
   if (cleaned.length < 4 || cleaned.length % 2 !== 0) return false;
 

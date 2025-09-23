@@ -1,6 +1,6 @@
-import type { Monaco } from '@monaco-editor/react';
-import type { languages } from 'monaco-editor';
-import type { WorkerManager } from './WorkerManager';
+import type { Monaco } from "@monaco-editor/react";
+import type { languages } from "monaco-editor";
+import type { WorkerManager } from "./WorkerManager";
 
 interface SchemaCache {
   tables: string[];
@@ -19,7 +19,7 @@ export function setWorkerManager(manager: WorkerManager) {
 
 async function updateSchemaCache() {
   if (!workerManager) {
-    console.warn('WorkerManager not available for schema updates');
+    console.warn("WorkerManager not available for schema updates");
     return null;
   }
 
@@ -29,10 +29,13 @@ async function updateSchemaCache() {
   for (const table of tables) {
     try {
       const schema = await workerManager.getTableSchema(table);
-      columns.set(table, schema.map(col => ({
-        name: col.column_name,
-        type: col.data_type
-      })));
+      columns.set(
+        table,
+        schema.map((col) => ({
+          name: col.column_name,
+          type: col.data_type,
+        })),
+      );
     } catch (err) {
       console.warn(`Failed to get schema for ${table}:`, err);
     }
@@ -47,7 +50,7 @@ async function updateSchemaCache() {
     columns,
     functions,
     keywords,
-    lastUpdated: Date.now()
+    lastUpdated: Date.now(),
   };
 
   // // console.log('Schema cache updated:', {
@@ -63,15 +66,44 @@ async function updateSchemaCache() {
 // SQL Context Extraction
 const WORD_OR_PUNCT = /\b\w+\b|[().,]/g;
 const KEYWORDS = new Set([
-  "select","from","join","left","right","inner","outer","full","cross",
-  "on","where","group","order","having","limit","as","by","and","or","not",
-  "in","exists","between","like","is","null","distinct","union","all",
-  "except","intersect","with","recursive"
+  "select",
+  "from",
+  "join",
+  "left",
+  "right",
+  "inner",
+  "outer",
+  "full",
+  "cross",
+  "on",
+  "where",
+  "group",
+  "order",
+  "having",
+  "limit",
+  "as",
+  "by",
+  "and",
+  "or",
+  "not",
+  "in",
+  "exists",
+  "between",
+  "like",
+  "is",
+  "null",
+  "distinct",
+  "union",
+  "all",
+  "except",
+  "intersect",
+  "with",
+  "recursive",
 ]);
 
 type Context = {
-  tables: Set<string>;              // canonical table names in scope
-  aliases: Map<string, string>;     // alias -> canonical table name
+  tables: Set<string>; // canonical table names in scope
+  aliases: Map<string, string>; // alias -> canonical table name
 };
 
 function lastSelectSlice(sql: string, cursor: number): string {
@@ -104,17 +136,24 @@ function lastSelectSlice(sql: string, cursor: number): string {
   return sql;
 }
 
-function readIdentifier(tokens: string[], i: number): { id?: string; next: number } {
+function readIdentifier(
+  tokens: string[],
+  i: number,
+): { id?: string; next: number } {
   const t = tokens[i];
   if (!t) return { next: i };
   if (/^[A-Za-z_]\w*$/.test(t)) return { id: t, next: i + 1 };
   return { next: i };
 }
 
-function readTableName(tokens: string[], i: number): { table?: string; next: number; subquery?: boolean } {
+function readTableName(
+  tokens: string[],
+  i: number,
+): { table?: string; next: number; subquery?: boolean } {
   // Handle subquery: FROM ( SELECT ... ) alias
   if (tokens[i] === "(") {
-    let depth = 1, j = i + 1;
+    let depth = 1,
+      j = i + 1;
     while (j < tokens.length && depth > 0) {
       if (tokens[j] === "(") depth++;
       else if (tokens[j] === ")") depth--;
@@ -144,7 +183,7 @@ function extractContext(sql: string, cursor: number): Context {
   // Get the relevant SELECT statement that contains the cursor
   const slice = lastSelectSlice(sql, cursor);
   const tokens = slice.match(WORD_OR_PUNCT) || [];
-  const lower = tokens.map(t => t.toLowerCase());
+  const lower = tokens.map((t) => t.toLowerCase());
 
   const ctx: Context = { tables: new Set(), aliases: new Map() };
 
@@ -153,12 +192,29 @@ function extractContext(sql: string, cursor: number): Context {
 
   while (i < tokens.length) {
     const tok = lower[i];
-    if (tokens[i] === "(") { depth++; i++; continue; }
-    if (tokens[i] === ")") { depth = Math.max(0, depth - 1); i++; continue; }
+    if (tokens[i] === "(") {
+      depth++;
+      i++;
+      continue;
+    }
+    if (tokens[i] === ")") {
+      depth = Math.max(0, depth - 1);
+      i++;
+      continue;
+    }
 
     // Only look at top-level FROM / JOINs
-    if (depth === 0 && (tok === "from" || tok === "join" || tok === "left" || tok === "right" ||
-                        tok === "inner" || tok === "outer" || tok === "full" || tok === "cross")) {
+    if (
+      depth === 0 &&
+      (tok === "from" ||
+        tok === "join" ||
+        tok === "left" ||
+        tok === "right" ||
+        tok === "inner" ||
+        tok === "outer" ||
+        tok === "full" ||
+        tok === "cross")
+    ) {
       // Skip composite join keywords
       if (tok !== "from" && lower[i + 1] === "join") i++;
       i++;
@@ -199,7 +255,7 @@ function extractContext(sql: string, cursor: number): Context {
 function resolveQualifierToTable(
   qualifier: string,
   ctx: Context,
-  schemaColumns: Map<string, {name: string; type: string}[]>
+  schemaColumns: Map<string, { name: string; type: string }[]>,
 ): string | undefined {
   const q = qualifier.toLowerCase();
 
@@ -220,237 +276,397 @@ function resolveQualifierToTable(
 
 export async function setupLogLanguage(monaco: Monaco) {
   // Register log file language
-  monaco.languages.register({ id: 'log' });
+  monaco.languages.register({ id: "log" });
 
   // Define log syntax highlighting for CRDB format
   // Format: I250808 06:44:26.929973 686 2@util/log/event_log.go:39 ⋮ [T1,Vsystem,n40] 133464 Balh
-  monaco.languages.setMonarchTokensProvider('log', {
-    defaultToken: '',
-    tokenPostfix: '.log',
+  monaco.languages.setMonarchTokensProvider("log", {
+    defaultToken: "",
+    tokenPostfix: ".log",
     ignoreCase: false,
 
     tokenizer: {
       root: [
         // Match the entire structured prefix first, then switch to message mode
         // Lines with counter
-        [/^([IWEF])([0-9: ]{15})(\.\d+)( \d+ )(\d+@)([^:]+)(:\d+)( ⋮ )(\[[^\]]*\] )(\d+ )(.*)$/, [
-          { cases: {
-            'I': 'log.level.I',
-            'W': 'log.level.W',
-            'E': 'log.level.E',
-            'F': 'log.level.F',
-            '@default': 'log.level'
-          }},
-          'log.datetime',
-          'log.fractional',
-          'log.pid',
-          'log.channel',
-          'log.file',
-          'log.line',
-          'log.separator',
-          'log.tags',
-          'log.counter',
-          'log.message'
-        ]],
+        [
+          /^([IWEF])([0-9: ]{15})(\.\d+)( \d+ )(\d+@)([^:]+)(:\d+)( ⋮ )(\[[^\]]*\] )(\d+ )(.*)$/,
+          [
+            {
+              cases: {
+                I: "log.level.I",
+                W: "log.level.W",
+                E: "log.level.E",
+                F: "log.level.F",
+                "@default": "log.level",
+              },
+            },
+            "log.datetime",
+            "log.fractional",
+            "log.pid",
+            "log.channel",
+            "log.file",
+            "log.line",
+            "log.separator",
+            "log.tags",
+            "log.counter",
+            "log.message",
+          ],
+        ],
         // Lines without counter
-        [/^([IWEF])([0-9: ]{15})(\.\d+)( \d+ )([^@:]+)(:\d+)( ⋮ )(\[[^\]]*\] )(.*)$/, [
-          { cases: {
-            'I': 'log.level.I',
-            'W': 'log.level.W',
-            'E': 'log.level.E',
-            'F': 'log.level.F',
-            '@default': 'log.level'
-          }},
-          'log.datetime',
-          'log.fractional',
-          'log.pid',
-          'log.file',
-          'log.line',
-          'log.separator',
-          'log.tags',
-          'log.message'
-        ]],
+        [
+          /^([IWEF])([0-9: ]{15})(\.\d+)( \d+ )([^@:]+)(:\d+)( ⋮ )(\[[^\]]*\] )(.*)$/,
+          [
+            {
+              cases: {
+                I: "log.level.I",
+                W: "log.level.W",
+                E: "log.level.E",
+                F: "log.level.F",
+                "@default": "log.level",
+              },
+            },
+            "log.datetime",
+            "log.fractional",
+            "log.pid",
+            "log.file",
+            "log.line",
+            "log.separator",
+            "log.tags",
+            "log.message",
+          ],
+        ],
         // Fallback for malformed lines - everything is message
-        [/.*/, 'log.message']
-      ]
-    }
+        [/.*/, "log.message"],
+      ],
+    },
   });
 
   // Define colors for log tokens
-  monaco.editor.defineTheme('log-theme', {
-    base: 'vs-dark',
+  monaco.editor.defineTheme("log-theme", {
+    base: "vs-dark",
     inherit: true,
     rules: [
-      { token: 'log.level.I', foreground: '98FB98' }, // Green for I (Info)
-      { token: 'log.level.W', foreground: 'F0E68C' }, // Yellow for W (Warning)
-      { token: 'log.level.E', foreground: 'FF6B6B' }, // Red for E (Error)
-      { token: 'log.level.F', foreground: 'FF6B6B' }, // Red for F (Fatal)
-      { token: 'log.level', foreground: '555555' }, // Fallback for other levels
-      { token: 'log.datetime', foreground: '87CEEB', fontStyle: 'bold' }, // Sky blue, bold for date+time together
-      { token: 'log.fractional', foreground: '777777' }, // Dim for fractional seconds
-      { token: 'log.pid', foreground: '6A9955' }, // Comment green for PID
-      { token: 'log.goroutine', foreground: '999999' }, // Slightly lighter gray than fractional seconds
-      { token: 'log.file', foreground: '6495ED' }, // Darker blue for file path
-      { token: 'log.line', foreground: 'B0B0B0' }, // Light gray for line number
-      { token: 'log.separator', foreground: '696969' }, // Dim gray for separators
-      { token: 'log.bracket', foreground: 'F0E68C' }, // Khaki for brackets
-      { token: 'log.tags', foreground: 'DDA0DD' }, // Purple/fuscia for tag content
-      { token: 'log.counter', foreground: '444444' }, // Very dim for counter (de-emphasized)
-      { token: 'log.message', foreground: 'FFFFFF' }, // White for message text
+      { token: "log.level.I", foreground: "98FB98" }, // Green for I (Info)
+      { token: "log.level.W", foreground: "F0E68C" }, // Yellow for W (Warning)
+      { token: "log.level.E", foreground: "FF6B6B" }, // Red for E (Error)
+      { token: "log.level.F", foreground: "FF6B6B" }, // Red for F (Fatal)
+      { token: "log.level", foreground: "555555" }, // Fallback for other levels
+      { token: "log.datetime", foreground: "87CEEB", fontStyle: "bold" }, // Sky blue, bold for date+time together
+      { token: "log.fractional", foreground: "777777" }, // Dim for fractional seconds
+      { token: "log.pid", foreground: "6A9955" }, // Comment green for PID
+      { token: "log.goroutine", foreground: "999999" }, // Slightly lighter gray than fractional seconds
+      { token: "log.file", foreground: "6495ED" }, // Darker blue for file path
+      { token: "log.line", foreground: "B0B0B0" }, // Light gray for line number
+      { token: "log.separator", foreground: "696969" }, // Dim gray for separators
+      { token: "log.bracket", foreground: "F0E68C" }, // Khaki for brackets
+      { token: "log.tags", foreground: "DDA0DD" }, // Purple/fuscia for tag content
+      { token: "log.counter", foreground: "444444" }, // Very dim for counter (de-emphasized)
+      { token: "log.message", foreground: "FFFFFF" }, // White for message text
     ],
     colors: {
-      'editor.findMatchBackground': 'transparent',
-      'editor.findMatchHighlightBackground': 'transparent',
-      'editor.findRangeHighlightBackground': 'transparent',
-      'editor.selectionHighlightBackground': 'transparent'
-    }
+      "editor.findMatchBackground": "transparent",
+      "editor.findMatchHighlightBackground": "transparent",
+      "editor.findRangeHighlightBackground": "transparent",
+      "editor.selectionHighlightBackground": "transparent",
+    },
   });
 }
 
 export async function setupDuckDBLanguage(monaco: Monaco) {
   // Register DuckDB SQL as a custom language
-  monaco.languages.register({ id: 'duckdb-sql' });
+  monaco.languages.register({ id: "duckdb-sql" });
 
   // Define DuckDB SQL syntax highlighting
-  monaco.languages.setMonarchTokensProvider('duckdb-sql', {
-    defaultToken: '',
-    tokenPostfix: '.sql',
+  monaco.languages.setMonarchTokensProvider("duckdb-sql", {
+    defaultToken: "",
+    tokenPostfix: ".sql",
     ignoreCase: true,
 
     // Define symbols used in the language
     symbols: /[=><!~?:&|+\-*\/\^%]+/,
 
     keywords: [
-      'SELECT', 'FROM', 'WHERE', 'GROUP', 'BY', 'ORDER', 'HAVING', 'AS',
-      'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'FULL', 'CROSS', 'ON',
-      'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE', 'CREATE', 'DROP',
-      'ALTER', 'TABLE', 'VIEW', 'INDEX', 'DISTINCT', 'UNION', 'ALL', 'EXCEPT',
-      'INTERSECT', 'WITH', 'RECURSIVE', 'LIMIT', 'OFFSET', 'FETCH', 'FIRST',
-      'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'AND', 'OR', 'NOT', 'IN', 'EXISTS',
-      'BETWEEN', 'LIKE', 'ILIKE', 'IS', 'NULL', 'TRUE', 'FALSE', 'ASC', 'DESC',
-      'USING', 'NATURAL', 'LATERAL', 'WINDOW', 'OVER', 'PARTITION', 'RANGE',
-      'ROWS', 'UNBOUNDED', 'PRECEDING', 'FOLLOWING', 'CURRENT', 'ROW',
-      'ROLLUP', 'CUBE', 'GROUPING', 'SETS'
+      "SELECT",
+      "FROM",
+      "WHERE",
+      "GROUP",
+      "BY",
+      "ORDER",
+      "HAVING",
+      "AS",
+      "JOIN",
+      "LEFT",
+      "RIGHT",
+      "INNER",
+      "OUTER",
+      "FULL",
+      "CROSS",
+      "ON",
+      "INSERT",
+      "INTO",
+      "VALUES",
+      "UPDATE",
+      "SET",
+      "DELETE",
+      "CREATE",
+      "DROP",
+      "ALTER",
+      "TABLE",
+      "VIEW",
+      "INDEX",
+      "DISTINCT",
+      "UNION",
+      "ALL",
+      "EXCEPT",
+      "INTERSECT",
+      "WITH",
+      "RECURSIVE",
+      "LIMIT",
+      "OFFSET",
+      "FETCH",
+      "FIRST",
+      "CASE",
+      "WHEN",
+      "THEN",
+      "ELSE",
+      "END",
+      "AND",
+      "OR",
+      "NOT",
+      "IN",
+      "EXISTS",
+      "BETWEEN",
+      "LIKE",
+      "ILIKE",
+      "IS",
+      "NULL",
+      "TRUE",
+      "FALSE",
+      "ASC",
+      "DESC",
+      "USING",
+      "NATURAL",
+      "LATERAL",
+      "WINDOW",
+      "OVER",
+      "PARTITION",
+      "RANGE",
+      "ROWS",
+      "UNBOUNDED",
+      "PRECEDING",
+      "FOLLOWING",
+      "CURRENT",
+      "ROW",
+      "ROLLUP",
+      "CUBE",
+      "GROUPING",
+      "SETS",
     ],
 
     operators: [
-      '=', '>', '<', '!', '~', '?', ':', '==', '<=', '>=', '!=', '<>',
-      '&&', '||', '++', '--', '+', '-', '*', '/', '&', '|', '^', '%',
-      '<<', '>>', '>>>', '+=', '-=', '*=', '/=', '&=', '|=', '^=',
-      '%=', '<<=', '>>=', '>>>='
+      "=",
+      ">",
+      "<",
+      "!",
+      "~",
+      "?",
+      ":",
+      "==",
+      "<=",
+      ">=",
+      "!=",
+      "<>",
+      "&&",
+      "||",
+      "++",
+      "--",
+      "+",
+      "-",
+      "*",
+      "/",
+      "&",
+      "|",
+      "^",
+      "%",
+      "<<",
+      ">>",
+      ">>>",
+      "+=",
+      "-=",
+      "*=",
+      "/=",
+      "&=",
+      "|=",
+      "^=",
+      "%=",
+      "<<=",
+      ">>=",
+      ">>>=",
     ],
 
     builtinFunctions: [
-      'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'STDDEV', 'VARIANCE',
-      'COALESCE', 'NULLIF', 'CAST', 'CONVERT', 'SUBSTRING', 'TRIM',
-      'LTRIM', 'RTRIM', 'UPPER', 'LOWER', 'LENGTH', 'REPLACE',
-      'NOW', 'CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP',
-      'DATE_PART', 'DATE_TRUNC', 'EXTRACT', 'ABS', 'ROUND', 'FLOOR',
-      'CEIL', 'POWER', 'SQRT', 'EXP', 'LN', 'LOG', 'LOG10',
-      'CONCAT', 'STRING_AGG', 'ARRAY_AGG', 'JSON_AGG', 'JSONB_AGG',
-      'ROW_NUMBER', 'RANK', 'DENSE_RANK', 'PERCENT_RANK', 'CUME_DIST',
-      'NTILE', 'LAG', 'LEAD', 'FIRST_VALUE', 'LAST_VALUE', 'NTH_VALUE'
+      "COUNT",
+      "SUM",
+      "AVG",
+      "MIN",
+      "MAX",
+      "STDDEV",
+      "VARIANCE",
+      "COALESCE",
+      "NULLIF",
+      "CAST",
+      "CONVERT",
+      "SUBSTRING",
+      "TRIM",
+      "LTRIM",
+      "RTRIM",
+      "UPPER",
+      "LOWER",
+      "LENGTH",
+      "REPLACE",
+      "NOW",
+      "CURRENT_DATE",
+      "CURRENT_TIME",
+      "CURRENT_TIMESTAMP",
+      "DATE_PART",
+      "DATE_TRUNC",
+      "EXTRACT",
+      "ABS",
+      "ROUND",
+      "FLOOR",
+      "CEIL",
+      "POWER",
+      "SQRT",
+      "EXP",
+      "LN",
+      "LOG",
+      "LOG10",
+      "CONCAT",
+      "STRING_AGG",
+      "ARRAY_AGG",
+      "JSON_AGG",
+      "JSONB_AGG",
+      "ROW_NUMBER",
+      "RANK",
+      "DENSE_RANK",
+      "PERCENT_RANK",
+      "CUME_DIST",
+      "NTILE",
+      "LAG",
+      "LEAD",
+      "FIRST_VALUE",
+      "LAST_VALUE",
+      "NTH_VALUE",
     ],
 
     builtinVariables: [
-      '@@VERSION', '@@SERVERNAME', '@@LANGUAGE', '@@SPID', '@@ROWCOUNT'
+      "@@VERSION",
+      "@@SERVERNAME",
+      "@@LANGUAGE",
+      "@@SPID",
+      "@@ROWCOUNT",
     ],
 
     tokenizer: {
       root: [
         // Identifiers and keywords
-        [/[a-zA-Z_][\w]*/, {
-          cases: {
-            '@keywords': { token: 'keyword' },
-            '@builtinFunctions': { token: 'predefined' },
-            '@builtinVariables': { token: 'variable.predefined' },
-            '@default': 'identifier'
-          }
-        }],
+        [
+          /[a-zA-Z_][\w]*/,
+          {
+            cases: {
+              "@keywords": { token: "keyword" },
+              "@builtinFunctions": { token: "predefined" },
+              "@builtinVariables": { token: "variable.predefined" },
+              "@default": "identifier",
+            },
+          },
+        ],
 
         // Whitespace
-        { include: '@whitespace' },
+        { include: "@whitespace" },
 
         // Multi-line comments
-        [/\/\*/, 'comment', '@comment'],
+        [/\/\*/, "comment", "@comment"],
 
         // Single-line comments
-        [/--.*$/, 'comment'],
+        [/--.*$/, "comment"],
 
         // Numbers
-        [/[0-9]+\.?[0-9]*([eE][\-+]?[0-9]+)?/, 'number'],
-        [/\.[0-9]+([eE][\-+]?[0-9]+)?/, 'number'],
+        [/[0-9]+\.?[0-9]*([eE][\-+]?[0-9]+)?/, "number"],
+        [/\.[0-9]+([eE][\-+]?[0-9]+)?/, "number"],
 
         // Strings
-        [/'/, 'string', '@string'],
-        [/"/, 'string', '@dblstring'],
+        [/'/, "string", "@string"],
+        [/"/, "string", "@dblstring"],
 
         // Delimiters and operators
-        [/[{}()\[\]]/, '@brackets'],
-        [/[<>](?!@symbols)/, '@brackets'],
-        [/@symbols/, {
-          cases: {
-            '@operators': 'operator',
-            '@default': ''
-          }
-        }],
-        [/[;,.]/, 'delimiter'],
+        [/[{}()\[\]]/, "@brackets"],
+        [/[<>](?!@symbols)/, "@brackets"],
+        [
+          /@symbols/,
+          {
+            cases: {
+              "@operators": "operator",
+              "@default": "",
+            },
+          },
+        ],
+        [/[;,.]/, "delimiter"],
       ],
 
-      whitespace: [
-        [/\s+/, 'white'],
-      ],
+      whitespace: [[/\s+/, "white"]],
 
       comment: [
-        [/[^\/*]+/, 'comment'],
-        [/\*\//, 'comment', '@pop'],
-        [/[\/*]/, 'comment']
+        [/[^\/*]+/, "comment"],
+        [/\*\//, "comment", "@pop"],
+        [/[\/*]/, "comment"],
       ],
 
       string: [
-        [/[^']+/, 'string'],
-        [/''/, 'string.escape'],
-        [/'/, 'string', '@pop']
+        [/[^']+/, "string"],
+        [/''/, "string.escape"],
+        [/'/, "string", "@pop"],
       ],
 
       dblstring: [
-        [/[^"]+/, 'string'],
-        [/""/, 'string.escape'],
-        [/"/, 'string', '@pop']
+        [/[^"]+/, "string"],
+        [/""/, "string.escape"],
+        [/"/, "string", "@pop"],
       ],
-    }
+    },
   });
 
   // Configure language features
-  monaco.languages.setLanguageConfiguration('duckdb-sql', {
+  monaco.languages.setLanguageConfiguration("duckdb-sql", {
     comments: {
-      lineComment: '--',
-      blockComment: ['/*', '*/']
+      lineComment: "--",
+      blockComment: ["/*", "*/"],
     },
     brackets: [
-      ['{', '}'],
-      ['[', ']'],
-      ['(', ')']
+      ["{", "}"],
+      ["[", "]"],
+      ["(", ")"],
     ],
     autoClosingPairs: [
-      { open: '{', close: '}' },
-      { open: '[', close: ']' },
-      { open: '(', close: ')' },
+      { open: "{", close: "}" },
+      { open: "[", close: "]" },
+      { open: "(", close: ")" },
       { open: '"', close: '"' },
       { open: "'", close: "'" },
     ],
     surroundingPairs: [
-      { open: '{', close: '}' },
-      { open: '[', close: ']' },
-      { open: '(', close: ')' },
+      { open: "{", close: "}" },
+      { open: "[", close: "]" },
+      { open: "(", close: ")" },
       { open: '"', close: '"' },
       { open: "'", close: "'" },
-    ]
+    ],
   });
 
   // Register completion provider with sophisticated context awareness
-  monaco.languages.registerCompletionItemProvider('duckdb-sql', {
-    triggerCharacters: ['.', ' ', '(', ','],
+  monaco.languages.registerCompletionItemProvider("duckdb-sql", {
+    triggerCharacters: [".", " ", "(", ","],
 
     async provideCompletionItems(model, position, _context, _token) {
       // // console.log('provideCompletionItems called at position:', position);
@@ -477,7 +693,7 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
         startLineNumber: 1,
         startColumn: 1,
         endLineNumber: position.lineNumber,
-        endColumn: position.column
+        endColumn: position.column,
       });
 
       const word = model.getWordUntilPosition(position);
@@ -485,7 +701,7 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
         startLineNumber: position.lineNumber,
         endLineNumber: position.lineNumber,
         startColumn: word.startColumn,
-        endColumn: word.endColumn
+        endColumn: word.endColumn,
       };
 
       const suggestions: languages.CompletionItem[] = [];
@@ -523,7 +739,11 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
         const match = lastChars.match(/([A-Za-z_]\w*)\.\w*$/);
         if (match) {
           const qualifier = match[1];
-          const tableKey = resolveQualifierToTable(qualifier, ctx, schemaCache.columns);
+          const tableKey = resolveQualifierToTable(
+            qualifier,
+            ctx,
+            schemaCache.columns,
+          );
           if (tableKey) {
             const cols = schemaCache.columns.get(tableKey) || [];
             for (const col of cols) {
@@ -533,7 +753,7 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
                 insertText: col.name,
                 detail: col.type,
                 documentation: `Column from ${qualifier} → ${tableKey}`,
-                range
+                range,
               });
             }
             return { suggestions }; // Only columns from this table
@@ -550,14 +770,20 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
             insertText: table,
             detail: "Table",
             documentation: `Table: ${table}`,
-            range
+            range,
           });
         }
         return { suggestions };
       }
 
       // ===== C) Columns after SELECT/WHERE/GROUP/ORDER/COMMA =====
-      if (isAfterSelect || isAfterWhere || isAfterGroupBy || isAfterOrderBy || isAfterComma) {
+      if (
+        isAfterSelect ||
+        isAfterWhere ||
+        isAfterGroupBy ||
+        isAfterOrderBy ||
+        isAfterComma
+      ) {
         // Only show columns if we have tables in scope
         const activeTables = Array.from(ctx.tables);
 
@@ -571,11 +797,14 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
           pushUnique({
             label: func.name,
             kind: monaco.languages.CompletionItemKind.Function,
-            insertText: func.name + '(',
-            detail: func.type === 'aggregate' ? 'Aggregate Function' : 'Scalar Function',
+            insertText: func.name + "(",
+            detail:
+              func.type === "aggregate"
+                ? "Aggregate Function"
+                : "Scalar Function",
             documentation: func.description || `DuckDB ${func.type} function`,
-            sortText: '5_' + func.name,
-            range
+            sortText: "5_" + func.name,
+            range,
           });
           functionsAdded++;
         }
@@ -606,11 +835,13 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
 
         // Check if user is typing a table/alias prefix
         const currentWordLower = word.word.toLowerCase();
-        const isTypingTablePrefix = activeTables.some(t => {
+        const isTypingTablePrefix = activeTables.some((t) => {
           const short = t.split(".").pop()?.toLowerCase() || t.toLowerCase();
           const aliases = tableToAliases.get(t) || [];
-          return short.startsWith(currentWordLower) ||
-                 aliases.some(a => a.toLowerCase().startsWith(currentWordLower));
+          return (
+            short.startsWith(currentWordLower) ||
+            aliases.some((a) => a.toLowerCase().startsWith(currentWordLower))
+          );
         });
 
         // Single table scenario - keep it simple
@@ -626,7 +857,7 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
               detail: col.type,
               documentation: `Column from ${table}`,
               sortText: `0_${col.name}`,
-              range
+              range,
             });
           }
 
@@ -641,11 +872,11 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
                 pushUnique({
                   label: q,
                   kind: monaco.languages.CompletionItemKind.Module,
-                  insertText: q + '.',
-                  detail: 'Table qualifier',
+                  insertText: q + ".",
+                  detail: "Table qualifier",
                   documentation: `Use ${q}. to access columns`,
                   sortText: `1_${q}`,
-                  range
+                  range,
                 });
               }
             }
@@ -673,7 +904,7 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
                 detail: `${col.type} (${short})`,
                 documentation: `Unique column from ${table}`,
                 sortText: `0_${col.name}`,
-                range
+                range,
               });
             }
 
@@ -688,8 +919,10 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
                     insertText: `${q}.${col.name}`,
                     detail: col.type,
                     documentation: `Column from ${table}`,
-                    sortText: isUnique ? `2_${q}_${col.name}` : `1_${q}_${col.name}`,
-                    range
+                    sortText: isUnique
+                      ? `2_${q}_${col.name}`
+                      : `1_${q}_${col.name}`,
+                    range,
                   });
                 }
               }
@@ -709,21 +942,29 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
             label: func.name,
             kind: monaco.languages.CompletionItemKind.Function,
             insertText: func.name,
-            detail: func.type === 'aggregate' ? 'Aggregate Function' : 'Scalar Function',
+            detail:
+              func.type === "aggregate"
+                ? "Aggregate Function"
+                : "Scalar Function",
             documentation: func.description || `DuckDB ${func.type} function`,
-            sortText: '0_' + func.name,
-            range
+            sortText: "0_" + func.name,
+            range,
           });
         }
       }
 
       // ===== E) Keywords from DuckDB =====
       // Filter keywords based on context
-      const contextualKeywords = schemaCache.keywords.filter(kw => {
+      const contextualKeywords = schemaCache.keywords.filter((kw) => {
         // Don't suggest keywords that don't make sense in context
-        if (isAfterSelect && ['FROM', 'WHERE', 'GROUP', 'ORDER', 'LIMIT'].includes(kw)) return false;
-        if (isAfterFrom && ['SELECT', 'FROM'].includes(kw)) return false;
-        if (isAfterWhere && ['SELECT', 'FROM', 'WHERE'].includes(kw)) return false;
+        if (
+          isAfterSelect &&
+          ["FROM", "WHERE", "GROUP", "ORDER", "LIMIT"].includes(kw)
+        )
+          return false;
+        if (isAfterFrom && ["SELECT", "FROM"].includes(kw)) return false;
+        if (isAfterWhere && ["SELECT", "FROM", "WHERE"].includes(kw))
+          return false;
         return true;
       });
 
@@ -732,14 +973,14 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
           label: kw,
           kind: monaco.languages.CompletionItemKind.Keyword,
           insertText: kw,
-          detail: 'SQL Keyword',
-          sortText: '9' + kw,
-          range
+          detail: "SQL Keyword",
+          sortText: "9" + kw,
+          range,
         });
       }
 
       return { suggestions };
-    }
+    },
   });
 }
 

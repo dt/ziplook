@@ -1,9 +1,9 @@
-import { useEffect, useState, memo, useCallback, useRef } from 'react';
-import type { ViewerTab } from '../state/types';
-import EnhancedFileViewer from './EnhancedFileViewer';
+import { useEffect, useState, memo, useCallback, useRef } from "react";
+import type { ViewerTab } from "../state/types";
+import EnhancedFileViewer from "./EnhancedFileViewer";
 
 interface FileViewerProps {
-  tab: ViewerTab & { kind: 'file' };
+  tab: ViewerTab & { kind: "file" };
 }
 
 // Feature flag - set to true to enable enhanced viewer
@@ -18,7 +18,7 @@ const FileContent = memo(({ content }: { content: string }) => {
   );
 });
 
-FileContent.displayName = 'FileContent';
+FileContent.displayName = "FileContent";
 
 function FileViewer({ tab }: FileViewerProps) {
   // Use enhanced viewer if enabled
@@ -30,7 +30,7 @@ function FileViewer({ tab }: FileViewerProps) {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [content, setContent] = useState<string>('');
+  const [content, setContent] = useState<string>("");
   const [progress, setProgress] = useState({ loaded: 0, total: 0, percent: 0 });
   const [isStreaming, setIsStreaming] = useState(false);
   const abortRef = useRef<(() => void) | null>(null);
@@ -53,31 +53,35 @@ function FileViewer({ tab }: FileViewerProps) {
   const loadFile = useCallback(async () => {
     setLoading(true);
     setError(null);
-    setContent('');
+    setContent("");
     setProgress({ loaded: 0, total: 0, percent: 0 });
     setIsStreaming(true);
 
     try {
       const reader = (window as any).__zipReader;
       if (!reader) {
-        throw new Error('No zip file loaded');
+        throw new Error("No zip file loaded");
       }
 
       // Store abort function
       abortRef.current = () => reader.cancelStream();
 
-      let accumulatedContent = '';
+      let accumulatedContent = "";
       const startTime = Date.now();
       let lastUpdateTime = startTime;
 
       // Use streaming API
       await reader.readFileStream(
         tab.fileId || tab.id, // Use fileId if available, fallback to id for backwards compatibility
-        (chunk: string, info: { loaded: number; total: number; done: boolean }) => {
+        (
+          chunk: string,
+          info: { loaded: number; total: number; done: boolean },
+        ) => {
           accumulatedContent += chunk;
 
           // Update progress
-          const percent = info.total > 0 ? Math.round((info.loaded / info.total) * 100) : 0;
+          const percent =
+            info.total > 0 ? Math.round((info.loaded / info.total) * 100) : 0;
           setProgress({ loaded: info.loaded, total: info.total, percent });
 
           // Update content periodically (every 100ms) or when done
@@ -97,11 +101,13 @@ function FileViewer({ tab }: FileViewerProps) {
           // Additional progress callback
           const percent = total > 0 ? Math.round((loaded / total) * 100) : 0;
           setProgress({ loaded, total, percent });
-        }
+        },
       );
     } catch (err) {
-      console.error('Failed to read file:', err);
-      setError(`Failed to read file: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      console.error("Failed to read file:", err);
+      setError(
+        `Failed to read file: ${err instanceof Error ? err.message : "Unknown error"}`,
+      );
       setLoading(false);
       setIsStreaming(false);
       abortRef.current = null;
@@ -123,7 +129,8 @@ function FileViewer({ tab }: FileViewerProps) {
                 />
               </div>
               <div className="progress-text">
-                {formatFileSize(progress.loaded)} / {formatFileSize(progress.total)} ({progress.percent}%)
+                {formatFileSize(progress.loaded)} /{" "}
+                {formatFileSize(progress.total)} ({progress.percent}%)
               </div>
             </>
           )}
@@ -149,7 +156,8 @@ function FileViewer({ tab }: FileViewerProps) {
         <div className="streaming-header">
           <div className="streaming-progress">
             <span className="streaming-text">
-              Loading... {formatFileSize(progress.loaded)} / {formatFileSize(progress.total)} ({progress.percent}%)
+              Loading... {formatFileSize(progress.loaded)} /{" "}
+              {formatFileSize(progress.total)} ({progress.percent}%)
             </span>
             <div className="progress-bar">
               <div
@@ -174,9 +182,9 @@ function FileViewer({ tab }: FileViewerProps) {
 }
 
 function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 B';
+  if (bytes === 0) return "0 B";
   const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }

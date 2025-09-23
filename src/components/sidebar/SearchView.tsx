@@ -1,44 +1,50 @@
-import { useState, useContext, useEffect } from 'react';
-import { AppContext } from '../../state/AppContext';
-import type { SearchResult, ViewerTab } from '../../state/types';
-import { QueryParser } from '../../services/queryParser';
+import { useState, useContext, useEffect } from "react";
+import { AppContext } from "../../state/AppContext";
+import type { SearchResult, ViewerTab } from "../../state/types";
+import { QueryParser } from "../../services/queryParser";
 
 // List of file extensions that can be indexed
-const INDEXABLE_EXTENSIONS = ['.txt', '.log', '.json'];
+const INDEXABLE_EXTENSIONS = [".txt", ".log", ".json"];
 
 // Helper function to check if a file can be indexed
 const isFileIndexable = (fileName: string): boolean => {
-  return INDEXABLE_EXTENSIONS.some(ext => fileName.toLowerCase().endsWith(ext));
+  return INDEXABLE_EXTENSIONS.some((ext) =>
+    fileName.toLowerCase().endsWith(ext),
+  );
 };
 
 function SearchView() {
   const context = useContext(AppContext);
   if (!context) {
-    throw new Error('SearchView must be used within AppProvider');
+    throw new Error("SearchView must be used within AppProvider");
   }
   const { state, dispatch } = context;
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [lastSearchQuery, setLastSearchQuery] = useState('');
+  const [lastSearchQuery, setLastSearchQuery] = useState("");
   // React no longer owns the search index - it's owned by the indexing worker
   // We'll track indexing state here and send search queries to the worker
-  const indexStatus = state.indexingStatus || 'none';
+  const indexStatus = state.indexingStatus || "none";
   const [searchExpanded, setSearchExpanded] = useState(true);
   const [indexingExpanded, setIndexingExpanded] = useState(false);
   const [indexingSubSections, setIndexingSubSections] = useState({
     indexed: false,
     inprogress: false,
     unindexed: false,
-    errors: false
+    errors: false,
   });
   const indexingProgress = state.indexingProgress;
 
   // Search results collapsible state
-  const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(new Set());
+  const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(
+    new Set(),
+  );
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
-  const [expandedFileResults, setExpandedFileResults] = useState<Set<string>>(new Set());
+  const [expandedFileResults, setExpandedFileResults] = useState<Set<string>>(
+    new Set(),
+  );
 
   // Real file statuses from worker
   const [realFileStatuses, setRealFileStatuses] = useState<any[]>([]);
@@ -46,12 +52,13 @@ function SearchView() {
   // Fetch file statuses from worker when ready or when indexing progress changes (not on every status change)
   useEffect(() => {
     if (state.workerManager && state.workersReady) {
-      state.workerManager.getFileStatuses()
+      state.workerManager
+        .getFileStatuses()
         .then((statuses: any[]) => {
           setRealFileStatuses(statuses);
         })
         .catch((error: any) => {
-          console.error('🔍 Failed to get file statuses:', error);
+          console.error("🔍 Failed to get file statuses:", error);
         });
     }
   }, [state.workerManager, state.workersReady, indexingProgress]); // Removed indexStatus to prevent loops
@@ -61,24 +68,35 @@ function SearchView() {
 
   // Re-run search when new files are indexed
   useEffect(() => {
-    const currentIndexedCount = realFileStatuses.filter((fs: any) => fs.status === 'indexed').length;
+    const currentIndexedCount = realFileStatuses.filter(
+      (fs: any) => fs.status === "indexed",
+    ).length;
 
     // Only re-search if we have a meaningful change
     if (currentIndexedCount !== previousIndexedCount) {
-
       // If we have a previous search and the number of indexed files increased, re-run the search
-      if (lastSearchQuery && lastSearchQuery.trim() && currentIndexedCount > previousIndexedCount && currentIndexedCount > 0 && !isSearching) {
-        console.log('🔍 New files indexed, re-running search for:', lastSearchQuery);
+      if (
+        lastSearchQuery &&
+        lastSearchQuery.trim() &&
+        currentIndexedCount > previousIndexedCount &&
+        currentIndexedCount > 0 &&
+        !isSearching
+      ) {
+        console.log(
+          "🔍 New files indexed, re-running search for:",
+          lastSearchQuery,
+        );
 
         // Run search asynchronously to avoid infinite loops
         setTimeout(async () => {
           if (state.workerManager && lastSearchQuery.trim()) {
             setIsSearching(true);
             try {
-              const searchResults = await state.workerManager.searchLogs(lastSearchQuery);
+              const searchResults =
+                await state.workerManager.searchLogs(lastSearchQuery);
               setResults(searchResults);
             } catch (error) {
-              console.error('🔍 Auto re-search failed:', error);
+              console.error("🔍 Auto re-search failed:", error);
             } finally {
               setIsSearching(false);
             }
@@ -105,12 +123,19 @@ function SearchView() {
     });
 
     // Categorize files based on actual status
-    const indexed = allFiles.filter((f: any) => statusMap.get(f.path) === 'indexed');
-    const indexing = allFiles.filter((f: any) => statusMap.get(f.path) === 'indexing');
-    const errors = allFiles.filter((f: any) => statusMap.get(f.path) === 'error');
+    const indexed = allFiles.filter(
+      (f: any) => statusMap.get(f.path) === "indexed",
+    );
+    const indexing = allFiles.filter(
+      (f: any) => statusMap.get(f.path) === "indexing",
+    );
+    const errors = allFiles.filter(
+      (f: any) => statusMap.get(f.path) === "error",
+    );
     // Files explicitly marked as unindexed in the statusMap OR files not in statusMap at all
-    const unindexed = allFiles.filter((f: any) =>
-      statusMap.get(f.path) === 'unindexed' || !statusMap.has(f.path)
+    const unindexed = allFiles.filter(
+      (f: any) =>
+        statusMap.get(f.path) === "unindexed" || !statusMap.has(f.path),
     );
 
     return { indexed, indexing, unindexed, errors };
@@ -122,9 +147,8 @@ function SearchView() {
 
   // TODO: Worker handles file registration now - remove this entire useEffect
 
-
-  const toggleSection = (section: 'search' | 'indexing') => {
-    if (section === 'search') {
+  const toggleSection = (section: "search" | "indexing") => {
+    if (section === "search") {
       setSearchExpanded(true);
       setIndexingExpanded(false);
     } else {
@@ -133,19 +157,24 @@ function SearchView() {
     }
   };
 
-  const toggleIndexingSubSection = (subSection: keyof typeof indexingSubSections) => {
-    setIndexingSubSections(prev => ({
+  const toggleIndexingSubSection = (
+    subSection: keyof typeof indexingSubSections,
+  ) => {
+    setIndexingSubSections((prev) => ({
       ...prev,
-      [subSection]: !prev[subSection]
+      [subSection]: !prev[subSection],
     }));
   };
 
   const handleSearch = async () => {
     if (!query.trim() || !state.workerManager || indexed.length === 0) return;
 
-    console.log('🔍 SearchView: Starting search with query:', query);
-    console.log('🔍 SearchView: Index status:', indexStatus);
-    console.log('🔍 SearchView: WorkerManager available:', !!state.workerManager);
+    console.log("🔍 SearchView: Starting search with query:", query);
+    console.log("🔍 SearchView: Index status:", indexStatus);
+    console.log(
+      "🔍 SearchView: WorkerManager available:",
+      !!state.workerManager,
+    );
 
     setIsSearching(true);
     setHasSearched(true);
@@ -153,15 +182,19 @@ function SearchView() {
     try {
       // Parse the query for display purposes
       const parsedQuery = QueryParser.parse(query);
-      console.log('🔍 SearchView: Parsed query:', parsedQuery);
+      console.log("🔍 SearchView: Parsed query:", parsedQuery);
 
       // Use worker-based search
       const searchResults = await state.workerManager.searchLogs(query);
-      console.log('🔍 SearchView: Search completed, got', searchResults.length, 'results');
+      console.log(
+        "🔍 SearchView: Search completed, got",
+        searchResults.length,
+        "results",
+      );
       setResults(searchResults);
       setLastSearchQuery(query); // Store the query that generated these results
     } catch (error) {
-      console.error('🔍 SearchView: Search failed:', error);
+      console.error("🔍 SearchView: Search failed:", error);
       setResults([]);
     } finally {
       setIsSearching(false);
@@ -170,68 +203,77 @@ function SearchView() {
 
   const openSearchResult = (result: SearchResult) => {
     // Find the correct fileId from the filesIndex by matching the file path
-    const fileEntry = Object.values(state.filesIndex).find(entry => entry.path === result.file);
+    const fileEntry = Object.values(state.filesIndex).find(
+      (entry) => entry.path === result.file,
+    );
 
     if (!fileEntry) {
-      console.error('Could not find file entry for search result:', result.file);
+      console.error(
+        "Could not find file entry for search result:",
+        result.file,
+      );
       return;
     }
 
-    const fileName = result.file.split('/').pop() || result.file;
+    const fileName = result.file.split("/").pop() || result.file;
 
     // Check if a tab for this file already exists
-    const existingTab = state.openTabs.find(tab =>
-      tab.kind === 'file' && tab.fileId === fileEntry.id
+    const existingTab = state.openTabs.find(
+      (tab) => tab.kind === "file" && tab.fileId === fileEntry.id,
     );
 
     if (existingTab) {
       // Switch to the existing tab first
-      dispatch({ type: 'SET_ACTIVE_TAB', id: existingTab.id });
+      dispatch({ type: "SET_ACTIVE_TAB", id: existingTab.id });
 
       // Then update with the new line number
       dispatch({
-        type: 'OPEN_TAB',
+        type: "OPEN_TAB",
         tab: {
-          ...(existingTab as ViewerTab & { kind: 'file' }),
-          lineNumber: result.startLine
-        }
+          ...(existingTab as ViewerTab & { kind: "file" }),
+          lineNumber: result.startLine,
+        },
       });
     } else {
       // Create a new tab with just the filename as title
       const tabId = `file-${fileEntry.id}-${Date.now()}`;
       dispatch({
-        type: 'OPEN_TAB',
+        type: "OPEN_TAB",
         tab: {
-          kind: 'file',
+          kind: "file",
           id: tabId,
           fileId: fileEntry.id,
           title: fileName, // Just the filename, no line number
-          lineNumber: result.startLine
-        }
+          lineNumber: result.startLine,
+        },
       });
-      dispatch({ type: 'SET_ACTIVE_TAB', id: tabId });
+      dispatch({ type: "SET_ACTIVE_TAB", id: tabId });
     }
   };
 
   const handleIndexFile = async (file: any) => {
     if (!state.workerManager) return;
 
-    console.log('🔍 SearchView: Requesting indexing for file:', file.path);
+    console.log("🔍 SearchView: Requesting indexing for file:", file.path);
 
     try {
       // Set status to indexing to show progress UI
-      dispatch({ type: 'SET_INDEXING_STATUS', status: 'indexing', ruleDescription: undefined });
+      dispatch({
+        type: "SET_INDEXING_STATUS",
+        status: "indexing",
+        ruleDescription: undefined,
+      });
 
       await state.workerManager.indexSingleFile({
         path: file.path,
         name: file.name,
-        size: file.size
+        size: file.size,
       });
-      console.log('🔍 Single file indexing started:', file.path);
+      console.log("🔍 Single file indexing started:", file.path);
 
       // File statuses will be automatically refreshed by the useEffect when indexing progress changes
     } catch (error) {
-      console.error('🔍 Failed to index file:', error);
+      console.error("🔍 Failed to index file:", error);
     }
   };
 
@@ -239,28 +281,41 @@ function SearchView() {
     if (!state.workerManager || unindexed.length === 0) return;
 
     // Filter to only indexable files
-    const indexableFiles = unindexed.filter(file => isFileIndexable(file.name));
+    const indexableFiles = unindexed.filter((file) =>
+      isFileIndexable(file.name),
+    );
 
     if (indexableFiles.length === 0) {
-      console.log('🔍 No indexable files to add');
+      console.log("🔍 No indexable files to add");
       return;
     }
 
-    console.log('🔍 SearchView: Adding all indexable unindexed files to index:', indexableFiles.length, 'of', unindexed.length);
+    console.log(
+      "🔍 SearchView: Adding all indexable unindexed files to index:",
+      indexableFiles.length,
+      "of",
+      unindexed.length,
+    );
 
     try {
       // Set status to indexing to show progress UI
-      dispatch({ type: 'SET_INDEXING_STATUS', status: 'indexing', ruleDescription: undefined });
+      dispatch({
+        type: "SET_INDEXING_STATUS",
+        status: "indexing",
+        ruleDescription: undefined,
+      });
 
       // Start indexing the selected files (they should already be registered)
-      const filePaths = indexableFiles.map(file => file.path);
+      const filePaths = indexableFiles.map((file) => file.path);
 
       await state.workerManager.startIndexing(filePaths);
-      console.log('🔍 Batch indexing started for all indexable unindexed files');
+      console.log(
+        "🔍 Batch indexing started for all indexable unindexed files",
+      );
 
       // File statuses will be automatically refreshed by the useEffect when indexing progress changes
     } catch (error) {
-      console.error('🔍 Failed to add all files:', error);
+      console.error("🔍 Failed to add all files:", error);
     }
   };
 
@@ -281,18 +336,21 @@ function SearchView() {
 
     if (firstMatchIndex === -1) {
       // No match found, return truncated text
-      return text.length > 80 ? text.slice(0, 80) + '...' : text;
+      return text.length > 80 ? text.slice(0, 80) + "..." : text;
     }
 
     // Extract context around the match (~30 chars on each side)
     const contextStart = Math.max(0, firstMatchIndex - 30);
-    const contextEnd = Math.min(text.length, firstMatchIndex + matchLength + 30);
+    const contextEnd = Math.min(
+      text.length,
+      firstMatchIndex + matchLength + 30,
+    );
 
     let snippet = text.slice(contextStart, contextEnd);
 
     // Add ellipsis if we truncated
-    if (contextStart > 0) snippet = '...' + snippet;
-    if (contextEnd < text.length) snippet = snippet + '...';
+    if (contextStart > 0) snippet = "..." + snippet;
+    if (contextEnd < text.length) snippet = snippet + "...";
 
     return snippet;
   };
@@ -335,20 +393,24 @@ function SearchView() {
 
   const renderGroupedSearchResults = () => {
     // Group results by file
-    const groupedResults = results.reduce((groups, result) => {
-      if (!groups[result.file]) {
-        groups[result.file] = [];
-      }
-      groups[result.file].push(result);
-      return groups;
-    }, {} as Record<string, SearchResult[]>);
+    const groupedResults = results.reduce(
+      (groups, result) => {
+        if (!groups[result.file]) {
+          groups[result.file] = [];
+        }
+        groups[result.file].push(result);
+        return groups;
+      },
+      {} as Record<string, SearchResult[]>,
+    );
 
     // Group files by directory
     const directoriesMap = new Map<string, string[]>();
 
-    Object.keys(groupedResults).forEach(filePath => {
-      const pathParts = filePath.split('/');
-      const directory = pathParts.length > 1 ? pathParts.slice(0, -1).join('/') : '';
+    Object.keys(groupedResults).forEach((filePath) => {
+      const pathParts = filePath.split("/");
+      const directory =
+        pathParts.length > 1 ? pathParts.slice(0, -1).join("/") : "";
 
       if (!directoriesMap.has(directory)) {
         directoriesMap.set(directory, []);
@@ -363,150 +425,184 @@ function SearchView() {
 
     return (
       <>
-        <div style={{ marginBottom: '8px', fontSize: '12px', color: 'var(--text-muted)' }}>
-          {results.length} result{results.length !== 1 ? 's' : ''} in {totalFiles} file{totalFiles !== 1 ? 's' : ''}
+        <div
+          style={{
+            marginBottom: "8px",
+            fontSize: "12px",
+            color: "var(--text-muted)",
+          }}
+        >
+          {results.length} result{results.length !== 1 ? "s" : ""} in{" "}
+          {totalFiles} file{totalFiles !== 1 ? "s" : ""}
         </div>
 
         {sortedDirectories.slice(0, 10).map((directory) => {
           const filesInDir = directoriesMap.get(directory)!.sort();
           const dirExpanded = !expandedDirectories.has(directory); // Default expanded, collapse on toggle
-          const dirDisplayName = directory || 'Root';
+          const dirDisplayName = directory || "Root";
 
           // Count total matches in this directory
-          const totalDirMatches = filesInDir.reduce((sum, filePath) => sum + groupedResults[filePath].length, 0);
+          const totalDirMatches = filesInDir.reduce(
+            (sum, filePath) => sum + groupedResults[filePath].length,
+            0,
+          );
 
           return (
-            <div key={directory} style={{ marginBottom: '8px' }}>
+            <div key={directory} style={{ marginBottom: "8px" }}>
               {/* Directory header */}
               <div
                 onClick={() => toggleDirectory(directory)}
                 style={{
-                  position: 'sticky',
-                  top: '0px',
+                  position: "sticky",
+                  top: "0px",
                   zIndex: 10,
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: '6px 8px',
-                  backgroundColor: 'var(--bg-tertiary)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '11px',
-                  fontWeight: 'bold',
-                  userSelect: 'none'
+                  display: "flex",
+                  alignItems: "center",
+                  padding: "6px 8px",
+                  backgroundColor: "var(--bg-tertiary)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  fontSize: "11px",
+                  fontWeight: "bold",
+                  userSelect: "none",
                 }}
               >
-                <span style={{
-                  marginRight: '6px',
-                  transform: dirExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                  transition: 'transform 0.1s',
-                  fontSize: '10px'
-                }}>
+                <span
+                  style={{
+                    marginRight: "6px",
+                    transform: dirExpanded ? "rotate(90deg)" : "rotate(0deg)",
+                    transition: "transform 0.1s",
+                    fontSize: "10px",
+                  }}
+                >
                   ▶
                 </span>
-                <span style={{ flex: 1 }}>
-                  {dirDisplayName}
-                </span>
-                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                  {totalDirMatches} match{totalDirMatches !== 1 ? 'es' : ''} in {filesInDir.length} file{filesInDir.length !== 1 ? 's' : ''}
+                <span style={{ flex: 1 }}>{dirDisplayName}</span>
+                <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>
+                  {totalDirMatches} match{totalDirMatches !== 1 ? "es" : ""} in{" "}
+                  {filesInDir.length} file{filesInDir.length !== 1 ? "s" : ""}
                 </span>
               </div>
 
               {/* Files in directory */}
               {dirExpanded && (
-                <div style={{ marginTop: '4px', marginLeft: '12px' }}>
+                <div style={{ marginTop: "4px", marginLeft: "12px" }}>
                   {filesInDir.slice(0, 15).map((filePath) => {
                     const fileResults = groupedResults[filePath];
-                    const sortedFileResults = fileResults.sort((a, b) => a.startLine - b.startLine);
+                    const sortedFileResults = fileResults.sort(
+                      (a, b) => a.startLine - b.startLine,
+                    );
                     const fileExpanded = !expandedFiles.has(filePath); // Default expanded, collapse on toggle
-                    const fileResultsExpanded = expandedFileResults.has(filePath);
-                    const pathParts = filePath.split('/');
+                    const fileResultsExpanded =
+                      expandedFileResults.has(filePath);
+                    const pathParts = filePath.split("/");
                     const fileName = pathParts[pathParts.length - 1];
-                    const parentPath = pathParts.length > 1 ? pathParts.slice(0, -1).join('/') : '';
+                    const parentPath =
+                      pathParts.length > 1
+                        ? pathParts.slice(0, -1).join("/")
+                        : "";
 
                     // Show first 5 results, then "show more" if needed
                     const initialResultsCount = 5;
-                    const visibleResults = fileResultsExpanded ? sortedFileResults : sortedFileResults.slice(0, initialResultsCount);
-                    const hasMoreResults = sortedFileResults.length > initialResultsCount;
+                    const visibleResults = fileResultsExpanded
+                      ? sortedFileResults
+                      : sortedFileResults.slice(0, initialResultsCount);
+                    const hasMoreResults =
+                      sortedFileResults.length > initialResultsCount;
 
                     return (
                       <div
                         key={filePath}
                         style={{
-                          marginBottom: '6px',
-                          border: '1px solid var(--border)',
-                          borderRadius: '3px',
-                          backgroundColor: 'var(--bg-secondary)'
+                          marginBottom: "6px",
+                          border: "1px solid var(--border)",
+                          borderRadius: "3px",
+                          backgroundColor: "var(--bg-secondary)",
                         }}
                       >
                         {/* File header */}
                         <div
                           onClick={() => toggleFile(filePath)}
                           style={{
-                            position: 'sticky',
-                            top: '24px', // Below directory header with adjusted spacing
+                            position: "sticky",
+                            top: "24px", // Below directory header with adjusted spacing
                             zIndex: 9, // Below directory header but above content
-                            display: 'flex',
-                            alignItems: 'center',
-                            padding: '6px 8px',
-                            cursor: 'pointer',
-                            userSelect: 'none',
-                            borderRadius: '3px 3px 0 0',
-                            backgroundColor: 'var(--bg-secondary)',
-                            borderBottom: '1px solid var(--border)'
+                            display: "flex",
+                            alignItems: "center",
+                            padding: "6px 8px",
+                            cursor: "pointer",
+                            userSelect: "none",
+                            borderRadius: "3px 3px 0 0",
+                            backgroundColor: "var(--bg-secondary)",
+                            borderBottom: "1px solid var(--border)",
                           }}
                         >
-                          <span style={{
-                            marginRight: '6px',
-                            transform: fileExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                            transition: 'transform 0.1s',
-                            fontSize: '9px'
-                          }}>
+                          <span
+                            style={{
+                              marginRight: "6px",
+                              transform: fileExpanded
+                                ? "rotate(90deg)"
+                                : "rotate(0deg)",
+                              transition: "transform 0.1s",
+                              fontSize: "9px",
+                            }}
+                          >
                             ▶
                           </span>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             {parentPath && (
-                              <div style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                fontSize: '9px',
-                                color: 'var(--text-muted)',
-                                overflow: 'hidden',
-                                marginBottom: '2px'
-                              }}>
-                                <div style={{
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                  flex: 1
-                                }}>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "6px",
+                                  fontSize: "9px",
+                                  color: "var(--text-muted)",
+                                  overflow: "hidden",
+                                  marginBottom: "2px",
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                    flex: 1,
+                                  }}
+                                >
                                   {parentPath}/
                                 </div>
-                                <span style={{
-                                  fontSize: '9px',
-                                  color: 'var(--text-muted)',
-                                  flexShrink: 0
-                                }}>
+                                <span
+                                  style={{
+                                    fontSize: "9px",
+                                    color: "var(--text-muted)",
+                                    flexShrink: 0,
+                                  }}
+                                >
                                   {fileResults.length}
                                 </span>
                               </div>
                             )}
-                            <div style={{
-                              fontSize: '11px',
-                              fontWeight: 'bold',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap'
-                            }}>
+                            <div
+                              style={{
+                                fontSize: "11px",
+                                fontWeight: "bold",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
                               {fileName}
                               {!parentPath && (
-                                <span style={{
-                                  fontSize: '9px',
-                                  color: 'var(--text-muted)',
-                                  marginLeft: '6px',
-                                  fontWeight: 'normal'
-                                }}>
+                                <span
+                                  style={{
+                                    fontSize: "9px",
+                                    color: "var(--text-muted)",
+                                    marginLeft: "6px",
+                                    fontWeight: "normal",
+                                  }}
+                                >
                                   {fileResults.length}
                                 </span>
                               )}
@@ -516,49 +612,67 @@ function SearchView() {
 
                         {/* File results */}
                         {fileExpanded && (
-                          <div style={{ padding: '4px 8px', paddingTop: 0 }}>
+                          <div style={{ padding: "4px 8px", paddingTop: 0 }}>
                             {visibleResults.map((result) => {
                               // Reconstruct line context from log entry fields
                               const lineContext = `${result.timestamp} ${result.level} ${result.goroutineId} ${result.message}`;
-                              const snippet = highlightMatch(lineContext, searchTerms);
+                              const snippet = highlightMatch(
+                                lineContext,
+                                searchTerms,
+                              );
 
                               return (
                                 <div
                                   key={result.id}
                                   onClick={() => openSearchResult(result)}
                                   style={{
-                                    padding: '4px 6px',
-                                    cursor: 'pointer',
-                                    borderRadius: '2px',
-                                    fontSize: '10px',
-                                    lineHeight: '1.3',
-                                    marginBottom: '2px',
-                                    backgroundColor: 'transparent'
+                                    padding: "4px 6px",
+                                    cursor: "pointer",
+                                    borderRadius: "2px",
+                                    fontSize: "10px",
+                                    lineHeight: "1.3",
+                                    marginBottom: "2px",
+                                    backgroundColor: "transparent",
                                   }}
                                   onMouseEnter={(e) => {
-                                    (e.target as HTMLElement).style.backgroundColor = 'var(--bg-primary)';
+                                    (
+                                      e.target as HTMLElement
+                                    ).style.backgroundColor =
+                                      "var(--bg-primary)";
                                   }}
                                   onMouseLeave={(e) => {
-                                    (e.target as HTMLElement).style.backgroundColor = 'transparent';
+                                    (
+                                      e.target as HTMLElement
+                                    ).style.backgroundColor = "transparent";
                                   }}
                                 >
-                                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
-                                    <span style={{
-                                      fontWeight: 'bold',
-                                      fontSize: '9px',
-                                      color: 'var(--text-accent)',
-                                      minWidth: '30px',
-                                      textAlign: 'right'
-                                    }}>
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "flex-start",
+                                      gap: "6px",
+                                    }}
+                                  >
+                                    <span
+                                      style={{
+                                        fontWeight: "bold",
+                                        fontSize: "9px",
+                                        color: "var(--text-accent)",
+                                        minWidth: "30px",
+                                        textAlign: "right",
+                                      }}
+                                    >
                                       {result.startLine}:
                                     </span>
-                                    <div style={{
-                                      fontSize: '10px',
-                                      color: 'var(--text-primary)',
-                                      fontFamily: 'monospace',
-                                      wordBreak: 'break-word',
-                                      lineHeight: '1.2'
-                                    }}>
+                                    <div
+                                      style={{
+                                        fontSize: "10px",
+                                        color: "var(--text-primary)",
+                                        fontFamily: "monospace",
+                                        wordBreak: "break-word",
+                                        lineHeight: "1.2",
+                                      }}
+                                    >
                                       {snippet}
                                     </div>
                                   </div>
@@ -570,16 +684,18 @@ function SearchView() {
                               <div
                                 onClick={() => toggleFileResults(filePath)}
                                 style={{
-                                  padding: '6px',
-                                  fontSize: '10px',
-                                  color: 'var(--accent-primary)',
-                                  cursor: 'pointer',
-                                  textAlign: 'center',
-                                  borderTop: '1px solid var(--border)',
-                                  backgroundColor: 'var(--bg-tertiary)'
+                                  padding: "6px",
+                                  fontSize: "10px",
+                                  color: "var(--accent-primary)",
+                                  cursor: "pointer",
+                                  textAlign: "center",
+                                  borderTop: "1px solid var(--border)",
+                                  backgroundColor: "var(--bg-tertiary)",
                                 }}
                               >
-                                Show {sortedFileResults.length - initialResultsCount} more matches
+                                Show{" "}
+                                {sortedFileResults.length - initialResultsCount}{" "}
+                                more matches
                               </div>
                             )}
 
@@ -587,13 +703,13 @@ function SearchView() {
                               <div
                                 onClick={() => toggleFileResults(filePath)}
                                 style={{
-                                  padding: '6px',
-                                  fontSize: '10px',
-                                  color: 'var(--accent-primary)',
-                                  cursor: 'pointer',
-                                  textAlign: 'center',
-                                  borderTop: '1px solid var(--border)',
-                                  backgroundColor: 'var(--bg-tertiary)'
+                                  padding: "6px",
+                                  fontSize: "10px",
+                                  color: "var(--accent-primary)",
+                                  cursor: "pointer",
+                                  textAlign: "center",
+                                  borderTop: "1px solid var(--border)",
+                                  backgroundColor: "var(--bg-tertiary)",
                                 }}
                               >
                                 Show fewer matches
@@ -606,12 +722,14 @@ function SearchView() {
                   })}
 
                   {filesInDir.length > 15 && (
-                    <div style={{
-                      padding: '6px 8px',
-                      fontSize: '10px',
-                      color: 'var(--text-muted)',
-                      fontStyle: 'italic'
-                    }}>
+                    <div
+                      style={{
+                        padding: "6px 8px",
+                        fontSize: "10px",
+                        color: "var(--text-muted)",
+                        fontStyle: "italic",
+                      }}
+                    >
                       ... and {filesInDir.length - 15} more files
                     </div>
                   )}
@@ -622,7 +740,13 @@ function SearchView() {
         })}
 
         {sortedDirectories.length > 10 && (
-          <div style={{ padding: '8px', fontSize: '12px', color: 'var(--text-muted)' }}>
+          <div
+            style={{
+              padding: "8px",
+              fontSize: "12px",
+              color: "var(--text-muted)",
+            }}
+          >
             Showing first 10 directories of {sortedDirectories.length}
           </div>
         )}
@@ -630,93 +754,140 @@ function SearchView() {
     );
   };
 
-
   const renderIndexStatus = () => {
     switch (indexStatus) {
-      case 'none':
+      case "none":
         return (
-          <div className="index-status" style={{ padding: '8px', fontSize: '12px', color: 'var(--text-muted)' }}>
+          <div
+            className="index-status"
+            style={{
+              padding: "8px",
+              fontSize: "12px",
+              color: "var(--text-muted)",
+            }}
+          >
             No log files indexed. Load log files to enable search.
           </div>
         );
-      case 'indexing':
+      case "indexing":
         return (
-          <div className="index-status" style={{ padding: '8px', fontSize: '12px', color: 'var(--text-warning)' }}>
+          <div
+            className="index-status"
+            style={{
+              padding: "8px",
+              fontSize: "12px",
+              color: "var(--text-warning)",
+            }}
+          >
             {indexingProgress ? (
               <div>
-                <div>Indexing file {indexingProgress.current}/{indexingProgress.total}:</div>
-                <div style={{ fontSize: '10px', marginTop: '4px', color: 'var(--text-muted)' }}>
+                <div>
+                  Indexing file {indexingProgress.current}/
+                  {indexingProgress.total}:
+                </div>
+                <div
+                  style={{
+                    fontSize: "10px",
+                    marginTop: "4px",
+                    color: "var(--text-muted)",
+                  }}
+                >
                   {indexingProgress.fileName}
                 </div>
               </div>
             ) : (
-              'Indexing log files...'
+              "Indexing log files..."
             )}
           </div>
         );
-      case 'ready':
+      case "ready":
         // TODO: Get stats from worker
         return (
-          <div className="index-status" style={{ padding: '8px', fontSize: '12px', color: 'var(--text-success)' }}>
+          <div
+            className="index-status"
+            style={{
+              padding: "8px",
+              fontSize: "12px",
+              color: "var(--text-success)",
+            }}
+          >
             Search index ready (TODO: show stats from worker)
           </div>
         );
     }
   };
 
-
   const renderFileList = (files: any[], showAddButton = false) => {
     if (files.length === 0) {
       return (
-        <div style={{ padding: '8px', fontSize: '12px', color: 'var(--text-muted)' }}>
+        <div
+          style={{
+            padding: "8px",
+            fontSize: "12px",
+            color: "var(--text-muted)",
+          }}
+        >
           No files
         </div>
       );
     }
 
     // Group files by directory
-    const groupedFiles = files.reduce((groups, file) => {
-      const pathParts = file.path.split('/');
-      const dir = pathParts.length > 1 ? pathParts.slice(0, -1).join('/') : '/';
-      if (!groups[dir]) {
-        groups[dir] = [];
-      }
-      groups[dir].push(file);
-      return groups;
-    }, {} as Record<string, any[]>);
+    const groupedFiles = files.reduce(
+      (groups, file) => {
+        const pathParts = file.path.split("/");
+        const dir =
+          pathParts.length > 1 ? pathParts.slice(0, -1).join("/") : "/";
+        if (!groups[dir]) {
+          groups[dir] = [];
+        }
+        groups[dir].push(file);
+        return groups;
+      },
+      {} as Record<string, any[]>,
+    );
 
     return (
-      <div style={{ padding: '4px' }}>
+      <div style={{ padding: "4px" }}>
         {Object.entries(groupedFiles).map(([dir, dirFiles]) => (
-          <div key={dir} style={{ marginBottom: '8px' }}>
-            <div style={{
-              fontSize: '10px',
-              color: 'var(--text-muted)',
-              fontWeight: 'bold',
-              marginBottom: '4px',
-              paddingLeft: '4px'
-            }}>
-              {dir === '/' ? 'Root' : dir}
+          <div key={dir} style={{ marginBottom: "8px" }}>
+            <div
+              style={{
+                fontSize: "10px",
+                color: "var(--text-muted)",
+                fontWeight: "bold",
+                marginBottom: "4px",
+                paddingLeft: "4px",
+              }}
+            >
+              {dir === "/" ? "Root" : dir}
             </div>
             {(dirFiles as any[]).map((file: any) => (
               <div
                 key={file.path}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '4px 8px',
-                  marginBottom: '2px',
-                  borderRadius: '2px',
-                  backgroundColor: 'var(--bg-tertiary)',
-                  fontSize: '11px'
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "4px 8px",
+                  marginBottom: "2px",
+                  borderRadius: "2px",
+                  backgroundColor: "var(--bg-tertiary)",
+                  fontSize: "11px",
                 }}
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div
+                    style={{
+                      fontWeight: "bold",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
                     {file.name}
                   </div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '10px' }}>
+                  <div style={{ color: "var(--text-muted)", fontSize: "10px" }}>
                     {(file.size / 1024).toFixed(1)} KB
                     {file.entries && ` • ${file.entries} entries`}
                   </div>
@@ -725,14 +896,14 @@ function SearchView() {
                   <button
                     onClick={() => handleIndexFile(file)}
                     style={{
-                      marginLeft: '8px',
-                      padding: '4px 8px',
-                      fontSize: '12px',
-                      border: '1px solid var(--border)',
-                      backgroundColor: 'var(--accent-primary)',
-                      color: 'white',
-                      borderRadius: '3px',
-                      cursor: 'pointer'
+                      marginLeft: "8px",
+                      padding: "4px 8px",
+                      fontSize: "12px",
+                      border: "1px solid var(--border)",
+                      backgroundColor: "var(--accent-primary)",
+                      color: "white",
+                      borderRadius: "3px",
+                      cursor: "pointer",
                     }}
                     title={`Index ${file.name}`}
                   >
@@ -747,51 +918,73 @@ function SearchView() {
     );
   };
 
-  const renderSectionHeader = (title: string, expanded: boolean, onClick: () => void) => (
+  const renderSectionHeader = (
+    title: string,
+    expanded: boolean,
+    onClick: () => void,
+  ) => (
     <div
       onClick={onClick}
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        padding: '8px',
-        backgroundColor: 'var(--bg-secondary)',
-        borderBottom: '1px solid var(--border)',
-        cursor: 'pointer',
-        fontSize: '12px',
-        fontWeight: 'bold',
-        userSelect: 'none'
+        display: "flex",
+        alignItems: "center",
+        padding: "8px",
+        backgroundColor: "var(--bg-secondary)",
+        borderBottom: "1px solid var(--border)",
+        cursor: "pointer",
+        fontSize: "12px",
+        fontWeight: "bold",
+        userSelect: "none",
       }}
     >
-      <span style={{ marginRight: '6px', transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.1s' }}>
+      <span
+        style={{
+          marginRight: "6px",
+          transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+          transition: "transform 0.1s",
+        }}
+      >
         ▶
       </span>
       {title}
     </div>
   );
 
-  const renderSubSectionHeader = (title: string, count: number, expanded: boolean, onClick: () => void, showAddAll?: boolean) => (
+  const renderSubSectionHeader = (
+    title: string,
+    count: number,
+    expanded: boolean,
+    onClick: () => void,
+    showAddAll?: boolean,
+  ) => (
     <div
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        padding: '6px 16px',
-        backgroundColor: 'var(--bg-tertiary)',
-        borderBottom: '1px solid var(--border)',
-        fontSize: '11px',
-        fontWeight: '500',
-        userSelect: 'none'
+        display: "flex",
+        alignItems: "center",
+        padding: "6px 16px",
+        backgroundColor: "var(--bg-tertiary)",
+        borderBottom: "1px solid var(--border)",
+        fontSize: "11px",
+        fontWeight: "500",
+        userSelect: "none",
       }}
     >
       <div
         onClick={onClick}
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          cursor: 'pointer',
-          flex: 1
+          display: "flex",
+          alignItems: "center",
+          cursor: "pointer",
+          flex: 1,
         }}
       >
-        <span style={{ marginRight: '4px', transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.1s' }}>
+        <span
+          style={{
+            marginRight: "4px",
+            transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+            transition: "transform 0.1s",
+          }}
+        >
           ▶
         </span>
         {title} ({count})
@@ -803,14 +996,14 @@ function SearchView() {
             handleAddAllFiles();
           }}
           style={{
-            marginLeft: '8px',
-            padding: '4px 8px',
-            fontSize: '12px',
-            border: '1px solid var(--border)',
-            backgroundColor: 'var(--accent-primary)',
-            color: 'white',
-            borderRadius: '3px',
-            cursor: 'pointer'
+            marginLeft: "8px",
+            padding: "4px 8px",
+            fontSize: "12px",
+            border: "1px solid var(--border)",
+            backgroundColor: "var(--accent-primary)",
+            color: "white",
+            borderRadius: "3px",
+            cursor: "pointer",
           }}
           title="Add all indexable files (.txt, .log, .json) to search index"
         >
@@ -821,23 +1014,60 @@ function SearchView() {
   );
 
   return (
-    <div className="search-view" style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+    <div
+      className="search-view"
+      style={{
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        position: "relative",
+      }}
+    >
       {/* Top collapsed sections (above expanded) */}
       <div style={{ flexShrink: 0 }}>
-        {!searchExpanded && renderSectionHeader('SEARCH', searchExpanded, () => toggleSection('search'))}
+        {!searchExpanded &&
+          renderSectionHeader("SEARCH", searchExpanded, () =>
+            toggleSection("search"),
+          )}
       </div>
 
       {/* Expanded section */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          minHeight: 0,
+          overflow: "hidden",
+        }}
+      >
         {searchExpanded && (
           <>
             <div style={{ flexShrink: 0 }}>
-              {renderSectionHeader('SEARCH', searchExpanded, () => toggleSection('search'))}
+              {renderSectionHeader("SEARCH", searchExpanded, () =>
+                toggleSection("search"),
+              )}
             </div>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                minHeight: 0,
+                overflow: "hidden",
+              }}
+            >
               {renderIndexStatus()}
 
-              <div className="search-form" style={{ padding: '8px', display: 'flex', gap: '4px', flexShrink: 0 }}>
+              <div
+                className="search-form"
+                style={{
+                  padding: "8px",
+                  display: "flex",
+                  gap: "4px",
+                  flexShrink: 0,
+                }}
+              >
                 <input
                   type="text"
                   className="search-input"
@@ -848,58 +1078,77 @@ function SearchView() {
                     setHasSearched(false); // Reset search state when query changes
                   }}
                   onKeyDown={(e) => {
-                    console.log('🔍 Key pressed:', e.key);
-                    if (e.key === 'Enter') {
-                      console.log('🔍 Enter pressed, calling handleSearch');
+                    console.log("🔍 Key pressed:", e.key);
+                    if (e.key === "Enter") {
+                      console.log("🔍 Enter pressed, calling handleSearch");
                       handleSearch();
                     }
                   }}
                   disabled={!state.workerManager || indexed.length === 0}
                   style={{
                     flex: 1,
-                    padding: '12px',
-                    fontSize: '13px',
-                    background: 'var(--bg-primary)',
-                    border: '1px solid var(--border-primary)',
-                    borderRadius: '6px',
-                    color: 'var(--text-primary)'
+                    padding: "12px",
+                    fontSize: "13px",
+                    background: "var(--bg-primary)",
+                    border: "1px solid var(--border-primary)",
+                    borderRadius: "6px",
+                    color: "var(--text-primary)",
                   }}
                 />
 
                 <button
                   className="btn search-btn"
                   onClick={handleSearch}
-                  disabled={!query.trim() || isSearching || !state.workerManager || indexed.length === 0}
+                  disabled={
+                    !query.trim() ||
+                    isSearching ||
+                    !state.workerManager ||
+                    indexed.length === 0
+                  }
                   style={{
-                    width: '40px',
-                    height: '40px',
-                    padding: '0',
-                    fontSize: '16px',
-                    background: indexed.length > 0 && query.trim() && state.workerManager ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
-                    color: indexed.length > 0 && query.trim() && state.workerManager ? 'white' : 'var(--text-muted)',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: indexed.length > 0 && query.trim() && state.workerManager ? 'pointer' : 'not-allowed',
-                    transition: 'all 0.2s ease',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
+                    width: "40px",
+                    height: "40px",
+                    padding: "0",
+                    fontSize: "16px",
+                    background:
+                      indexed.length > 0 && query.trim() && state.workerManager
+                        ? "var(--accent-primary)"
+                        : "var(--bg-tertiary)",
+                    color:
+                      indexed.length > 0 && query.trim() && state.workerManager
+                        ? "white"
+                        : "var(--text-muted)",
+                    border: "none",
+                    borderRadius: "6px",
+                    cursor:
+                      indexed.length > 0 && query.trim() && state.workerManager
+                        ? "pointer"
+                        : "not-allowed",
+                    transition: "all 0.2s ease",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
                   }}
                 >
-                  {isSearching ? '⋯' : '▶'}
+                  {isSearching ? "⋯" : "▶"}
                 </button>
               </div>
 
               {/* Search Results */}
-              <div style={{ flex: 1, overflow: 'auto' }}>
+              <div style={{ flex: 1, overflow: "auto" }}>
                 {results.length > 0 ? (
-                  <div className="search-results" style={{ padding: '8px' }}>
+                  <div className="search-results" style={{ padding: "8px" }}>
                     {renderGroupedSearchResults()}
                   </div>
                 ) : (
-                  hasSearched && query && !isSearching && indexed.length > 0 && (
-                    <div className="empty-state" style={{ padding: '8px' }}>
-                      <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  hasSearched &&
+                  query &&
+                  !isSearching &&
+                  indexed.length > 0 && (
+                    <div className="empty-state" style={{ padding: "8px" }}>
+                      <p
+                        style={{ fontSize: "12px", color: "var(--text-muted)" }}
+                      >
                         No results found for "{query}"
                       </p>
                     </div>
@@ -913,31 +1162,65 @@ function SearchView() {
         {indexingExpanded && (
           <>
             <div style={{ flexShrink: 0 }}>
-              {renderSectionHeader(`INDEXED ${indexed.length}/${state.zip ? state.zip.entries.filter((entry: any) => !entry.isDir).length : 0}${state.indexingRuleDescription ? ` ${state.indexingRuleDescription}` : ''}`, indexingExpanded, () => toggleSection('indexing'))}
+              {renderSectionHeader(
+                `INDEXED ${indexed.length}/${state.zip ? state.zip.entries.filter((entry: any) => !entry.isDir).length : 0}${state.indexingRuleDescription ? ` ${state.indexingRuleDescription}` : ""}`,
+                indexingExpanded,
+                () => toggleSection("indexing"),
+              )}
             </div>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-              <div style={{ flex: 1, overflow: 'auto' }}>
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                minHeight: 0,
+                overflow: "hidden",
+              }}
+            >
+              <div style={{ flex: 1, overflow: "auto" }}>
                 {/* Indexed Files Subsection */}
                 <div>
-                  {renderSubSectionHeader('Indexed Files', indexed.length, indexingSubSections.indexed, () => toggleIndexingSubSection('indexed'))}
+                  {renderSubSectionHeader(
+                    "Indexed Files",
+                    indexed.length,
+                    indexingSubSections.indexed,
+                    () => toggleIndexingSubSection("indexed"),
+                  )}
                   {indexingSubSections.indexed && renderFileList(indexed)}
                 </div>
 
                 {/* In Progress Subsection */}
                 <div>
-                  {renderSubSectionHeader('In Progress', indexing.length, indexingSubSections.inprogress, () => toggleIndexingSubSection('inprogress'))}
+                  {renderSubSectionHeader(
+                    "In Progress",
+                    indexing.length,
+                    indexingSubSections.inprogress,
+                    () => toggleIndexingSubSection("inprogress"),
+                  )}
                   {indexingSubSections.inprogress && renderFileList(indexing)}
                 </div>
 
                 {/* Unindexed Files Subsection */}
                 <div>
-                  {renderSubSectionHeader('Unindexed Files', unindexed.length, indexingSubSections.unindexed, () => toggleIndexingSubSection('unindexed'), true)}
-                  {indexingSubSections.unindexed && renderFileList(unindexed, true)}
+                  {renderSubSectionHeader(
+                    "Unindexed Files",
+                    unindexed.length,
+                    indexingSubSections.unindexed,
+                    () => toggleIndexingSubSection("unindexed"),
+                    true,
+                  )}
+                  {indexingSubSections.unindexed &&
+                    renderFileList(unindexed, true)}
                 </div>
 
                 {/* Errors Subsection */}
                 <div>
-                  {renderSubSectionHeader('Errors', errors.length, indexingSubSections.errors, () => toggleIndexingSubSection('errors'))}
+                  {renderSubSectionHeader(
+                    "Errors",
+                    errors.length,
+                    indexingSubSections.errors,
+                    () => toggleIndexingSubSection("errors"),
+                  )}
                   {indexingSubSections.errors && renderFileList(errors)}
                 </div>
               </div>
@@ -947,14 +1230,21 @@ function SearchView() {
       </div>
 
       {/* Bottom collapsed sections (below expanded) - sticky to bottom */}
-      <div style={{
-        flexShrink: 0,
-        position: 'sticky',
-        bottom: 0,
-        backgroundColor: 'var(--bg-primary)',
-        borderTop: indexingExpanded ? 'none' : '1px solid var(--border)'
-      }}>
-        {!indexingExpanded && renderSectionHeader(`INDEXED ${indexed.length}/${state.zip ? state.zip.entries.filter((entry: any) => !entry.isDir).length : 0}${state.indexingRuleDescription ? ` ${state.indexingRuleDescription}` : ''}`, indexingExpanded, () => toggleSection('indexing'))}
+      <div
+        style={{
+          flexShrink: 0,
+          position: "sticky",
+          bottom: 0,
+          backgroundColor: "var(--bg-primary)",
+          borderTop: indexingExpanded ? "none" : "1px solid var(--border)",
+        }}
+      >
+        {!indexingExpanded &&
+          renderSectionHeader(
+            `INDEXED ${indexed.length}/${state.zip ? state.zip.entries.filter((entry: any) => !entry.isDir).length : 0}${state.indexingRuleDescription ? ` ${state.indexingRuleDescription}` : ""}`,
+            indexingExpanded,
+            () => toggleSection("indexing"),
+          )}
       </div>
     </div>
   );

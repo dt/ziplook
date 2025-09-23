@@ -8,7 +8,7 @@ export interface ParsedLogEntry {
   fileLine: number;
 
   id: number;
-  level: 'I' | 'W' | 'E' | 'F';
+  level: "I" | "W" | "E" | "F";
   timestamp: string;
   goroutineId: string;
   codeFileLine: string; // foo.go:123
@@ -24,8 +24,10 @@ export interface LogParsingStats {
 }
 
 export class LogParser {
-  private static readonly LOG_REGEX_WITH_COUNTER = /^([IWEF])([0-9: ]{15})(\.\d+)( \d+ )(\d+@)([^:]+)(:\d+)( ⋮ )(\[[^\]]*\]) (\d+) (.*)$/;
-  private static readonly LOG_REGEX_WITHOUT_COUNTER = /^([IWEF])([0-9: ]{15})(\.\d+)( \d+ )([^@:]+)(:\d+)( ⋮ )(\[[^\]]*\]) (.*)$/;
+  private static readonly LOG_REGEX_WITH_COUNTER =
+    /^([IWEF])([0-9: ]{15})(\.\d+)( \d+ )(\d+@)([^:]+)(:\d+)( ⋮ )(\[[^\]]*\]) (\d+) (.*)$/;
+  private static readonly LOG_REGEX_WITHOUT_COUNTER =
+    /^([IWEF])([0-9: ]{15})(\.\d+)( \d+ )([^@:]+)(:\d+)( ⋮ )(\[[^\]]*\]) (.*)$/;
 
   private entryCounter = 0;
   private pendingEntry: Partial<ParsedLogEntry> | null = null;
@@ -33,14 +35,17 @@ export class LogParser {
     totalLines: 0,
     parsedEntries: 0,
     unparseableLines: 0,
-    multiLineEntries: 0
+    multiLineEntries: 0,
   };
 
   /**
    * Parse a complete log file into structured entries
    */
-  parseLogFile(content: string, sourceFile: string): { entries: ParsedLogEntry[], stats: LogParsingStats } {
-    const lines = content.split('\n');
+  parseLogFile(
+    content: string,
+    sourceFile: string,
+  ): { entries: ParsedLogEntry[]; stats: LogParsingStats } {
+    const lines = content.split("\n");
     const entries: ParsedLogEntry[] = [];
 
     this.resetState();
@@ -65,7 +70,9 @@ export class LogParser {
           this.stats.multiLineEntries++;
         } else {
           // Orphaned line - treat as standalone unparseable entry
-          entries.push(this.createUnparseableEntry(line, lineIndex + 1, sourceFile));
+          entries.push(
+            this.createUnparseableEntry(line, lineIndex + 1, sourceFile),
+          );
           this.stats.unparseableLines++;
         }
       }
@@ -83,7 +90,11 @@ export class LogParser {
   /**
    * Parse a single log line using the established regex patterns
    */
-  private parseLogLine(line: string, lineNum: number, sourceFile: string): Partial<ParsedLogEntry> | null {
+  private parseLogLine(
+    line: string,
+    lineNum: number,
+    sourceFile: string,
+  ): Partial<ParsedLogEntry> | null {
     // Try regex with counter first
     let match = line.match(LogParser.LOG_REGEX_WITH_COUNTER);
     let hasCounter = true;
@@ -98,21 +109,43 @@ export class LogParser {
       return null; // Unparseable line
     }
 
-    let level, datetime, fractional, pid, channel, filePath, lineStr, tags, message;
+    let level,
+      datetime,
+      fractional,
+      pid,
+      channel,
+      filePath,
+      lineStr,
+      tags,
+      message;
 
     if (hasCounter) {
       // With counter: groups [1-11]: level, datetime, fractional, pid, channel@, file, :line, separator, tags, counter, message
-      [, level, datetime, fractional, pid, channel, filePath, lineStr, , tags, , message] = match;
-      channel = channel.replace('@', '');
+      [
+        ,
+        level,
+        datetime,
+        fractional,
+        pid,
+        channel,
+        filePath,
+        lineStr,
+        ,
+        tags,
+        ,
+        message,
+      ] = match;
+      channel = channel.replace("@", "");
     } else {
       // Without counter: groups [1-9]: level, datetime, fractional, pid, file, :line, separator, tags, message
-      [, level, datetime, fractional, pid, filePath, lineStr, , tags, message] = match;
+      [, level, datetime, fractional, pid, filePath, lineStr, , tags, message] =
+        match;
       channel = undefined;
     }
 
     const timestamp = `${datetime}${fractional}`;
     const goroutineId = pid.trim();
-    const lineNumber = parseInt(lineStr?.replace(':', '') || '0');
+    const lineNumber = parseInt(lineStr?.replace(":", "") || "0");
 
     const { tagMap } = this.parseTags(tags);
 
@@ -120,12 +153,12 @@ export class LogParser {
       fileName: sourceFile,
       fileLine: lineNum,
       id: this.generateEntryId(),
-      level: level as 'I' | 'W' | 'E' | 'F',
+      level: level as "I" | "W" | "E" | "F",
       timestamp,
       goroutineId,
-      codeFileLine: `${filePath || ''}:${lineNumber}`,
+      codeFileLine: `${filePath || ""}:${lineNumber}`,
       tagMap,
-      message: message || ''
+      message: message || "",
     };
   }
 
@@ -136,17 +169,17 @@ export class LogParser {
     const tagMap: Record<string, string> = {};
 
     // Remove brackets and split by comma
-    const tagContent = tagString.replace(/^\[|\]$/g, '');
-    const tags = tagContent.split(',').map(t => t.trim());
+    const tagContent = tagString.replace(/^\[|\]$/g, "");
+    const tags = tagContent.split(",").map((t) => t.trim());
 
     for (const tag of tags) {
-      if (tag.includes('=')) {
+      if (tag.includes("=")) {
         // Key-value tag
-        const [key, value] = tag.split('=', 2);
+        const [key, value] = tag.split("=", 2);
         tagMap[key] = value;
       } else {
         // Simple tag (store with empty value to indicate it exists)
-        tagMap[tag] = '';
+        tagMap[tag] = "";
       }
     }
 
@@ -160,7 +193,7 @@ export class LogParser {
       totalLines: 0,
       parsedEntries: 0,
       unparseableLines: 0,
-      multiLineEntries: 0
+      multiLineEntries: 0,
     };
   }
 
@@ -170,7 +203,7 @@ export class LogParser {
 
   private completePendingEntry(): ParsedLogEntry {
     if (!this.pendingEntry) {
-      throw new Error('No pending entry to complete');
+      throw new Error("No pending entry to complete");
     }
 
     return this.pendingEntry as ParsedLogEntry;
@@ -181,21 +214,25 @@ export class LogParser {
       return;
     }
 
-    this.pendingEntry.message += '\n' + line;
+    this.pendingEntry.message += "\n" + line;
     // Note: fileLine stays as the first line number for multi-line entries
   }
 
-  private createUnparseableEntry(line: string, lineNum: number, sourceFile: string): ParsedLogEntry {
+  private createUnparseableEntry(
+    line: string,
+    lineNum: number,
+    sourceFile: string,
+  ): ParsedLogEntry {
     return {
       fileName: sourceFile,
       fileLine: lineNum,
       id: this.generateEntryId(),
-      level: 'I', // Default level for unparseable
-      timestamp: '',
-      goroutineId: '',
-      codeFileLine: '', // No source code file for unparseable lines
+      level: "I", // Default level for unparseable
+      timestamp: "",
+      goroutineId: "",
+      codeFileLine: "", // No source code file for unparseable lines
       tagMap: {},
-      message: line
+      message: line,
     };
   }
 
@@ -203,20 +240,25 @@ export class LogParser {
    * Normalize message content for better search matching
    */
   static normalizeMessage(message: string): string {
-    return message
-      // Replace UUIDs
-      .replace(/\b[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\b/gi, '[UUID]')
-      // Replace session IDs
-      .replace(/\bsession_id=\w+/gi, 'session_id=[ID]')
-      .replace(/\brequest_id=\w+/gi, 'request_id=[ID]')
-      .replace(/\buser_id=\d+/gi, 'user_id=[ID]')
-      // Replace timestamps within messages
-      .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/g, '[TIMESTAMP]')
-      // Replace memory addresses
-      .replace(/0x[a-f0-9]+/gi, '[ADDR]')
-      // Replace IP addresses (but keep structure for search)
-      .replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, '[IP]')
-      // Replace port numbers after IP
-      .replace(/\[IP\]:\d+/g, '[IP:PORT]');
+    return (
+      message
+        // Replace UUIDs
+        .replace(
+          /\b[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\b/gi,
+          "[UUID]",
+        )
+        // Replace session IDs
+        .replace(/\bsession_id=\w+/gi, "session_id=[ID]")
+        .replace(/\brequest_id=\w+/gi, "request_id=[ID]")
+        .replace(/\buser_id=\d+/gi, "user_id=[ID]")
+        // Replace timestamps within messages
+        .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/g, "[TIMESTAMP]")
+        // Replace memory addresses
+        .replace(/0x[a-f0-9]+/gi, "[ADDR]")
+        // Replace IP addresses (but keep structure for search)
+        .replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, "[IP]")
+        // Replace port numbers after IP
+        .replace(/\[IP\]:\d+/g, "[IP:PORT]")
+    );
   }
 }

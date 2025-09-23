@@ -3,14 +3,32 @@
  * Implements the planned architecture for worker-to-worker communication
  */
 
-import type { ZipEntryMeta } from '../state/types';
+import type { ZipEntryMeta } from "../state/types";
 
 interface WorkerManagerOptions {
-  onIndexingProgress?: (progress: { current: number; total: number; fileName: string }) => void;
-  onIndexingComplete?: (success: boolean, totalEntries: number, error?: string, ruleDescription?: string) => void;
+  onIndexingProgress?: (progress: {
+    current: number;
+    total: number;
+    fileName: string;
+  }) => void;
+  onIndexingComplete?: (
+    success: boolean,
+    totalEntries: number,
+    error?: string,
+    ruleDescription?: string,
+  ) => void;
   onIndexingFileResult?: (filePath: string, entries: any[]) => void;
-  onTableLoadProgress?: (tableName: string, status: string, rowCount?: number, error?: string) => void;
-  onTableLoadingComplete?: (success: boolean, tablesLoaded: number, error?: string) => void;
+  onTableLoadProgress?: (
+    tableName: string,
+    status: string,
+    rowCount?: number,
+    error?: string,
+  ) => void;
+  onTableLoadingComplete?: (
+    success: boolean,
+    tablesLoaded: number,
+    error?: string,
+  ) => void;
   onDatabaseInitialized?: (success: boolean, error?: string) => void;
 }
 
@@ -24,18 +42,27 @@ export class WorkerManager {
   private indexingWorker: Worker | null = null;
   private zipToDbChannel: MessageChannel | null = null;
   private zipToIndexingChannel: MessageChannel | null = null;
-  private pendingZipRequests = new Map<string, {
-    resolve: (value: any) => void;
-    reject: (error: Error) => void;
-  }>();
-  private pendingDbRequests = new Map<string, {
-    resolve: (value: any) => void;
-    reject: (error: Error) => void;
-  }>();
-  private pendingIndexingRequests = new Map<string, {
-    resolve: (value: any) => void;
-    reject: (error: Error) => void;
-  }>();
+  private pendingZipRequests = new Map<
+    string,
+    {
+      resolve: (value: any) => void;
+      reject: (error: Error) => void;
+    }
+  >();
+  private pendingDbRequests = new Map<
+    string,
+    {
+      resolve: (value: any) => void;
+      reject: (error: Error) => void;
+    }
+  >();
+  private pendingIndexingRequests = new Map<
+    string,
+    {
+      resolve: (value: any) => void;
+      reject: (error: Error) => void;
+    }
+  >();
   private options: WorkerManagerOptions;
   private databaseInitialized = false;
 
@@ -50,35 +77,33 @@ export class WorkerManager {
 
   async loadZipData(zipData: Uint8Array): Promise<ZipEntryMeta[]> {
     if (!this.zipWorker) {
-      throw new Error('Zip worker not initialized');
+      throw new Error("Zip worker not initialized");
     }
 
     try {
       // Load zip data into existing worker
       const entries = await this.sendZipWorkerMessage({
-        type: 'initialize',
-        zipData
+        type: "initialize",
+        zipData,
       });
 
       if (!entries.success) {
-        throw new Error(entries.error || 'Failed to load zip data');
+        throw new Error(entries.error || "Failed to load zip data");
       }
 
       return entries.entries || [];
-
     } catch (error) {
-      console.error('Failed to load zip data:', error);
+      console.error("Failed to load zip data:", error);
       throw error;
     }
   }
 
   async initializeWorkers(): Promise<void> {
     try {
-
       // Create zip worker first
       this.zipWorker = new Worker(
-        new URL('../workers/zipReader.worker.ts', import.meta.url),
-        { type: 'module' }
+        new URL("../workers/zipReader.worker.ts", import.meta.url),
+        { type: "module" },
       );
 
       this.zipWorker.onmessage = (event) => {
@@ -86,14 +111,13 @@ export class WorkerManager {
       };
 
       this.zipWorker.onerror = (error) => {
-        console.error('❌ Zip worker error:', error);
+        console.error("❌ Zip worker error:", error);
       };
-
 
       // Create DB worker
       this.dbWorker = new Worker(
-        new URL('../workers/db.worker.ts', import.meta.url),
-        { type: 'module' }
+        new URL("../workers/db.worker.ts", import.meta.url),
+        { type: "module" },
       );
 
       this.dbWorker.onmessage = (event) => {
@@ -101,14 +125,13 @@ export class WorkerManager {
       };
 
       this.dbWorker.onerror = (error) => {
-        console.error('❌ DB worker error:', error);
+        console.error("❌ DB worker error:", error);
       };
-
 
       // Create indexing worker
       this.indexingWorker = new Worker(
-        new URL('../workers/indexing.worker.ts', import.meta.url),
-        { type: 'module' }
+        new URL("../workers/indexing.worker.ts", import.meta.url),
+        { type: "module" },
       );
 
       this.indexingWorker.onmessage = (event) => {
@@ -116,51 +139,58 @@ export class WorkerManager {
       };
 
       this.indexingWorker.onerror = (error) => {
-        console.error('❌ Indexing worker error:', error);
+        console.error("❌ Indexing worker error:", error);
       };
-
 
       // Create channels for direct worker communication
       this.zipToDbChannel = new MessageChannel();
       this.zipToIndexingChannel = new MessageChannel();
 
-
       // Connect DB worker to zip worker
-      this.dbWorker.postMessage({
-        type: 'setZipWorkerPort',
-        port: this.zipToDbChannel.port1
-      }, [this.zipToDbChannel.port1]);
+      this.dbWorker.postMessage(
+        {
+          type: "setZipWorkerPort",
+          port: this.zipToDbChannel.port1,
+        },
+        [this.zipToDbChannel.port1],
+      );
 
-      this.zipWorker.postMessage({
-        type: 'setDbWorkerPort',
-        port: this.zipToDbChannel.port2
-      }, [this.zipToDbChannel.port2]);
+      this.zipWorker.postMessage(
+        {
+          type: "setDbWorkerPort",
+          port: this.zipToDbChannel.port2,
+        },
+        [this.zipToDbChannel.port2],
+      );
 
       // Connect indexing worker to zip worker
-      this.indexingWorker.postMessage({
-        type: 'setZipWorkerPort',
-        port: this.zipToIndexingChannel.port1
-      }, [this.zipToIndexingChannel.port1]);
+      this.indexingWorker.postMessage(
+        {
+          type: "setZipWorkerPort",
+          port: this.zipToIndexingChannel.port1,
+        },
+        [this.zipToIndexingChannel.port1],
+      );
 
-      this.zipWorker.postMessage({
-        type: 'setIndexingWorkerPort',
-        port: this.zipToIndexingChannel.port2
-      }, [this.zipToIndexingChannel.port2]);
+      this.zipWorker.postMessage(
+        {
+          type: "setIndexingWorkerPort",
+          port: this.zipToIndexingChannel.port2,
+        },
+        [this.zipToIndexingChannel.port2],
+      );
 
       // Initialize the database
       await this.initializeDatabase();
-
-
     } catch (error) {
-      console.error('❌ Failed to initialize workers:', error);
+      console.error("❌ Failed to initialize workers:", error);
       throw error;
     }
   }
 
-
   async initializeDatabase(): Promise<void> {
     if (!this.dbWorker) {
-      throw new Error('DB worker not initialized');
+      throw new Error("DB worker not initialized");
     }
 
     // If already initialized, return immediately
@@ -183,29 +213,33 @@ export class WorkerManager {
             if (this.options.onDatabaseInitialized) {
               this.options.onDatabaseInitialized(false, response.error);
             }
-            reject(new Error(response.error || 'Failed to initialize database'));
+            reject(
+              new Error(response.error || "Failed to initialize database"),
+            );
           }
         },
-        reject
+        reject,
       });
 
       this.dbWorker!.postMessage({
-        type: 'initializeDatabase',
-        id
+        type: "initializeDatabase",
+        id,
       });
     });
   }
 
-  async startTableLoading(tables: Array<{
-    name: string;
-    path: string;
-    size: number;
-    nodeId?: number;
-    originalName?: string;
-    isError?: boolean;
-  }>): Promise<void> {
+  async startTableLoading(
+    tables: Array<{
+      name: string;
+      path: string;
+      size: number;
+      nodeId?: number;
+      originalName?: string;
+      isError?: boolean;
+    }>,
+  ): Promise<void> {
     if (!this.dbWorker) {
-      throw new Error('DB worker not initialized');
+      throw new Error("DB worker not initialized");
     }
 
     // Wait for database to be initialized before starting table loading
@@ -213,12 +247,11 @@ export class WorkerManager {
       await this.initializeDatabase();
     }
 
-
     // Send table loading request to DB worker
     this.dbWorker.postMessage({
-      type: 'startTableLoading',
+      type: "startTableLoading",
       id: `table_loading_${Date.now()}`,
-      tables
+      tables,
     });
   }
 
@@ -231,7 +264,7 @@ export class WorkerManager {
     isError?: boolean;
   }): Promise<void> {
     if (!this.dbWorker) {
-      throw new Error('DB worker not initialized');
+      throw new Error("DB worker not initialized");
     }
 
     // Wait for database to be initialized before loading table
@@ -239,17 +272,16 @@ export class WorkerManager {
       await this.initializeDatabase();
     }
 
-
     this.dbWorker.postMessage({
-      type: 'loadSingleTable',
+      type: "loadSingleTable",
       id: `single_table_${Date.now()}`,
-      table
+      table,
     });
   }
 
   async executeQuery(sql: string): Promise<any[]> {
     if (!this.dbWorker) {
-      throw new Error('DB worker not initialized');
+      throw new Error("DB worker not initialized");
     }
 
     // Wait for database to be initialized before executing query
@@ -264,23 +296,23 @@ export class WorkerManager {
           if (response.success) {
             resolve(response.data || []);
           } else {
-            reject(new Error(response.error || 'Query failed'));
+            reject(new Error(response.error || "Query failed"));
           }
         },
-        reject
+        reject,
       });
 
       this.dbWorker!.postMessage({
-        type: 'executeQuery',
+        type: "executeQuery",
         id,
-        sql
+        sql,
       });
     });
   }
 
   async getTableSchema(tableName: string): Promise<any[]> {
     if (!this.dbWorker) {
-      throw new Error('DB worker not initialized');
+      throw new Error("DB worker not initialized");
     }
 
     // Wait for database to be initialized
@@ -295,23 +327,23 @@ export class WorkerManager {
           if (response.success) {
             resolve(response.schema || []);
           } else {
-            reject(new Error(response.error || 'Failed to get table schema'));
+            reject(new Error(response.error || "Failed to get table schema"));
           }
         },
-        reject
+        reject,
       });
 
       this.dbWorker!.postMessage({
-        type: 'getTableSchema',
+        type: "getTableSchema",
         id,
-        tableName
+        tableName,
       });
     });
   }
 
   async getLoadedTables(): Promise<string[]> {
     if (!this.dbWorker) {
-      throw new Error('DB worker not initialized');
+      throw new Error("DB worker not initialized");
     }
 
     // Wait for database to be initialized
@@ -326,22 +358,24 @@ export class WorkerManager {
           if (response.success) {
             resolve(response.tables || []);
           } else {
-            reject(new Error(response.error || 'Failed to get loaded tables'));
+            reject(new Error(response.error || "Failed to get loaded tables"));
           }
         },
-        reject
+        reject,
       });
 
       this.dbWorker!.postMessage({
-        type: 'getLoadedTables',
-        id
+        type: "getLoadedTables",
+        id,
       });
     });
   }
 
-  async getDuckDBFunctions(): Promise<Array<{name: string; type: string; description?: string}>> {
+  async getDuckDBFunctions(): Promise<
+    Array<{ name: string; type: string; description?: string }>
+  > {
     if (!this.dbWorker) {
-      throw new Error('DB worker not initialized');
+      throw new Error("DB worker not initialized");
     }
 
     // Wait for database to be initialized
@@ -356,22 +390,24 @@ export class WorkerManager {
           if (response.success) {
             resolve(response.functions || []);
           } else {
-            reject(new Error(response.error || 'Failed to get DuckDB functions'));
+            reject(
+              new Error(response.error || "Failed to get DuckDB functions"),
+            );
           }
         },
-        reject
+        reject,
       });
 
       this.dbWorker!.postMessage({
-        type: 'getDuckDBFunctions',
-        id
+        type: "getDuckDBFunctions",
+        id,
       });
     });
   }
 
   async getDuckDBKeywords(): Promise<string[]> {
     if (!this.dbWorker) {
-      throw new Error('DB worker not initialized');
+      throw new Error("DB worker not initialized");
     }
 
     // Wait for database to be initialized
@@ -386,75 +422,82 @@ export class WorkerManager {
           if (response.success) {
             resolve(response.keywords || []);
           } else {
-            reject(new Error(response.error || 'Failed to get DuckDB keywords'));
+            reject(
+              new Error(response.error || "Failed to get DuckDB keywords"),
+            );
           }
         },
-        reject
+        reject,
       });
 
       this.dbWorker!.postMessage({
-        type: 'getDuckDBKeywords',
-        id
+        type: "getDuckDBKeywords",
+        id,
       });
     });
   }
 
-  async registerFiles(files: Array<{ path: string; name: string; size: number }>): Promise<void> {
+  async registerFiles(
+    files: Array<{ path: string; name: string; size: number }>,
+  ): Promise<void> {
     if (!this.indexingWorker) {
-      throw new Error('Indexing worker not initialized');
+      throw new Error("Indexing worker not initialized");
     }
 
     if (!this.zipToIndexingChannel) {
-      throw new Error('Zip worker channel not established');
+      throw new Error("Zip worker channel not established");
     }
 
     // Send file registration to indexing worker
     this.indexingWorker.postMessage({
-      type: 'registerFiles',
+      type: "registerFiles",
       id: `register_${Date.now()}`,
-      files
+      files,
     });
   }
 
   async startIndexing(filePaths: string[]): Promise<void> {
     if (!this.indexingWorker) {
-      throw new Error('Indexing worker not initialized');
+      throw new Error("Indexing worker not initialized");
     }
 
     if (!this.zipToIndexingChannel) {
-      throw new Error('Zip worker channel not established');
+      throw new Error("Zip worker channel not established");
     }
 
     // Send indexing request to indexing worker
     this.indexingWorker.postMessage({
-      type: 'startIndexing',
+      type: "startIndexing",
       id: `indexing_${Date.now()}`,
-      filePaths
+      filePaths,
     });
   }
 
-  async indexSingleFile(file: { path: string; name: string; size: number }): Promise<void> {
+  async indexSingleFile(file: {
+    path: string;
+    name: string;
+    size: number;
+  }): Promise<void> {
     if (!this.indexingWorker) {
-      throw new Error('Indexing worker not initialized');
+      throw new Error("Indexing worker not initialized");
     }
 
     if (!this.zipToIndexingChannel) {
-      throw new Error('Zip worker channel not established');
+      throw new Error("Zip worker channel not established");
     }
 
     // Send single file indexing request to indexing worker
     this.indexingWorker.postMessage({
-      type: 'indexSingleFile',
+      type: "indexSingleFile",
       id: `single_indexing_${Date.now()}`,
-      file
+      file,
     });
   }
 
   async searchLogs(query: string): Promise<any[]> {
     if (!this.indexingWorker) {
-      throw new Error('Indexing worker not initialized');
+      throw new Error("Indexing worker not initialized");
     }
-
 
     return new Promise((resolve, reject) => {
       const id = this.generateRequestId();
@@ -463,23 +506,23 @@ export class WorkerManager {
           if (response.success) {
             resolve(response.results || []);
           } else {
-            reject(new Error(response.error || 'Search failed'));
+            reject(new Error(response.error || "Search failed"));
           }
         },
-        reject
+        reject,
       });
 
       this.indexingWorker!.postMessage({
-        type: 'search',
+        type: "search",
         id,
-        query
+        query,
       });
     });
   }
 
   async getFileStatuses(): Promise<any[]> {
     if (!this.indexingWorker) {
-      throw new Error('Indexing worker not initialized');
+      throw new Error("Indexing worker not initialized");
     }
 
     return new Promise((resolve, reject) => {
@@ -489,31 +532,31 @@ export class WorkerManager {
           if (response.success) {
             resolve(response.fileStatuses || []);
           } else {
-            reject(new Error(response.error || 'Get file statuses failed'));
+            reject(new Error(response.error || "Get file statuses failed"));
           }
         },
-        reject
+        reject,
       });
 
       this.indexingWorker!.postMessage({
-        type: 'getFileStatuses',
-        id
+        type: "getFileStatuses",
+        id,
       });
     });
   }
 
   async readFile(path: string): Promise<{ text?: string; bytes?: Uint8Array }> {
     if (!this.zipWorker) {
-      throw new Error('Zip worker not initialized');
+      throw new Error("Zip worker not initialized");
     }
 
     const response = await this.sendZipWorkerMessage({
-      type: 'readFile',
-      path
+      type: "readFile",
+      path,
     });
 
     if (!response.success) {
-      throw new Error(response.error || 'Failed to read file');
+      throw new Error(response.error || "Failed to read file");
     }
 
     return response.result;
@@ -521,10 +564,13 @@ export class WorkerManager {
 
   async readFileStream(
     path: string,
-    onChunk: (chunk: string, progress: { loaded: number; total: number; done: boolean }) => void
+    onChunk: (
+      chunk: string,
+      progress: { loaded: number; total: number; done: boolean },
+    ) => void,
   ): Promise<void> {
     if (!this.zipWorker) {
-      throw new Error('Zip worker not initialized');
+      throw new Error("Zip worker not initialized");
     }
 
     return new Promise((resolve, reject) => {
@@ -542,7 +588,7 @@ export class WorkerManager {
         reject: (error: Error) => {
           cleanup();
           reject(error);
-        }
+        },
       });
 
       // Set up temporary listener for chunks
@@ -550,7 +596,7 @@ export class WorkerManager {
       this.zipWorker!.onmessage = (event) => {
         const response = event.data;
 
-        if (response.id === id && response.type === 'readFileChunk') {
+        if (response.id === id && response.type === "readFileChunk") {
           onChunk(response.chunk, response.progress);
 
           if (response.progress.done) {
@@ -560,7 +606,7 @@ export class WorkerManager {
               request.resolve(undefined);
             }
           }
-        } else if (response.id === id && response.type === 'error') {
+        } else if (response.id === id && response.type === "error") {
           this.zipWorker!.onmessage = originalHandler;
           const request = this.pendingZipRequests.get(id);
           if (request) {
@@ -575,9 +621,9 @@ export class WorkerManager {
       };
 
       this.zipWorker!.postMessage({
-        type: 'readFileChunked',
+        type: "readFileChunked",
         id,
-        path
+        path,
       });
     });
   }
@@ -585,7 +631,7 @@ export class WorkerManager {
   private sendZipWorkerMessage(message: any): Promise<any> {
     return new Promise((resolve, reject) => {
       if (!this.zipWorker) {
-        reject(new Error('Zip worker not available'));
+        reject(new Error("Zip worker not available"));
         return;
       }
 
@@ -597,12 +643,11 @@ export class WorkerManager {
   }
 
   private handleZipWorkerMessage(response: any) {
-
     const request = this.pendingZipRequests.get(response.id);
     if (request) {
       this.pendingZipRequests.delete(response.id);
 
-      if (response.type === 'error') {
+      if (response.type === "error") {
         request.reject(new Error(response.error));
       } else {
         request.resolve(response);
@@ -611,31 +656,30 @@ export class WorkerManager {
   }
 
   private handleDbWorkerMessage(response: any) {
-
     // Handle progress/status messages
     switch (response.type) {
-      case 'tableLoadProgress':
+      case "tableLoadProgress":
         if (this.options.onTableLoadProgress) {
           this.options.onTableLoadProgress(
             response.tableName,
             response.status,
             response.rowCount,
-            response.error
+            response.error,
           );
         }
         break;
 
-      case 'tableLoadingComplete':
+      case "tableLoadingComplete":
         if (this.options.onTableLoadingComplete) {
           this.options.onTableLoadingComplete(
             response.success,
             response.tablesLoaded,
-            response.error
+            response.error,
           );
         }
         break;
 
-      case 'tableLoadingError':
+      case "tableLoadingError":
         if (this.options.onTableLoadingComplete) {
           this.options.onTableLoadingComplete(false, 0, response.error);
         }
@@ -653,38 +697,45 @@ export class WorkerManager {
   }
 
   private handleIndexingWorkerMessage(response: any) {
-
     switch (response.type) {
-      case 'indexingProgress':
+      case "indexingProgress":
         if (this.options.onIndexingProgress) {
           this.options.onIndexingProgress({
             current: response.current,
             total: response.total,
-            fileName: response.fileName
+            fileName: response.fileName,
           });
         }
         break;
 
-      case 'indexingComplete':
+      case "indexingComplete":
         if (this.options.onIndexingComplete) {
-          this.options.onIndexingComplete(response.success, response.totalEntries, response.error, response.ruleDescription);
+          this.options.onIndexingComplete(
+            response.success,
+            response.totalEntries,
+            response.error,
+            response.ruleDescription,
+          );
         }
         break;
 
-      case 'indexingFileResult':
+      case "indexingFileResult":
         if (this.options.onIndexingFileResult) {
-          this.options.onIndexingFileResult(response.filePath, response.entries);
+          this.options.onIndexingFileResult(
+            response.filePath,
+            response.entries,
+          );
         }
         break;
 
-      case 'indexingError':
+      case "indexingError":
         if (this.options.onIndexingComplete) {
           this.options.onIndexingComplete(false, 0, response.error, undefined);
         }
         break;
 
-      case 'searchResponse':
-      case 'fileStatuses':
+      case "searchResponse":
+      case "fileStatuses":
         // Handle search response and file statuses response
         const request = this.pendingIndexingRequests.get(response.id);
         if (request) {
@@ -750,7 +801,9 @@ export class WorkerManager {
 }
 
 // Public API to get/create the singleton WorkerManager
-export async function getWorkerManager(options?: WorkerManagerOptions): Promise<WorkerManager> {
+export async function getWorkerManager(
+  options?: WorkerManagerOptions,
+): Promise<WorkerManager> {
   // If already initialized, just update callbacks if provided and return
   if (globalWorkerManager) {
     if (options) {

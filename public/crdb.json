@@ -1848,13 +1848,7 @@
                     }
                   },
                   "oneofs": {
-                    "union": [
-                      "table",
-                      "database",
-                      "type",
-                      "schema",
-                      "function"
-                    ]
+                    "union": ["table", "database", "type", "schema", "function"]
                   }
                 },
                 "UserPrivileges": {
@@ -1957,10 +1951,7 @@
                     }
                   },
                   "oneofs": {
-                    "role": [
-                      "explicit_role",
-                      "for_all_roles"
-                    ]
+                    "role": ["explicit_role", "for_all_roles"]
                   }
                 },
                 "DefaultPrivilegeDescriptor": {
@@ -12904,10 +12895,7 @@
                         }
                       },
                       "oneofs": {
-                        "progress": [
-                          "fraction_completed",
-                          "high_water"
-                        ],
+                        "progress": ["fraction_completed", "high_water"],
                         "details": [
                           "backup",
                           "restore",
@@ -15101,9 +15089,7 @@
                         }
                       },
                       "oneofs": {
-                        "value": [
-                          "send"
-                        ]
+                        "value": ["send"]
                       }
                     },
                     "DelegateSendSnapshotRequest": {
@@ -20336,10 +20322,7 @@
                 }
               },
               "oneofs": {
-                "union": [
-                  "span",
-                  "system_span_config_target"
-                ]
+                "union": ["span", "system_span_config_target"]
               }
             },
             "SpanConfigEntry": {
@@ -32571,10 +32554,7 @@
                 }
               },
               "oneofs": {
-                "error": [
-                  "leaf",
-                  "wrapper"
-                ]
+                "error": ["leaf", "wrapper"]
               }
             },
             "EncodedErrorLeaf": {
@@ -33236,9 +33216,7 @@
                         }
                       },
                       "oneofs": {
-                        "details": [
-                          "simple_uri"
-                        ]
+                        "details": ["simple_uri"]
                       }
                     }
                   }
@@ -35157,11 +35135,7 @@
                 }
               },
               "oneofs": {
-                "union": [
-                  "schema_objects",
-                  "tenants",
-                  "cluster"
-                ]
+                "union": ["schema_objects", "tenants", "cluster"]
               }
             }
           }
@@ -36856,13 +36830,7 @@
             }
           },
           "oneofs": {
-            "data": [
-              "wrapped",
-              "bare",
-              "enriched",
-              "resolved",
-              "bareResolved"
-            ]
+            "data": ["wrapped", "bare", "enriched", "resolved", "bareResolved"]
           }
         },
         "WrappedEnvelope": {

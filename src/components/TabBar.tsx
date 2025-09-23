@@ -1,48 +1,48 @@
-import { useState, useRef, useEffect } from 'react';
-import { useApp } from '../state/AppContext';
+import { useState, useRef, useEffect } from "react";
+import { useApp } from "../state/AppContext";
 
 function TabBar() {
   const { state, dispatch } = useApp();
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
-  const [editingTitle, setEditingTitle] = useState('');
+  const [editingTitle, setEditingTitle] = useState("");
   const editInputRef = useRef<HTMLInputElement>(null);
 
   const handleTabClick = (tabId: string) => {
     if (state.activeTabId === tabId && !editingTabId) {
       // Click on active tab - start editing
-      const tab = state.openTabs.find(t => t.id === tabId);
+      const tab = state.openTabs.find((t) => t.id === tabId);
       if (tab) {
         setEditingTabId(tabId);
         setEditingTitle(tab.title);
       }
     } else if (!editingTabId) {
-      dispatch({ type: 'SET_ACTIVE_TAB', id: tabId });
+      dispatch({ type: "SET_ACTIVE_TAB", id: tabId });
     }
   };
 
   const handleTabClose = (tabId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    dispatch({ type: 'CLOSE_TAB', id: tabId });
+    dispatch({ type: "CLOSE_TAB", id: tabId });
   };
 
   const handleTitleSubmit = () => {
     if (editingTabId && editingTitle.trim()) {
       dispatch({
-        type: 'UPDATE_TAB',
+        type: "UPDATE_TAB",
         id: editingTabId,
         updates: { title: editingTitle.trim() },
       });
     }
     setEditingTabId(null);
-    setEditingTitle('');
+    setEditingTitle("");
   };
 
   const handleTitleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+    if (e.key === "Enter") {
       handleTitleSubmit();
-    } else if (e.key === 'Escape') {
+    } else if (e.key === "Escape") {
       setEditingTabId(null);
-      setEditingTitle('');
+      setEditingTitle("");
     }
   };
 
@@ -55,10 +55,10 @@ function TabBar() {
 
   return (
     <div className="tab-bar">
-      {state.openTabs.map(tab => (
+      {state.openTabs.map((tab) => (
         <div
           key={tab.id}
-          className={`tab ${state.activeTabId === tab.id ? 'active' : ''}`}
+          className={`tab ${state.activeTabId === tab.id ? "active" : ""}`}
           onClick={() => handleTabClick(tab.id)}
         >
           {editingTabId === tab.id ? (
@@ -72,7 +72,9 @@ function TabBar() {
               onClick={(e) => e.stopPropagation()}
             />
           ) : (
-            <span className="tab-title" title={tab.title}>{tab.title}</span>
+            <span className="tab-title" title={tab.title}>
+              {tab.title}
+            </span>
           )}
           <button
             className="tab-close"

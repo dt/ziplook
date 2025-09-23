@@ -43,12 +43,14 @@
 .tree-item,
 .table-item-compact,
 .query-item {
-  transition: background-color 0.1s ease, color 0.1s ease;
+  transition:
+    background-color 0.1s ease,
+    color 0.1s ease;
 }
 
 /* Focus indicators for accessibility */
 .keyboard-highlighted::before {
-  content: '';
+  content: "";
   position: absolute;
   left: 0;
   top: 0;

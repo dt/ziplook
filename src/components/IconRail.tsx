@@ -1,57 +1,105 @@
-
 interface IconRailProps {
-  activeView: 'files' | 'tables' | 'search' | 'stackgazer';
-  onViewChange: (view: 'files' | 'tables' | 'search' | 'stackgazer') => void;
+  activeView: "files" | "tables" | "search" | "stackgazer";
+  onViewChange: (view: "files" | "tables" | "search" | "stackgazer") => void;
   onMemoryMonitorOpen?: () => void;
 }
 
-function IconRail({ activeView, onViewChange, onMemoryMonitorOpen }: IconRailProps) {
+function IconRail({
+  activeView,
+  onViewChange,
+  onMemoryMonitorOpen,
+}: IconRailProps) {
   return (
     <div className="icon-rail relative">
       <button
-        className={`icon-rail-item ${activeView === 'tables' ? 'active' : ''}`}
-        onClick={() => onViewChange('tables')}
+        className={`icon-rail-item ${activeView === "tables" ? "active" : ""}`}
+        onClick={() => onViewChange("tables")}
         title="Tables"
       >
         <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-          <path d="M1 1h18v18H1V1zm2 2v3h6V3H3zm7 0v3h7V3h-7zm7 4h-7v4h7V7zm0 5h-7v4h7v-4zm-8 4v-4H3v4h6zm-6-5h6V7H3v4z"/>
+          <path d="M1 1h18v18H1V1zm2 2v3h6V3H3zm7 0v3h7V3h-7zm7 4h-7v4h7V7zm0 5h-7v4h7v-4zm-8 4v-4H3v4h6zm-6-5h6V7H3v4z" />
         </svg>
       </button>
       <button
-        className={`icon-rail-item ${activeView === 'files' ? 'active' : ''}`}
-        onClick={() => onViewChange('files')}
+        className={`icon-rail-item ${activeView === "files" ? "active" : ""}`}
+        onClick={() => onViewChange("files")}
         title="Files"
       >
         <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
           {/* Back file - only visible parts */}
-          <path d="M0 1v4h1.5V6l-0.5-0.5V1.5h12v2h1V1z" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5"/>
-          <path d="M0.5 18V5.5h1v12h11.5v1z" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5"/>
+          <path
+            d="M0 1v4h1.5V6l-0.5-0.5V1.5h12v2h1V1z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1"
+            opacity="0.5"
+          />
+          <path
+            d="M0.5 18V5.5h1v12h11.5v1z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1"
+            opacity="0.5"
+          />
 
           {/* Front file outline */}
-          <path d="M2 3v16h14V7l-4-4H2z" fill="none" stroke="currentColor" strokeWidth="1.5"/>
-          <path d="M12 3v4h4" fill="none" stroke="currentColor" strokeWidth="1"/>
+          <path
+            d="M2 3v16h14V7l-4-4H2z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+          />
+          <path
+            d="M12 3v4h4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1"
+          />
 
           {/* Text lines */}
-          <path d="M5 10h8M5 12h8M5 14h6M5 16h7" stroke="currentColor" strokeWidth="0.8" fill="none"/>
+          <path
+            d="M5 10h8M5 12h8M5 14h6M5 16h7"
+            stroke="currentColor"
+            strokeWidth="0.8"
+            fill="none"
+          />
         </svg>
       </button>
       <button
-        className={`icon-rail-item ${activeView === 'search' ? 'active' : ''}`}
-        onClick={() => onViewChange('search')}
+        className={`icon-rail-item ${activeView === "search" ? "active" : ""}`}
+        onClick={() => onViewChange("search")}
         title="Search"
       >
         <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-          <circle cx="7" cy="7" r="6" fill="none" stroke="currentColor" strokeWidth="2"/>
-          <path d="m12 12 7 7" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
+          <circle
+            cx="7"
+            cy="7"
+            r="6"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          />
+          <path
+            d="m12 12 7 7"
+            stroke="currentColor"
+            strokeWidth="3"
+            strokeLinecap="round"
+          />
         </svg>
       </button>
       <button
-        className={`icon-rail-item ${activeView === 'stackgazer' ? 'active' : ''}`}
-        onClick={() => onViewChange('stackgazer')}
+        className={`icon-rail-item ${activeView === "stackgazer" ? "active" : ""}`}
+        onClick={() => onViewChange("stackgazer")}
         title="Stack Traces"
       >
-        <svg width="20" height="20" viewBox="0 0 418.879 418.879" fill="currentColor">
-          <path d="M188.634,234.066c8.462-5.287,16.126-11.735,22.767-19.127l23.942,13.826l21.8-37.76l-23.894-13.796
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 418.879 418.879"
+          fill="currentColor"
+        >
+          <path
+            d="M188.634,234.066c8.462-5.287,16.126-11.735,22.767-19.127l23.942,13.826l21.8-37.76l-23.894-13.796
 			c3.038-9.275,4.825-19.113,5.16-29.311l27.183-4.793l-7.574-42.938l-27.178,4.793c-3.756-9.309-8.795-17.965-14.906-25.744
 			l17.766-21.17L200.3,30.022l-17.751,21.152c-8.67-4.646-18.059-8.119-27.954-10.203V13.385h-43.6v27.586
 			c-9.896,2.084-19.285,5.557-27.956,10.203l-17.75-21.152l-33.4,28.025l17.764,21.17c-6.11,7.779-11.149,16.436-14.905,25.744
@@ -59,8 +107,10 @@ function IconRail({ activeView, onViewChange, onMemoryMonitorOpen }: IconRailPro
 			c6.639,7.389,14.303,13.838,22.766,19.125l-9.451,25.963l40.972,14.91l9.438-25.928c4.864,0.688,9.831,1.053,14.882,1.053
 			c5.051,0,10.019-0.363,14.883-1.053l9.437,25.93l40.97-14.914L188.634,234.066z M132.793,200.065
 			c-30.702,0-55.68-24.977-55.68-55.68c0-30.701,24.978-55.68,55.68-55.68s55.68,24.979,55.68,55.68
-			C188.473,175.088,163.496,200.065,132.793,200.065z"/>
-          <path d="M376.041,266.807l-18.795,6.08c-3.584-6.229-8.014-11.869-13.115-16.779l10.504-16.764l-26.447-16.57l-10.498,16.75
+			C188.473,175.088,163.496,200.065,132.793,200.065z"
+          />
+          <path
+            d="M376.041,266.807l-18.795,6.08c-3.584-6.229-8.014-11.869-13.115-16.779l10.504-16.764l-26.447-16.57l-10.498,16.75
 			c-6.604-2.438-13.602-3.973-20.826-4.471l-2.725-19.559l-30.912,4.309l2.725,19.559c-6.809,2.453-13.125,5.847-18.812,9.996
 			l-14.672-13.244l-20.912,23.168l14.684,13.259c-3.562,6.118-6.277,12.752-8.02,19.726l-19.744-0.714l-1.129,31.188l19.743,0.716
 			c1.246,7.198,3.486,13.991,6.558,20.271l-15.578,12.143l19.185,24.615l15.609-12.164c5.438,4.582,11.511,8.396,18.031,11.311
@@ -68,8 +118,10 @@ function IconRail({ activeView, onViewChange, onMemoryMonitorOpen }: IconRailPro
 			l27.574-14.623l-9.266-17.471c5.48-4.586,10.271-9.918,14.252-15.812l18.338,7.436l11.727-28.924l-18.303-7.422
 			c1.234-6.875,1.529-14.027,0.764-21.293l18.799-6.084L376.041,266.807z M297.129,350.006
 			c-21.771,3.031-41.949-12.209-44.98-33.977c-3.037-21.769,12.207-41.949,33.977-44.979c21.768-3.036,41.941,12.207,44.98,33.978
-			C334.135,326.795,318.896,346.969,297.129,350.006z"/>
-          <path d="M418.146,158.647l0.732-24.629l-15.586-0.463c-0.977-5.428-2.723-10.803-5.285-15.971l12.24-9.67l-15.271-19.33
+			C334.135,326.795,318.896,346.969,297.129,350.006z"
+          />
+          <path
+            d="M418.146,158.647l0.732-24.629l-15.586-0.463c-0.977-5.428-2.723-10.803-5.285-15.971l12.24-9.67l-15.271-19.33
 			l-12.238,9.666c-4.365-3.627-9.193-6.584-14.318-8.816l3.164-15.291l-24.123-4.996l-3.17,15.281
 			c-5.559,0.008-11.156,0.797-16.641,2.412l-7.391-13.727l-21.695,11.684l7.391,13.729c-4.363,3.686-8.107,7.934-11.176,12.566
 			l-14.496-5.77l-9.111,22.893l14.508,5.779c-0.955,5.508-1.141,11.158-0.514,16.799l-14.809,4.898l7.732,23.395l14.809-4.896
@@ -77,7 +129,8 @@ function IconRail({ activeView, onViewChange, onMemoryMonitorOpen }: IconRailPro
 			l2.252,15.453l24.383-3.561l-2.246-15.434c2.602-0.957,5.17-2.109,7.684-3.463c2.516-1.352,4.891-2.867,7.123-4.51l11.648,10.371
 			l16.387-18.398l-11.656-10.383c2.795-4.9,4.875-10.164,6.203-15.619L418.146,158.647z M359.436,171.844
 			c-15.281,8.227-34.404,2.492-42.627-12.783c-8.23-15.277-2.494-34.404,12.787-42.627c15.273-8.229,34.395-2.49,42.625,12.787
-			C380.443,144.499,374.711,163.616,359.436,171.844z"/>
+			C380.443,144.499,374.711,163.616,359.436,171.844z"
+          />
         </svg>
       </button>
 
@@ -91,15 +144,22 @@ function IconRail({ activeView, onViewChange, onMemoryMonitorOpen }: IconRailPro
           onClick={onMemoryMonitorOpen}
           title="Memory Monitor"
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             {/* Gauge arc */}
-            <path d="M3 12a9 9 0 1 0 18 0" strokeLinecap="round"/>
+            <path d="M3 12a9 9 0 1 0 18 0" strokeLinecap="round" />
             {/* Gauge markings */}
-            <path d="M6.34 6.34L7.05 7.05M17.66 6.34L16.95 7.05M4 12h1M20 12h-1"/>
+            <path d="M6.34 6.34L7.05 7.05M17.66 6.34L16.95 7.05M4 12h1M20 12h-1" />
             {/* Needle pointing to middle-right (indicating some usage) */}
-            <path d="M12 12L16 8" strokeWidth="2.5" strokeLinecap="round"/>
+            <path d="M12 12L16 8" strokeWidth="2.5" strokeLinecap="round" />
             {/* Center dot */}
-            <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+            <circle cx="12" cy="12" r="1.5" fill="currentColor" />
           </svg>
         </button>
       )}

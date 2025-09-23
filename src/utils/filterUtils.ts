@@ -28,11 +28,11 @@ export function matchesFilter(text: string, filter: string): boolean {
     while (i < terms.length) {
       const term = terms[i];
 
-      if (term.startsWith('+')) {
+      if (term.startsWith("+")) {
         // This is an OR - evaluate what we have so far
         if (andTerms.length > 0) {
           const andResult = evaluateAndTerms(lowerText, andTerms);
-          result = result === null ? andResult : (result && andResult);
+          result = result === null ? andResult : result && andResult;
           andTerms.length = 0;
         }
 
@@ -40,7 +40,7 @@ export function matchesFilter(text: string, filter: string): boolean {
         const orTerm = term.slice(1);
         if (orTerm) {
           const orResult = evaluateTerm(lowerText, orTerm);
-          result = result === null ? orResult : (result || orResult);
+          result = result === null ? orResult : result || orResult;
         }
         i++;
         break; // Start collecting new AND terms after the OR
@@ -53,7 +53,7 @@ export function matchesFilter(text: string, filter: string): boolean {
     // Evaluate any remaining AND terms
     if (andTerms.length > 0) {
       const andResult = evaluateAndTerms(lowerText, andTerms);
-      result = result === null ? andResult : (result && andResult);
+      result = result === null ? andResult : result && andResult;
     }
   }
 
@@ -70,7 +70,7 @@ function evaluateAndTerms(text: string, terms: string[]): boolean {
 }
 
 function evaluateTerm(text: string, term: string): boolean {
-  if (term.startsWith('-')) {
+  if (term.startsWith("-")) {
     const searchTerm = term.slice(1);
     return searchTerm ? !text.includes(searchTerm) : true;
   }
