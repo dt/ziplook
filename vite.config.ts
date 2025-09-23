@@ -15,6 +15,16 @@ export default defineConfig({
     // Prevent Node.js globals from being included in browser build
     global: 'globalThis',
   },
+  resolve: {
+    alias: {
+      // Replace @protobufjs/inquire with a safe no-op version for browser builds
+      // This eliminates the eval() usage that causes security warnings
+      // Source: @protobufjs/inquire uses eval("quire".replace(/^/,"re")) to dynamically require() modules
+      // Purpose: Allows protobufjs to conditionally load Node.js modules (like 'fs') without breaking bundlers
+      // Browser safety: require() doesn't exist in browsers, so this always returns null anyway
+      '@protobufjs/inquire': '/src/utils/inquire-noop.js'
+    }
+  },
   build: {
     minify: process.env.NODE_ENV === 'production',
     sourcemap: false, // Disable source maps to prevent 404s for .js.map files

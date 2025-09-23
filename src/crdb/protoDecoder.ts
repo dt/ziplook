@@ -29,24 +29,6 @@ export class ProtoDecoder {
     if (this.loaded) return;
 
     try {
-      // In test environment, use filesystem to read the file
-      if (typeof window === 'undefined' || (typeof process !== 'undefined' && process.env?.NODE_ENV === 'test') || (typeof process !== 'undefined' && process.versions?.node)) {
-        // Node.js environment - read file directly
-        try {
-          const fs = await import('fs/promises');
-          const path = await import('path');
-          const filePath = path.resolve(process.cwd(), 'public/crdb.json');
-          const fileContent = await fs.readFile(filePath, 'utf-8');
-          const rootJson = JSON.parse(fileContent);
-          this.root = protobuf.Root.fromJSON(rootJson);
-          this.loaded = true;
-          return;
-        } catch (importError) {
-          // Fall back to fetch if Node.js modules aren't available
-          console.warn('Node.js modules not available, falling back to fetch');
-        }
-      }
-
       // Browser environment - use fetch
       const response = await fetch('./crdb.json');
       if (!response.ok) {
@@ -187,8 +169,13 @@ export class ProtoDecoder {
         // Handle base64-encoded keys
         else if (/^[A-Za-z0-9+/]*(=|==)?$/.test(value) && value.length % 4 === 0) {
           try {
-            const bytes = Buffer.from(value, 'base64');
-            const hexStr = bytes.toString('hex');
+            // Convert base64 to hex using browser APIs
+            const binaryString = atob(value);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            const hexStr = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
             const decoded = prettyKey(hexStr);
             if (decoded.pretty !== hexStr) {
               return decoded.pretty;
@@ -200,9 +187,14 @@ export class ProtoDecoder {
       // Convert base64 cluster ID to UUID format
       if (key.includes('cluster_id')) {
         try {
-          const bytes = Buffer.from(value, 'base64');
+          // Convert base64 to bytes using browser APIs
+          const binaryString = atob(value);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
           if (bytes.length === 16) {
-            const hex = bytes.toString('hex');
+            const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
             const uuid = [
               hex.substring(0, 8),
               hex.substring(8, 12),
@@ -275,8 +267,8 @@ export class ProtoDecoder {
 
 export const protoDecoder = new ProtoDecoder();
 
-// Initialize CRDB descriptors on module load (skip in test environment)
-if (typeof window !== 'undefined' && typeof process === 'undefined') {
+// Initialize CRDB descriptors on module load (browser environment only)
+if (typeof window !== 'undefined') {
   protoDecoder.loadCRDBDescriptors().catch(err => {
     console.warn('Failed to load CRDB descriptors on init:', err);
   });
