@@ -30,16 +30,21 @@ export class ProtoDecoder {
 
     try {
       // In test environment, use filesystem to read the file
-      if (typeof window === 'undefined' || process.env.NODE_ENV === 'test' || typeof process !== 'undefined' && process.versions?.node) {
+      if (typeof window === 'undefined' || (typeof process !== 'undefined' && process.env?.NODE_ENV === 'test') || (typeof process !== 'undefined' && process.versions?.node)) {
         // Node.js environment - read file directly
-        const fs = await import('fs/promises');
-        const path = await import('path');
-        const filePath = path.resolve(process.cwd(), 'public/crdb.json');
-        const fileContent = await fs.readFile(filePath, 'utf-8');
-        const rootJson = JSON.parse(fileContent);
-        this.root = protobuf.Root.fromJSON(rootJson);
-        this.loaded = true;
-        return;
+        try {
+          const fs = await import('fs/promises');
+          const path = await import('path');
+          const filePath = path.resolve(process.cwd(), 'public/crdb.json');
+          const fileContent = await fs.readFile(filePath, 'utf-8');
+          const rootJson = JSON.parse(fileContent);
+          this.root = protobuf.Root.fromJSON(rootJson);
+          this.loaded = true;
+          return;
+        } catch (importError) {
+          // Fall back to fetch if Node.js modules aren't available
+          console.warn('Node.js modules not available, falling back to fetch');
+        }
       }
 
       // Browser environment - use fetch

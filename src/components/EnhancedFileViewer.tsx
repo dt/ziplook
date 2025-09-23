@@ -6,6 +6,7 @@ import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { matchesFilter } from '../utils/filterUtils';
 import { useApp } from '../state/AppContext';
 import { setupLogLanguage } from '../services/monacoConfig';
+import { detectBinary, getFileTypeDescription } from '../utils/binaryDetection';
 
 interface FileViewerProps {
   tab: ViewerTab & { kind: 'file' };
@@ -33,6 +34,12 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
   const [progress, setProgress] = useState({ loaded: 0, total: 0, percent: 0 });
   const [isStreaming, setIsStreaming] = useState(false);
 
+  // Binary detection state
+  const [binaryDetected, setBinaryDetected] = useState(false);
+  const [binaryReason, setBinaryReason] = useState<string>('');
+  const [fileType, setFileType] = useState<string>('');
+  const [userOverrideBinary, setUserOverrideBinary] = useState(false);
+
   // Filter state
   const [filterText, setFilterText] = useState(tab.filterText || '');
   const [contextLines, setContextLines] = useState('');
@@ -47,6 +54,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
   const languageRef = useRef<string>('plaintext');
   const initialFilterRef = useRef<{ text: string; context: number } | null>(null);
   const applyFilterRef = useRef<((query: string, context?: number) => void) | null>(null);
+  const pendingLineNumber = useRef<number | null>(null);
 
   // Get original filename from filesIndex (never changes, unaffected by tab renaming)
   const originalFile = state.filesIndex[tab.fileId];
@@ -134,6 +142,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
 
   // Store initial filter state
   if (filterText) {
+    console.log('📄 FileViewer: Initial filter detected:', filterText, 'context:', contextLines);
     initialFilterRef.current = { text: filterText, context: parseInt(contextLines) || 0 };
   }
 
@@ -142,7 +151,9 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
 
   // Apply filter/grep functionality
   const applyFilter = useCallback((query: string, context: number = 0) => {
+    console.log('📄 FileViewer: Applying filter:', query, 'context:', context);
     if (!editorRef.current || !monacoRef.current) {
+      console.log('📄 FileViewer: Editor or Monaco not available for filtering');
       return;
     }
 
@@ -155,8 +166,8 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
     // Reset if empty
     if (!query) {
       // Clear hidden areas
-      if (editorRef.current.setHiddenAreas) {
-        editorRef.current.setHiddenAreas([]);
+      if ((editorRef.current as any).setHiddenAreas) {
+        (editorRef.current as any).setHiddenAreas([]);
       }
       decorationIds.current = editorRef.current.deltaDecorations(decorationIds.current, []);
       setVisibleLineCount(model?.getLineCount() || 0); // Show all lines
@@ -213,8 +224,8 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
     }
 
     // Use setHiddenRanges to hide non-matching lines
-    if (editorRef.current.setHiddenAreas) {
-      editorRef.current.setHiddenAreas(hiddenRanges);
+    if ((editorRef.current as any).setHiddenAreas) {
+      (editorRef.current as any).setHiddenAreas(hiddenRanges);
     }
 
     // Add highlight decorations for matching lines
@@ -276,42 +287,99 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
     setContent('');
     setProgress({ loaded: 0, total: 0, percent: 0 });
     setIsStreaming(true);
+    setBinaryDetected(false);
+    setBinaryReason('');
+    setFileType('');
+    setUserOverrideBinary(false);
 
     try {
-      const reader = (window as any).__zipReader;
-      if (!reader) {
-        throw new Error('No zip file loaded');
+      // Get file path from filesIndex
+      const fileEntry = state.filesIndex[tab.fileId];
+      if (!fileEntry) {
+        throw new Error('File not found in index');
       }
 
-      abortRef.current = () => reader.cancelStream();
+      if (!state.workerManager) {
+        throw new Error('WorkerManager not available');
+      }
+
+      // First check by extension
+      const extensionResult = detectBinary(fileEntry.path);
+      if (extensionResult.isBinary) {
+        setBinaryDetected(true);
+        setBinaryReason(extensionResult.reason || 'Binary file detected');
+        setFileType(getFileTypeDescription(extensionResult, fileEntry.path));
+        setLoading(false);
+        setIsStreaming(false);
+        return;
+      }
 
       let accumulatedContent = '';
+      let hasCheckedContent = false;
       const startTime = Date.now();
       let lastUpdateTime = startTime;
+      let hasSetInitialContent = false;
 
-      await reader.readFileStream(
-        tab.fileId,
-        (chunk: string, info: { loaded: number; total: number; done: boolean }) => {
+      await state.workerManager.readFileStream(
+        fileEntry.path,
+        (chunk: string, progressInfo: { loaded: number; total: number; done: boolean }) => {
           accumulatedContent += chunk;
 
-          const percent = info.total > 0 ? Math.round((info.loaded / info.total) * 100) : 0;
-          setProgress({ loaded: info.loaded, total: info.total, percent });
-
-          const now = Date.now();
-          if (now - lastUpdateTime > 100 || info.done) {
-            setContent(accumulatedContent);
-            lastUpdateTime = now;
+          // Check content for binary on first chunk (if extension didn't already detect it)
+          if (!hasCheckedContent && accumulatedContent.length >= 1024) {
+            const contentResult = detectBinary(fileEntry.path, accumulatedContent);
+            if (contentResult.isBinary) {
+              setBinaryDetected(true);
+              setBinaryReason(contentResult.reason || 'Binary content detected');
+              setFileType(getFileTypeDescription(contentResult, fileEntry.path));
+              setLoading(false);
+              setIsStreaming(false);
+              return; // Stop processing
+            }
+            hasCheckedContent = true;
           }
 
-          if (info.done) {
+          const percent = progressInfo.total > 0 ? Math.round((progressInfo.loaded / progressInfo.total) * 100) : 0;
+          setProgress({ loaded: progressInfo.loaded, total: progressInfo.total, percent });
+
+          const now = Date.now();
+          // Set initial content immediately, then throttle to every 3 seconds, then final content
+          const shouldUpdate = !hasSetInitialContent ||
+                              (now - lastUpdateTime > 3000) ||
+                              progressInfo.done;
+
+          if (shouldUpdate) {
+            console.log('📄 FileViewer: Setting content, accumulated length:', accumulatedContent.length, 'done:', progressInfo.done);
+            setContent(accumulatedContent);
+            lastUpdateTime = now;
+            hasSetInitialContent = true;
+
+            // Try pending line navigation after content update
+            if (pendingLineNumber.current) {
+              setTimeout(() => {
+                if (pendingLineNumber.current) {
+                  navigateToLine(pendingLineNumber.current);
+                }
+              }, 100); // Small delay to let Monaco process the content update
+            }
+          }
+
+          if (progressInfo.done) {
+            console.log('📄 FileViewer: Streaming complete, final content length:', accumulatedContent.length);
             setLoading(false);
             setIsStreaming(false);
             abortRef.current = null;
+
+            // Final retry for pending line navigation
+            if (pendingLineNumber.current) {
+              setTimeout(() => {
+                if (pendingLineNumber.current) {
+                  console.log('📄 FileViewer: Final retry for line navigation:', pendingLineNumber.current);
+                  navigateToLine(pendingLineNumber.current);
+                }
+              }, 200); // Slightly longer delay for final attempt
+            }
           }
-        },
-        (loaded: number, total: number) => {
-          const percent = total > 0 ? Math.round((loaded / total) * 100) : 0;
-          setProgress({ loaded, total, percent });
         }
       );
     } catch (err) {
@@ -321,10 +389,10 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
       setIsStreaming(false);
       abortRef.current = null;
     }
-  }, [tab.fileId]);
+  }, [tab.fileId, state.filesIndex, state.workerManager]);
 
   useEffect(() => {
-    if (!content && !loading) {
+    if (!content && !loading && state.workerManager) {
       loadFile();
     }
 
@@ -333,7 +401,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
         abortRef.current();
       }
     };
-  }, []);
+  }, [loadFile, content, loading, state.workerManager]);
 
   const handleBeforeMount = useCallback((monaco: Monaco) => {
     // Setup log language if this is a log file
@@ -387,13 +455,137 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
       setVisibleLineCount(lineCount);
     }
 
+    // Jump to specific line if provided (using the unified navigation function with retry logic)
+    if (tab.lineNumber && tab.lineNumber > 0) {
+      // Small delay to ensure model is ready
+      setTimeout(() => navigateToLine(tab.lineNumber!), 50);
+    }
+
     // Apply initial filter if any
     if (initialFilterRef.current && applyFilterRef.current) {
       const { text, context } = initialFilterRef.current;
       applyFilterRef.current(text, context);
       initialFilterRef.current = null; // Clear after use
     }
-  }, []); // No dependencies - stable callback that accesses current state via refs
+  }, [tab.lineNumber]); // Include lineNumber in dependencies
+
+  // Navigation function that can be called directly
+  const navigateToLine = useCallback((lineNumber: number) => {
+    if (!editorRef.current || !monacoRef.current || lineNumber <= 0) {
+      // Store pending line number for retry when editor/content is ready
+      pendingLineNumber.current = lineNumber;
+      return false;
+    }
+
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    const model = editor.getModel();
+
+    if (!model) {
+      // Store pending line number for retry when model is ready
+      pendingLineNumber.current = lineNumber;
+      return false;
+    }
+
+    const currentLineCount = model.getLineCount();
+    if (lineNumber > currentLineCount) {
+      // Line not loaded yet, store for retry
+      pendingLineNumber.current = lineNumber;
+      console.log('📄 FileViewer: Line', lineNumber, 'not yet loaded (current max:', currentLineCount, '), will retry');
+      return false;
+    }
+
+    const targetLine = Math.min(lineNumber, currentLineCount);
+    const isExactLine = targetLine === lineNumber; // Are we navigating to the exact requested line?
+
+    // Jump to the line
+    editor.setPosition({ lineNumber: targetLine, column: 1 });
+    editor.revealLineInCenter(targetLine);
+
+    // Only add visual effects if we're at the exact target line
+    if (isExactLine) {
+      // Highlight the target line briefly
+      const range = new monaco.Range(targetLine, 1, targetLine, model.getLineMaxColumn(targetLine) || 1);
+      const decorationIds = editor.deltaDecorations([], [{
+        range,
+        options: {
+          className: 'line-highlight-flash',
+          isWholeLine: true
+        }
+      }]);
+
+      // Animate the line number - try multiple selectors to find the right element
+      setTimeout(() => {
+        const editorDom = editor.getDomNode();
+        if (!editorDom) return;
+
+        // Try different selectors for Monaco's line number elements
+        const selectors = [
+          `.margin .line-numbers [data-line-number="${targetLine}"]`,
+          `.margin .line-numbers .cldr:nth-child(${targetLine})`,
+          `.margin .line-numbers div:nth-child(${targetLine})`,
+          `.margin .margin-view-overlays div:nth-child(${targetLine})`,
+          `.margin-view-overlays .current-line`,
+          `.line-numbers .active-line-number`
+        ];
+
+        let lineNumberElement = null;
+        for (const selector of selectors) {
+          lineNumberElement = editorDom.querySelector(selector);
+          if (lineNumberElement) break;
+        }
+
+        // If we can't find the specific line number, try to find all line number elements
+        if (!lineNumberElement) {
+          const allLineNumbers = editorDom.querySelectorAll('.margin .line-numbers div');
+          if (allLineNumbers && allLineNumbers[targetLine - 1]) {
+            lineNumberElement = allLineNumbers[targetLine - 1];
+          }
+        }
+
+        if (lineNumberElement && lineNumberElement instanceof HTMLElement) {
+          lineNumberElement.style.animation = 'lineNumberPop 0.5s ease-out';
+          lineNumberElement.style.transformOrigin = 'center';
+          setTimeout(() => {
+            lineNumberElement.style.animation = '';
+            lineNumberElement.style.transformOrigin = '';
+          }, 500);
+        }
+      }, 200); // Delay to ensure DOM is ready
+
+      // Remove highlight after 3 seconds
+      setTimeout(() => {
+        if (editorRef.current) {
+          editorRef.current.deltaDecorations(decorationIds, []);
+        }
+      }, 3000);
+
+      // Clear pending navigation since we succeeded with the exact line
+      pendingLineNumber.current = null;
+      console.log('📄 FileViewer: Successfully navigated to exact line', lineNumber);
+    } else {
+      console.log('📄 FileViewer: Navigated to partial line', targetLine, 'waiting for line', lineNumber);
+    }
+
+    return isExactLine;
+  }, []);
+
+  // Handle line navigation when lineNumber changes
+  useEffect(() => {
+    if (tab.lineNumber && tab.lineNumber > 0) {
+      navigateToLine(tab.lineNumber);
+    }
+  }, [tab.lineNumber, navigateToLine]);
+
+  // Also navigate when the tab becomes active (in case we missed the lineNumber change)
+  useEffect(() => {
+    if (tab.lineNumber && tab.lineNumber > 0) {
+      // Small delay to ensure editor is ready
+      setTimeout(() => {
+        navigateToLine(tab.lineNumber!); // Non-null assertion since we checked above
+      }, 100);
+    }
+  }, []); // Only run once when the component mounts
 
   // Note: We don't need to update content when using defaultValue + keepCurrentModel
   // because the model is stable and content updates would clear hidden areas
@@ -460,6 +652,149 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
     );
   }
 
+  // Show binary file warning
+  if (binaryDetected && !userOverrideBinary) {
+    return (
+      <div className="file-viewer binary-warning">
+        <div className="binary-warning-container">
+          <div className="binary-warning-icon">⚠️</div>
+          <div className="binary-warning-content">
+            <h3>Binary File Detected</h3>
+            <p><strong>{fileType}</strong></p>
+            <p className="binary-reason">{binaryReason}</p>
+            <p>This file appears to contain binary data and may not display correctly as text.</p>
+            <div className="binary-warning-actions">
+              <button
+                className="btn btn-primary"
+                onClick={() => setUserOverrideBinary(true)}
+              >
+                Open Anyway
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  // Close the tab
+                  dispatch({ type: 'CLOSE_TAB', id: tab.id });
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Only load Monaco/Editor for non-binary files
+  if (binaryDetected && userOverrideBinary) {
+    // User chose to override binary warning, show a warning but still render editor
+    return (
+      <div className="enhanced-file-viewer">
+        <div className="binary-override-warning">
+          <span className="warning-icon">⚠️</span>
+          <span>Displaying binary file as text - content may not render correctly</span>
+        </div>
+
+        {/* Filter controls */}
+        <div className="file-controls">
+          <div className="filter-controls">
+            <input
+              ref={filterInputRef}
+              type="text"
+              className="filter-input"
+              placeholder="Filter: word +include -exclude (/ to focus)"
+              value={filterText}
+              onChange={handleFilterChange}
+            />
+            <input
+              type="text"
+              className="context-input"
+              placeholder="plus context lines"
+              value={contextLines}
+              onChange={(e) => {
+                const value = e.target.value;
+                // Only allow empty string or numeric input
+                if (value === '' || /^\d+$/.test(value)) {
+                  setContextLines(value);
+                  const numericValue = value === '' ? 0 : parseInt(value, 10);
+                  debouncedApplyFilter(filterText, numericValue);
+                }
+              }}
+              style={{ width: '120px' }}
+            />
+            {filterText && (
+              <span className="filter-status">
+                {visibleLineCount.toLocaleString()} / {totalLineCount.toLocaleString()} lines
+              </span>
+            )}
+          </div>
+        </div>
+
+        <Editor
+          height="calc(100% - 70px)" // Adjust for warning banner
+          language="plaintext" // Force plaintext for binary files
+          value={content}
+          path={tab.fileId}
+          keepCurrentModel={true}
+          theme="vs-dark"
+          beforeMount={handleBeforeMount}
+          onMount={handleEditorDidMount}
+          options={{
+            readOnly: true,
+            minimap: { enabled: false }, // Disable minimap for binary files
+            scrollBeyondLastLine: false,
+            fontSize: 13,
+            fontFamily: 'Monaco, Menlo, "Courier New", monospace',
+            automaticLayout: true,
+            wordWrap: 'off',
+            lineNumbers: 'on',
+            renderLineHighlight: 'all',
+            scrollbar: {
+              vertical: 'visible',
+              horizontal: 'visible',
+              useShadows: false,
+              verticalScrollbarSize: 10,
+              horizontalScrollbarSize: 10
+            },
+            folding: false, // Disable folding for binary files
+            quickSuggestions: false,
+            suggestOnTriggerCharacters: false,
+            links: false,
+            contextmenu: true,
+            selectionHighlight: false,
+            occurrencesHighlight: "off",
+            formatOnPaste: false,
+            formatOnType: false,
+            renderValidationDecorations: 'off',
+            smoothScrolling: true,
+            cursorBlinking: 'blink',
+            cursorSmoothCaretAnimation: 'off',
+            unicodeHighlight: {
+              ambiguousCharacters: false,
+              invisibleCharacters: false
+            },
+            find: {
+              seedSearchStringFromSelection: 'always',
+              autoFindInSelection: 'never',
+              addExtraSpaceOnTop: true
+            }
+          }}
+        />
+
+        {/* Streaming indicator */}
+        {isStreaming && (
+          <div className="streaming-footer">
+            <div className="streaming-status">
+              <span className="loading-spinner-small" />
+              <span>Streaming content... {progress.percent}% complete</span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="enhanced-file-viewer">
       {/* Filter controls */}
@@ -500,7 +835,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
       <Editor
         height="calc(100% - 40px)"
         language={language}
-        defaultValue={content}
+        value={content}
         path={tab.fileId} // stable path for the model
         keepCurrentModel={true}
         theme={language === 'log' ? 'log-theme' : 'vs-dark'}

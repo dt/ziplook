@@ -1204,6 +1204,117 @@
   background: var(--bg-primary);
 }
 
+/* Binary File Warning */
+.file-viewer.binary-warning {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+}
+
+.binary-warning-container {
+  background: var(--bg-secondary);
+  border: 2px solid var(--warning-border, #f59e0b);
+  border-radius: 12px;
+  padding: 32px;
+  max-width: 500px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+.binary-warning-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.binary-warning-content h3 {
+  color: var(--text-primary);
+  margin: 0 0 16px 0;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.binary-warning-content p {
+  color: var(--text-secondary);
+  margin: 0 0 12px 0;
+  line-height: 1.5;
+}
+
+.binary-warning-content p strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.binary-reason {
+  font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+  font-size: 14px;
+  background: var(--bg-tertiary);
+  padding: 8px 12px;
+  border-radius: 6px;
+  border-left: 3px solid var(--warning-border, #f59e0b);
+  margin: 16px 0 !important;
+}
+
+.binary-warning-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 24px;
+}
+
+.binary-warning-actions .btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.binary-warning-actions .btn.btn-primary {
+  background: var(--accent-primary, #3b82f6);
+  color: white;
+}
+
+.binary-warning-actions .btn.btn-primary:hover {
+  background: var(--accent-primary-hover, #2563eb);
+  transform: translateY(-1px);
+}
+
+.binary-warning-actions .btn.btn-secondary {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-primary);
+}
+
+.binary-warning-actions .btn.btn-secondary:hover {
+  background: var(--bg-quaternary, var(--bg-tertiary));
+  color: var(--text-primary);
+  transform: translateY(-1px);
+}
+
+/* Binary Override Warning */
+.binary-override-warning {
+  background: var(--warning-bg, #fef3c7);
+  border: 1px solid var(--warning-border, #f59e0b);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--warning-text, #92400e);
+}
+
+.binary-override-warning .warning-icon {
+  font-size: 16px;
+}
+
+.binary-override-warning span:last-child {
+  font-weight: 500;
+}
+
 .file-controls {
   display: flex;
   gap: 16px;
@@ -1359,4 +1470,104 @@
 
 .header-line .line-content {
   color: var(--text-primary);
+}
+
+/* Line highlight flash animation for jump-to-line functionality */
+.line-highlight-flash {
+  animation: lineHighlightFlash 3s ease-out;
+  border-left: 4px solid #ffcc00 !important;
+  position: relative;
+}
+
+.line-highlight-flash::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: linear-gradient(90deg, #ffcc00, transparent);
+  animation: borderPulse 3s ease-out;
+}
+
+/* Global animation class that can be applied to any line number element */
+.line-number-pop {
+  animation: lineNumberPop 0.5s ease-out !important;
+  transform-origin: center !important;
+}
+
+/* Ensure line numbers have proper positioning for animations */
+.enhanced-file-viewer .monaco-editor .margin .line-numbers div {
+  transition: transform 0.1s ease;
+}
+
+/* Target Monaco's line number elements directly when highlighted */
+.enhanced-file-viewer .monaco-editor .margin .line-numbers div[style*="animation"] {
+  z-index: 10;
+  position: relative;
+}
+
+@keyframes lineHighlightFlash {
+  0% {
+    background-color: rgba(255, 204, 0, 0.9) !important;
+    box-shadow: inset 0 0 8px rgba(255, 204, 0, 0.6) !important;
+  }
+  25% {
+    background-color: rgba(255, 204, 0, 0.7) !important;
+    box-shadow: inset 0 0 6px rgba(255, 204, 0, 0.4) !important;
+  }
+  50% {
+    background-color: rgba(255, 204, 0, 0.5) !important;
+    box-shadow: inset 0 0 4px rgba(255, 204, 0, 0.3) !important;
+  }
+  75% {
+    background-color: rgba(255, 204, 0, 0.3) !important;
+    box-shadow: inset 0 0 2px rgba(255, 204, 0, 0.2) !important;
+  }
+  100% {
+    background-color: transparent !important;
+    box-shadow: none !important;
+  }
+}
+
+@keyframes borderPulse {
+  0% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scaleX(1.2);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes lineNumberPop {
+  0% {
+    transform: scale(1);
+    color: inherit;
+  }
+  25% {
+    transform: scale(1.4);
+    color: #ffcc00;
+    font-weight: bold;
+  }
+  50% {
+    transform: scale(1.6);
+    color: #ffcc00;
+    font-weight: bold;
+  }
+  75% {
+    transform: scale(1.2);
+    color: #ffcc00;
+    font-weight: bold;
+  }
+  100% {
+    transform: scale(1);
+    color: inherit;
+    font-weight: normal;
+  }
 }

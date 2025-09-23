@@ -3,7 +3,6 @@ import Editor from '@monaco-editor/react';
 import type { Monaco } from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
 import type { ViewerTab } from '../state/types';
-import { duckDBService } from '../services/duckdb';
 import { useApp } from '../state/AppContext';
 import { isDefaultTableQuery, generateQueryTitle } from '../utils/sqlParser';
 import { setupDuckDBLanguage, refreshSchemaCache } from '../services/monacoConfig';
@@ -14,7 +13,7 @@ interface SqlEditorProps {
 }
 
 function SqlEditor({ tab }: SqlEditorProps) {
-  const { dispatch } = useApp();
+  const { dispatch, state } = useApp();
   const [query, setQuery] = useState(tab.query || '');
   const [results, setResults] = useState<any[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -105,19 +104,24 @@ function SqlEditor({ tab }: SqlEditorProps) {
   const runQuery = useCallback(async () => {
     if (!query.trim()) return;
 
+    if (!state.workerManager) {
+      setError('Database not ready');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setResults(null);
 
     try {
-      const data = await duckDBService.query(query);
+      const data = await state.workerManager.executeQuery(query);
       setResults(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Query failed');
     } finally {
       setLoading(false);
     }
-  }, [query]);
+  }, [query, state.workerManager]);
 
   const handleEditorWillMount = (monaco: Monaco) => {
     // Setup DuckDB language only once globally
@@ -149,12 +153,17 @@ function SqlEditor({ tab }: SqlEditorProps) {
         const currentQuery = editor.getValue();
         if (!currentQuery.trim()) return;
 
+        if (!state.workerManager) {
+          setError('Database not ready');
+          return;
+        }
+
         setLoading(true);
         setError(null);
         setResults(null);
 
         try {
-          const data = await duckDBService.query(currentQuery);
+          const data = await state.workerManager.executeQuery(currentQuery);
           setResults(data);
         } catch (err) {
           setError(err instanceof Error ? err.message : 'Query failed');

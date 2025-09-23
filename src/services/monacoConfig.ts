@@ -1,6 +1,6 @@
 import type { Monaco } from '@monaco-editor/react';
 import type { languages } from 'monaco-editor';
-import { duckDBService } from './duckdb';
+import type { WorkerManager } from './WorkerManager';
 
 interface SchemaCache {
   tables: string[];
@@ -11,14 +11,24 @@ interface SchemaCache {
 }
 
 let schemaCache: SchemaCache | null = null;
+let workerManager: WorkerManager | null = null;
+
+export function setWorkerManager(manager: WorkerManager) {
+  workerManager = manager;
+}
 
 async function updateSchemaCache() {
-  const tables = await duckDBService.getLoadedTables();
+  if (!workerManager) {
+    console.warn('WorkerManager not available for schema updates');
+    return null;
+  }
+
+  const tables = await workerManager.getLoadedTables();
   const columns = new Map<string, Array<{ name: string; type: string }>>();
 
   for (const table of tables) {
     try {
-      const schema = await duckDBService.getTableSchema(table);
+      const schema = await workerManager.getTableSchema(table);
       columns.set(table, schema.map(col => ({
         name: col.column_name,
         type: col.data_type
@@ -29,8 +39,8 @@ async function updateSchemaCache() {
   }
 
   // Get DuckDB functions and keywords
-  const functions = await duckDBService.getDuckDBFunctions();
-  const keywords = await duckDBService.getDuckDBKeywords();
+  const functions = await workerManager.getDuckDBFunctions();
+  const keywords = await workerManager.getDuckDBKeywords();
 
   schemaCache = {
     tables,

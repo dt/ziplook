@@ -1,6 +1,5 @@
 import { useState, useCallback, useMemo, useRef } from 'react';
 import { useApp } from '../../state/AppContext';
-import { duckDBService } from '../../services/duckdb';
 import { useKeyboardNavigation } from '../../hooks/useKeyboardNavigation';
 
 function formatFileSize(bytes: number): string {
@@ -48,6 +47,10 @@ function TablesView() {
   const tables = Object.values(state.tables);
   const elementRefs = useRef<Map<string, HTMLElement>>(new Map());
 
+  // Throttled debug logging - starts after 10s, then every 10s
+  const lastDebugLogTime = useRef<number>(0);
+  const debugLogStartTime = useRef<number>(Date.now());
+
   // Register element with refs
   const registerElement = useCallback((id: string, element: HTMLElement | null) => {
     if (element) {
@@ -70,13 +73,21 @@ function TablesView() {
     const completedCount = autoLoadTables.filter(t => t.loaded || t.loadError).length;
     const totalCount = autoLoadTables.length;
 
-    // Debug: Log incomplete tables when we're close to completion
+    // Debug: Log incomplete tables when we're close to completion (throttled)
     if (completedCount >= totalCount - 5) {
       const incomplete = autoLoadTables.filter(t => !t.loaded && !t.loadError);
       if (incomplete.length > 0) {
-        console.log(`Progress debug: ${completedCount}/${totalCount} complete. Incomplete tables:`,
-          incomplete.map(t => ({ name: t.name, loading: t.loading, loaded: t.loaded, loadError: t.loadError }))
-        );
+        const now = Date.now();
+        const timeSinceStart = now - debugLogStartTime.current;
+        const timeSinceLastLog = now - lastDebugLogTime.current;
+
+        // Only log if it's been at least 10s since start AND at least 10s since last log
+        if (timeSinceStart >= 10000 && timeSinceLastLog >= 10000) {
+          console.log(`Progress debug: ${completedCount}/${totalCount} complete. Incomplete tables:`,
+            incomplete.map(t => ({ name: t.name, loading: t.loading, loaded: t.loaded, loadError: t.loadError }))
+          );
+          lastDebugLogTime.current = now;
+        }
       }
     }
 
@@ -190,6 +201,11 @@ function TablesView() {
   const loadDeferredTable = useCallback(async (table: typeof tables[0]) => {
     if (loadingTables.has(table.name)) return;
 
+    if (!state.workerManager) {
+      console.error('WorkerManager not available');
+      return;
+    }
+
     setLoadingTables(prev => new Set([...prev, table.name]));
 
     // Update status to loading
@@ -200,32 +216,20 @@ function TablesView() {
     });
 
     try {
-      // Get zip reader
-      const reader = (window as any).__zipReader;
-      if (!reader) {
-        throw new Error('No zip file loaded');
-      }
-
-      // Read file content
+      // Load single table through WorkerManager
       console.log(`Loading deferred table ${table.name} from ${table.sourceFile}...`);
-      const result = await reader.readFile(table.sourceFile);
 
-      if (result.text) {
-        // Load into DuckDB and get row count
-        const rowCount = await duckDBService.loadTableFromText(table.name, result.text);
+      await state.workerManager.loadSingleTable({
+        name: table.name,
+        path: table.sourceFile,
+        size: table.size || 0,
+        nodeId: table.nodeId,
+        originalName: table.originalName,
+        isError: table.isError
+      });
 
-        // Update table status with row count
-        dispatch({
-          type: 'UPDATE_TABLE',
-          name: table.name,
-          updates: {
-            loaded: true,
-            rowCount,
-            deferred: false,
-            loading: false
-          },
-        });
-      }
+      // The table progress will be updated via the WorkerManager callbacks
+      // which are handled in AppContext
     } catch (err) {
       console.error(`Failed to load deferred table ${table.name}:`, err);
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -244,7 +248,7 @@ function TablesView() {
         return next;
       });
     }
-  }, [dispatch]);
+  }, [dispatch, state.workerManager]);
 
   const handleTableClick = async (table: typeof tables[0]) => {
     // If it's an .err.txt file, open it in the file viewer

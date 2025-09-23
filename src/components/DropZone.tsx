@@ -1,21 +1,24 @@
 import React, { useState, useCallback } from 'react';
 import { useApp } from '../state/AppContext';
-import { ZipReader } from '../zip/ZipReader';
-import { duckDBService } from '../services/duckdb';
 
 function DropZone() {
-  const { dispatch, state } = useApp();
+  const { dispatch, state, waitForWorkers } = useApp();
   const [isDragging, setIsDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
-
   // Check if we should show loading state (either local loading or tables loading)
   const isLoading = loading || state.tablesLoading;
 
-  const loadSystemTables = async (reader: any, entries: any[]): Promise<void> => {
-    // Load system and crdb_internal tables in the background
-    // First load root tables, then node-specific tables
+  const prepareTablesForLoading = (entries: any[]): Array<{
+    name: string;
+    path: string;
+    size: number;
+    nodeId?: number;
+    originalName?: string;
+    isError?: boolean;
+  }> => {
+    // Find system and crdb_internal tables
     const rootTables = entries.filter(entry =>
       !entry.isDir &&
       (entry.path.includes('system.') || entry.path.includes('crdb_internal.')) &&
@@ -33,8 +36,14 @@ function DropZone() {
     );
 
     const tablesToLoad = [...rootTables, ...nodeTables];
-
-    const LARGE_FILE_THRESHOLD = 20 * 1024 * 1024; // 20MB
+    const preparedTables: Array<{
+      name: string;
+      path: string;
+      size: number;
+      nodeId?: number;
+      originalName?: string;
+      isError?: boolean;
+    }> = [];
 
     for (const entry of tablesToLoad) {
       // Check if it's a node-specific table
@@ -60,137 +69,22 @@ function DropZone() {
         }
       }
 
-      try {
-        // Mark table as loading
-        dispatch({
-          type: 'UPDATE_TABLE',
-          name: tableName,
-          updates: { loading: true, nodeId, originalName },
-        });
+      // Check if it's an error file
+      const isErrorFile = entry.path.endsWith('.err.txt');
 
-        // Check file size - defer loading if too large
-        if (entry.size > LARGE_FILE_THRESHOLD) {
-          console.log(`Deferring large table ${tableName} (${(entry.size / 1024 / 1024).toFixed(1)}MB)`);
-
-          // Just mark as deferred, don't load yet
-          dispatch({
-            type: 'UPDATE_TABLE',
-            name: tableName,
-            updates: {
-              loaded: false,
-              loading: false,
-              deferred: true,
-              size: entry.size,
-              nodeId,
-              originalName
-            },
-          });
-          continue;
-        }
-
-        // Debug specific problematic table
-        if (tableName.includes('probe_ranges')) {
-          console.log(`[DEBUG] Loading problematic table ${tableName} from ${entry.path}...`);
-        }
-
-        // Read file content
-        const result = await reader.readFile(entry.path);
-        if (result.text) {
-          // Check if file has only headers (no data rows)
-          const lines = result.text.trim().split('\n');
-          if (lines.length <= 1) {
-            // Only header line or empty file
-            dispatch({
-              type: 'UPDATE_TABLE',
-              name: tableName,
-              updates: { loaded: true, loading: false, rowCount: 0, nodeId, originalName },
-            });
-          } else {
-
-          // Load into DuckDB and get row count
-          const rowCount = await duckDBService.loadTableFromText(tableName, result.text);
-
-          // Debug specific problematic table
-          if (tableName.includes('probe_ranges')) {
-            console.log(`[DEBUG] Successfully loaded ${tableName} with ${rowCount} rows`);
-          }
-
-          // Update table status with row count
-          dispatch({
-            type: 'UPDATE_TABLE',
-            name: tableName,
-            updates: { loaded: true, loading: false, rowCount, nodeId, originalName },
-          });
-          }
-        } else {
-          // No text content found
-          throw new Error('No text content found in file');
-        }
-      } catch (err) {
-        console.error(`Failed to load table from ${entry.path}:`, err);
-
-        // Debug specific problematic table
-        if (tableName.includes('probe_ranges')) {
-          console.log(`[DEBUG] Error loading ${tableName}:`, err);
-        }
-
-        // Mark table as failed with error message
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        dispatch({
-          type: 'UPDATE_TABLE',
-          name: tableName,
-          updates: {
-            loaded: false,
-            loading: false,
-            loadError: errorMessage,
-            nodeId,
-            originalName
-          },
-        });
-      }
+      preparedTables.push({
+        name: tableName,
+        path: entry.path,
+        size: entry.size,
+        nodeId,
+        originalName,
+        isError: isErrorFile
+      });
     }
 
-    // console.log('All system tables loaded');
+    return preparedTables;
   };
 
-  const loadStackData = async (reader: any, entries: any[]): Promise<void> => {
-    console.log('Loading stack trace data...');
-
-    // Find all stack trace files
-    const stackFiles = entries.filter(entry =>
-      !entry.isDir &&
-      (entry.path.match(/stacks\.txt$/) || entry.path.match(/nodes\/[^\/]+\/stacks\.txt$/))
-    );
-
-    console.log('Found stack files:', stackFiles.map(f => f.path));
-
-    if (stackFiles.length === 0) {
-      console.log('No stack files found');
-      return;
-    }
-
-    // Read all stack files
-    const stackData: Record<string, string> = {};
-    for (const entry of stackFiles) {
-      try {
-        const result = await reader.readFile(entry.path);
-        if (result.text) {
-          stackData[entry.path] = result.text;
-          console.log(`Loaded stack file: ${entry.path} (${result.text.length} chars)`);
-        }
-      } catch (error) {
-        console.warn(`Failed to read stack file ${entry.path}:`, error);
-      }
-    }
-
-    // Store stack data in app state
-    dispatch({
-      type: 'SET_STACK_DATA',
-      stackData
-    });
-
-    console.log(`Loaded ${Object.keys(stackData).length} stack files`);
-  };
 
   const handleFile = async (file: File) => {
     if (!file.name.endsWith('.zip')) {
@@ -209,14 +103,27 @@ function DropZone() {
       const arrayBuffer = await file.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
 
+      // Wait for workers to be ready (they're initializing eagerly in background)
+      let workerManager = state.workerManager;
+      if (!state.workersReady || !workerManager) {
+        console.log('⏳ Waiting for workers to finish initializing...');
+        setLoadingMessage('Setting up background processing...');
+
+        // Wait for workers that are already initializing
+        workerManager = await waitForWorkers();
+
+        if (!workerManager) {
+          throw new Error('WorkerManager not available after initialization');
+        }
+      }
+
       setLoadingMessage('Scanning zip contents...');
-      const reader = new ZipReader(uint8Array);
-      const entries = await reader.initialize();
+      const entries = await workerManager.loadZipData(uint8Array);
 
       setLoadingMessage(`Processing ${entries.length} files...`);
 
-      // Store reader globally for later file reading
-      (window as any).__zipReader = reader;
+      // Store workerManager globally for later file reading
+      (window as any).__zipReader = workerManager;
 
       dispatch({
         type: 'SET_ZIP',
@@ -225,71 +132,47 @@ function DropZone() {
         entries,
       });
 
-      // Set tables loading state before starting table loading
+      // Start the orchestrated pipeline
+      console.log('🚀 Starting orchestrated pipeline...');
+
+      // Step 1: Prepare tables for loading
+      setLoadingMessage('Preparing tables...');
+      const tablesToLoad = prepareTablesForLoading(entries);
+
+      // Set tables loading state
       dispatch({ type: 'SET_TABLES_LOADING', loading: true });
-      setLoadingMessage('Initializing database...');
 
-      // Ensure DuckDB is initialized before proceeding
-      duckDBService.initialize().then(() => {
-        setLoadingMessage('Loading tables...');
-        // Load system tables
-        return loadSystemTables(reader, entries);
-      }).then(() => {
-        // After tables are loaded, load stack data
-        return loadStackData(reader, entries);
-      }).then(() => {
+      // Step 2: Start table loading in DB worker
+      setLoadingMessage('Loading tables...');
+      try {
+        await workerManager.startTableLoading(tablesToLoad);
+        console.log('📤 Table loading started in DB worker');
+
+        // Table loading completion will be handled by WorkerManager callbacks
+        // Stack data loading will happen after tables complete
+        setLoading(false);
+
+      } catch (err) {
+        console.error('Failed to start table loading:', err);
         dispatch({ type: 'SET_TABLES_LOADING', loading: false });
         setLoading(false);
-      }).catch(err => {
-        console.error('Failed to load system tables:', err);
-        dispatch({ type: 'SET_TABLES_LOADING', loading: false });
-        setLoading(false);
-      });
+        setError(`Failed to load tables: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
 
-      // Auto-detect system tables (root and node-specific)
-      entries.forEach(entry => {
-        if (!entry.isDir &&
-            (entry.path.includes('system.') || entry.path.includes('crdb_internal.')) &&
-            (entry.path.endsWith('.txt') || entry.path.endsWith('.csv') || entry.path.endsWith('.err.txt'))) {
-
-          // Extract just the filename from the path
-      const filename = entry.name.split('/').pop() || entry.name;
-      let tableName = filename.replace(/\.(err\.txt|txt|csv)$/, '');
-          let nodeId: number | undefined;
-          let originalName: string | undefined;
-
-          // Parse node ID from path like /nodes/1/system.jobs.txt
-          const nodeMatch = entry.path.match(/\/nodes\/(\d+)\//);
-          if (nodeMatch) {
-            nodeId = parseInt(nodeMatch[1], 10);
-            originalName = tableName;
-
-            // For schema.table format, create per-node schema: system.job_info -> n1_system.job_info
-            if (tableName.includes('.')) {
-              const [schema, table] = tableName.split('.', 2);
-              tableName = `n${nodeId}_${schema}.${table}`;
-            } else {
-              // For regular tables, prefix as before
-              tableName = `n${nodeId}_${tableName}`;
-            }
-          }
-
-          // Check if it's an error file
-          const isErrorFile = entry.path.endsWith('.err.txt');
-
-          dispatch({
-            type: 'REGISTER_TABLE',
-            table: {
-              name: tableName,
-              sourceFile: entry.id,
-              loaded: false,
-              size: entry.size,
-              nodeId,
-              originalName,
-              isError: isErrorFile,
-            },
-          });
-        }
+      // Register tables that will be loaded
+      tablesToLoad.forEach(table => {
+        dispatch({
+          type: 'REGISTER_TABLE',
+          table: {
+            name: table.name,
+            sourceFile: table.path,
+            loaded: false,
+            size: table.size,
+            nodeId: table.nodeId,
+            originalName: table.originalName,
+            isError: table.isError,
+          },
+        });
       });
     } catch (err) {
       console.error('Failed to read zip:', err);
@@ -364,6 +247,7 @@ function DropZone() {
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       onClick={() => document.getElementById('file-input')?.click()}
+      style={{ cursor: 'pointer' }}
     >
       <input
         id="file-input"
@@ -406,7 +290,8 @@ function DropZone() {
                   padding: '0.5rem 1rem',
                   background: 'var(--accent-muted)',
                   border: '1px solid var(--border)',
-                  color: 'var(--text)'
+                  color: 'var(--text)',
+                  cursor: 'pointer'
                 }}
               >
                 🚀 Try Demo File

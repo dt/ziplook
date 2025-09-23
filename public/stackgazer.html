@@ -80,21 +80,16 @@
                 };
             });
             window.app = app;
-            console.log('Stackgazer loaded: go ahead, gaze into the abyss.');
 
             // Listen for stack data from parent window
-            console.log('Stackgazer: Ready to receive messages');
             window.addEventListener('message', async function(event) {
-                console.log('Stackgazer: Received message:', event.data);
 
                 if (event.data && event.data.type === 'PING') {
-                    console.log('Stackgazer: Received PING, sending PONG');
                     event.source.postMessage({ type: 'PONG', message: 'Communication working!' }, '*');
                     return;
                 }
 
                 if (event.data && event.data.type === 'LOAD_STACK_FILES') {
-                    console.log('Stackgazer: Received stack files:', event.data.files.map(f => f.path));
 
                     try {
                         // Convert all files to File objects and process as a batch
@@ -102,7 +97,6 @@
                             new File([fileData.content], fileData.path, { type: 'text/plain' })
                         );
                         await app.handleFiles(files);
-                        console.log('Stackgazer: Processed all stack files:', files.map(f => f.name));
                     } catch (error) {
                         console.error('Stackgazer: Error processing stack files:', error);
                     }
@@ -110,13 +104,11 @@
 
                 // Keep backward compatibility with single file messages
                 if (event.data && event.data.type === 'LOAD_STACK_FILE') {
-                    console.log('Stackgazer: Received single stack file:', event.data.path);
 
                     try {
                         // Convert to File object and process immediately
                         const file = new File([event.data.content], event.data.path, { type: 'text/plain' });
                         await app.handleFiles([file]);
-                        console.log('Stackgazer: Processed stack file:', event.data.path);
                     } catch (error) {
                         console.error('Stackgazer: Error processing stack file:', event.data.path, error);
                     }

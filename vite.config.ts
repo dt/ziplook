@@ -5,6 +5,16 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   base: process.env.NODE_ENV === 'production' ? './' : '/',
+  server: {
+    hmr: false // Disable hot module replacement but keep file watching for builds
+  },
+  worker: {
+    format: 'es'
+  },
+  define: {
+    // Prevent Node.js globals from being included in browser build
+    global: 'globalThis',
+  },
   build: {
     minify: process.env.NODE_ENV === 'production',
     sourcemap: false, // Disable source maps to prevent 404s for .js.map files
@@ -19,14 +29,10 @@ export default defineConfig({
         manualChunks: {
           // Split Monaco Editor into separate chunk
           monaco: ['@monaco-editor/react', 'monaco-editor'],
-          // Split DuckDB (though WASM is already separate)
-          duckdb: ['@duckdb/duckdb-wasm'],
           // Split protobuf libraries
           protobuf: ['protobufjs'],
           // Split React vendor dependencies
-          vendor: ['react', 'react-dom'],
-          // Split compression/zip libraries
-          compression: ['fflate']
+          vendor: ['react', 'react-dom']
         }
       }
     }

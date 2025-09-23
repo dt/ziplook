@@ -1,4 +1,4 @@
-import { protoDecoder } from './protoDecoder';
+import { protoDecoder, ProtoDecoder } from './protoDecoder';
 import { prettyKey } from './prettyKey';
 import { findProtoType } from './protoRegistry';
 
@@ -85,6 +85,7 @@ export interface PreprocessOptions {
   delimiter?: string;
   decodeProtos?: boolean;
   decodeKeys?: boolean;
+  protoDecoder?: ProtoDecoder;
 }
 
 // Parse CSV/TSV content and return header and rows
@@ -147,6 +148,7 @@ export function preprocessCSV(
   options: PreprocessOptions
 ): string {
   const delimiter = options.delimiter || '\t';
+  const decoder = options.protoDecoder || protoDecoder; // Use provided decoder or fallback to global
   const { headers, rows } = parseDelimited(content, delimiter);
 
   if (headers.length === 0) {
@@ -244,7 +246,7 @@ export function preprocessCSV(
                 const bytes = hexToBytes(value);
 
 
-                const decoded = protoDecoder.decode(bytes, protoType);
+                const decoded = decoder.decode(bytes, protoType);
 
                 // Don't use fallback for job_info - if the specific proto fails, leave as hex
                 // The fallback was incorrectly decoding Progress data as SpanConfig

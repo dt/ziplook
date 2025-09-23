@@ -64,6 +64,7 @@ body {
   align-items: center;
   padding: 10px 0;
   gap: 5px;
+  height: 100vh;
 }
 
 .icon-rail-item {

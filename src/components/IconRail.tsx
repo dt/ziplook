@@ -2,11 +2,12 @@
 interface IconRailProps {
   activeView: 'files' | 'tables' | 'search' | 'stackgazer';
   onViewChange: (view: 'files' | 'tables' | 'search' | 'stackgazer') => void;
+  onMemoryMonitorOpen?: () => void;
 }
 
-function IconRail({ activeView, onViewChange }: IconRailProps) {
+function IconRail({ activeView, onViewChange, onMemoryMonitorOpen }: IconRailProps) {
   return (
-    <div className="icon-rail">
+    <div className="icon-rail relative">
       <button
         className={`icon-rail-item ${activeView === 'tables' ? 'active' : ''}`}
         onClick={() => onViewChange('tables')}
@@ -79,6 +80,29 @@ function IconRail({ activeView, onViewChange }: IconRailProps) {
 			C380.443,144.499,374.711,163.616,359.436,171.844z"/>
         </svg>
       </button>
+
+      {/* Spacer to push memory monitor to bottom */}
+      <div style={{ flex: 1 }}></div>
+
+      {/* Memory monitor button at bottom */}
+      {onMemoryMonitorOpen && (
+        <button
+          className="icon-rail-item opacity-70 hover:opacity-100"
+          onClick={onMemoryMonitorOpen}
+          title="Memory Monitor"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            {/* Gauge arc */}
+            <path d="M3 12a9 9 0 1 0 18 0" strokeLinecap="round"/>
+            {/* Gauge markings */}
+            <path d="M6.34 6.34L7.05 7.05M17.66 6.34L16.95 7.05M4 12h1M20 12h-1"/>
+            {/* Needle pointing to middle-right (indicating some usage) */}
+            <path d="M12 12L16 8" strokeWidth="2.5" strokeLinecap="round"/>
+            {/* Center dot */}
+            <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+          </svg>
+        </button>
+      )}
     </div>
   );
 }

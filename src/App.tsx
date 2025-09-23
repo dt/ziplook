@@ -8,11 +8,11 @@ import IconRail from './components/IconRail';
 import Sidebar from './components/Sidebar';
 import MainPanel from './components/MainPanel';
 import StackgazerView from './components/StackgazerView';
+import { MemoryMonitor } from './components/MemoryMonitor';
 import { AppProvider, useApp } from './state/AppContext';
 import { NavigationProvider } from './components/NavigationProvider';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useKeyboardNavigation } from './hooks/useKeyboardNavigation';
-import { duckDBService } from './services/duckdb';
 
 type ActiveView = 'files' | 'tables' | 'search' | 'stackgazer';
 
@@ -21,29 +21,20 @@ function AppContent() {
   const [activeView, setActiveView] = useState<ActiveView>('tables');
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(360);
+  const [memoryMonitorOpen, setMemoryMonitorOpen] = useState(false);
 
-  // Initialize DuckDB immediately when the app loads
-  useEffect(() => {
-    duckDBService.initialize().catch(err => {
-      console.error('Failed to initialize DuckDB at startup:', err);
-    });
-  }, []);
+  // DuckDB is now initialized in the DB worker through WorkerManager
 
   // Send stack data to iframe when table loading finishes
   useEffect(() => {
-    console.log('App: useEffect triggered', {
-      hasZip: !!state.zip,
-      hasStackData: !!state.stackData,
-      tablesLoading: state.tablesLoading,
-      stackDataKeys: state.stackData ? Object.keys(state.stackData) : []
-    });
-
-    if (!state.zip || !state.stackData || state.tablesLoading) return;
+    if (!state.zip || !state.stackData || state.tablesLoading) {
+      return;
+    }
 
     // Only proceed if we have actual stack data
-    if (Object.keys(state.stackData).length === 0) return;
-
-    console.log('App: Table loading finished, sending stack data to iframe:', Object.keys(state.stackData));
+    if (Object.keys(state.stackData).length === 0) {
+      return;
+    }
 
     // Find the preloaded iframe
     const preloadedIframe = document.getElementById('stackgazer-preload') as HTMLIFrameElement;
@@ -60,9 +51,7 @@ function AppContent() {
               path: path,
               content: content
             }, window.location.origin);
-            console.log('App: Sent stack file:', path);
           }
-          console.log('App: Sent all stack files to preloaded iframe');
         }
       } catch (error) {
         console.error('App: Error sending data to stackgazer iframe:', error);
@@ -210,8 +199,13 @@ function AppContent() {
   ]);
 
   return (
-    <div className={`app-container ${!sidebarVisible || activeView === 'stackgazer' ? 'sidebar-collapsed' : ''}`}>
-      <IconRail activeView={activeView} onViewChange={handleViewChange} />
+    <>
+      <div className={`app-container ${!sidebarVisible || activeView === 'stackgazer' ? 'sidebar-collapsed' : ''}`}>
+      <IconRail
+        activeView={activeView}
+        onViewChange={handleViewChange}
+        onMemoryMonitorOpen={() => setMemoryMonitorOpen(true)}
+      />
       {activeView !== 'stackgazer' && (
         <>
           <Sidebar
@@ -227,18 +221,20 @@ function AppContent() {
           )}
         </>
       )}
-      {activeView === 'stackgazer' ? <StackgazerView /> : <MainPanel />}
+      {activeView === 'stackgazer' ? (
+        state.zip && state.stackData ? <StackgazerView /> : <MainPanel />
+      ) : <MainPanel />}
       {/* Preloaded iframe that gets repositioned when stackgazer is active */}
       <div
         id="stackgazer-iframe-container"
         style={{
-          position: activeView === 'stackgazer' ? 'static' : 'absolute',
-          left: activeView === 'stackgazer' ? 'auto' : '-9999px',
-          top: activeView === 'stackgazer' ? 'auto' : '-9999px',
-          width: activeView === 'stackgazer' ? '100%' : '1px',
-          height: activeView === 'stackgazer' ? '100%' : '1px',
-          flex: activeView === 'stackgazer' ? 1 : 'none',
-          display: activeView === 'stackgazer' ? 'flex' : 'block',
+          position: activeView === 'stackgazer' && state.zip && state.stackData ? 'static' : 'absolute',
+          left: activeView === 'stackgazer' && state.zip && state.stackData ? 'auto' : '-9999px',
+          top: activeView === 'stackgazer' && state.zip && state.stackData ? 'auto' : '-9999px',
+          width: activeView === 'stackgazer' && state.zip && state.stackData ? '100%' : '1px',
+          height: activeView === 'stackgazer' && state.zip && state.stackData ? '100%' : '1px',
+          flex: activeView === 'stackgazer' && state.zip && state.stackData ? 1 : 'none',
+          display: activeView === 'stackgazer' && state.zip && state.stackData ? 'flex' : 'block',
           flexDirection: 'column',
           overflow: 'hidden'
         }}
@@ -254,7 +250,15 @@ function AppContent() {
           id="stackgazer-preload"
         />
       </div>
-    </div>
+
+      </div>
+
+      {/* Memory Monitor Modal - rendered outside app container for proper overlay */}
+      <MemoryMonitor
+        isOpen={memoryMonitorOpen}
+        onClose={() => setMemoryMonitorOpen(false)}
+      />
+    </>
   );
 }
 
