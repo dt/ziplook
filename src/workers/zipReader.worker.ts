@@ -4,8 +4,7 @@
  */
 
 import * as fflate from 'fflate';
-import type { ZipEntryMeta, PerfMeta } from '../state/types';
-import { getPerfMeta } from '../utils/memoryReporting';
+import type { ZipEntryMeta } from '../state/types';
 
 interface InitializeMessage {
   type: 'initialize';
@@ -51,14 +50,12 @@ interface InitializeResponse {
   success: boolean;
   entries?: ZipEntryMeta[];
   error?: string;
-  perfMeta: PerfMeta;
 }
 
 interface GetEntriesResponse {
   type: 'getEntriesComplete';
   id: string;
   entries: ZipEntryMeta[];
-  perfMeta: PerfMeta;
 }
 
 interface ReadFileResponse {
@@ -67,7 +64,6 @@ interface ReadFileResponse {
   success: boolean;
   result?: { text?: string; bytes?: Uint8Array };
   error?: string;
-  perfMeta: PerfMeta;
 }
 
 interface ReadFileChunkResponse {
@@ -79,14 +75,12 @@ interface ReadFileChunkResponse {
     total: number;
     done: boolean;
   };
-  perfMeta: PerfMeta;
 }
 
 interface ErrorResponse {
   type: 'error';
   id: string;
   error: string;
-  perfMeta: PerfMeta;
 }
 
 
@@ -97,9 +91,6 @@ let indexingWorkerPort: MessagePort | null = null;
 let dbWorkerPort: MessagePort | null = null;
 
 // Helper to get current performance metadata for this worker
-function getZipWorkerPerfMeta(): PerfMeta {
-  return getPerfMeta('zip', 0); // No WASM memory for zip worker
-}
 
 function isLikelyText(str: string): boolean {
   // Check first 1000 chars for binary content
@@ -160,7 +151,6 @@ function initialize(message: InitializeMessage) {
         id,
         success: false,
         error: err.message,
-        perfMeta: getZipWorkerPerfMeta()
       } as InitializeResponse);
     } else {
       self.postMessage({
@@ -168,7 +158,6 @@ function initialize(message: InitializeMessage) {
         id,
         success: true,
         entries,
-        perfMeta: getZipWorkerPerfMeta()
       } as InitializeResponse);
     }
   });
@@ -181,7 +170,6 @@ function getEntries(message: GetEntriesMessage) {
     type: 'getEntriesComplete',
     id,
     entries,
-    perfMeta: getZipWorkerPerfMeta()
   } as GetEntriesResponse);
 }
 

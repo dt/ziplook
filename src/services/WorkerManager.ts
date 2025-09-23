@@ -4,7 +4,6 @@
  */
 
 import type { ZipEntryMeta } from '../state/types';
-import { getPerfMeta } from '../utils/memoryReporting';
 
 interface WorkerManagerOptions {
   onIndexingProgress?: (progress: { current: number; total: number; fileName: string }) => void;
@@ -13,7 +12,6 @@ interface WorkerManagerOptions {
   onTableLoadProgress?: (tableName: string, status: string, rowCount?: number, error?: string) => void;
   onTableLoadingComplete?: (success: boolean, tablesLoaded: number, error?: string) => void;
   onDatabaseInitialized?: (success: boolean, error?: string) => void;
-  onMemoryReport?: (workerId: 'main' | 'db' | 'indexing' | 'zip', perfMeta: any) => void;
 }
 
 // Global singleton instance
@@ -599,12 +597,6 @@ export class WorkerManager {
   }
 
   private handleZipWorkerMessage(response: any) {
-    // Extract and report memory data if available
-    if (response.perfMeta && this.options.onMemoryReport) {
-      this.options.onMemoryReport('zip', response.perfMeta);
-      // Also report main thread memory when processing worker messages
-      this.options.onMemoryReport('main', getPerfMeta('main', 0));
-    }
 
     const request = this.pendingZipRequests.get(response.id);
     if (request) {
@@ -619,12 +611,6 @@ export class WorkerManager {
   }
 
   private handleDbWorkerMessage(response: any) {
-    // Extract and report memory data if available
-    if (response.perfMeta && this.options.onMemoryReport) {
-      this.options.onMemoryReport('db', response.perfMeta);
-      // Also report main thread memory when processing worker messages
-      this.options.onMemoryReport('main', getPerfMeta('main', 0));
-    }
 
     // Handle progress/status messages
     switch (response.type) {
@@ -667,12 +653,6 @@ export class WorkerManager {
   }
 
   private handleIndexingWorkerMessage(response: any) {
-    // Extract and report memory data if available
-    if (response.perfMeta && this.options.onMemoryReport) {
-      this.options.onMemoryReport('indexing', response.perfMeta);
-      // Also report main thread memory when processing worker messages
-      this.options.onMemoryReport('main', getPerfMeta('main', 0));
-    }
 
     switch (response.type) {
       case 'indexingProgress':

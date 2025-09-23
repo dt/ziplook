@@ -4,60 +4,42 @@
 
 import type { PerfMeta } from '../state/types';
 
-// Stable baseline values per worker to reduce flickering
-const workerBaselines = new Map<string, { used: number; total: number; lastUpdate: number }>();
-
 /**
  * Get current performance metrics for a worker or main thread
  */
 export function getPerfMeta(workerId: PerfMeta['workerId'], wasmMemorySize: number = 0): PerfMeta {
-  // Check if we're in a browser environment
-  const memory = typeof window !== 'undefined' && (performance as any).memory;
+  // Check if performance.memory is available (works in main thread and potentially workers)
+  const memory = typeof performance !== 'undefined' && (performance as any).memory;
 
   // Chrome requires cross-origin isolation for precise memory measurements
   const hasMemoryAPI = memory && memory.usedJSHeapSize > 0;
 
-  let usedJSHeapSize: number;
-  let totalJSHeapSize: number;
-
-  if (hasMemoryAPI) {
-    usedJSHeapSize = memory.usedJSHeapSize;
-    totalJSHeapSize = memory.totalJSHeapSize;
-  } else {
-    // Use stable simulated values with gradual changes
-    const now = Date.now();
-    let baseline = workerBaselines.get(workerId);
-
-    if (!baseline || (now - baseline.lastUpdate) > 5000) {
-      // Initialize or update baseline every 5 seconds
-      const baseUsed = (workerId === 'main' ? 45 : workerId === 'db' ? 35 : 25) * 1024 * 1024;
-      const baseTotal = (workerId === 'main' ? 128 : workerId === 'db' ? 96 : 64) * 1024 * 1024;
-
-      baseline = {
-        used: baseUsed + Math.floor(Math.random() * 20 - 10) * 1024 * 1024, // ±10MB variation
-        total: baseTotal + Math.floor(Math.random() * 40 - 20) * 1024 * 1024, // ±20MB variation
-        lastUpdate: now
-      };
-      workerBaselines.set(workerId, baseline);
-    }
-
-    // Small gradual changes (±1MB) for realistic variation
-    const variation = Math.floor(Math.random() * 2 - 1) * 1024 * 1024;
-    usedJSHeapSize = Math.max(baseline.used + variation, 10 * 1024 * 1024);
-    totalJSHeapSize = Math.max(baseline.total, usedJSHeapSize + 10 * 1024 * 1024);
-  }
-
   return {
-    usedJSHeapSize,
-    totalJSHeapSize,
-    wasmMemorySize,
+    usedJSHeapSize: hasMemoryAPI ? memory.usedJSHeapSize : -1,
+    totalJSHeapSize: hasMemoryAPI ? memory.totalJSHeapSize : -1,
+    wasmMemorySize: wasmMemorySize > 0 ? wasmMemorySize : -1,
     timestamp: Date.now(),
     workerId
   };
 }
 
-// Stable WASM memory baseline
-let wasmBaseline: { size: number; lastUpdate: number } | null = null;
+/**
+ * Try to get comprehensive memory usage using the newer API
+ * This can report memory usage across workers and contexts
+ */
+export async function measureComprehensiveMemory(): Promise<any> {
+  if (typeof performance !== 'undefined' && 'measureUserAgentSpecificMemory' in performance) {
+    try {
+      const result = await (performance as any).measureUserAgentSpecificMemory();
+      console.log('🧠 Comprehensive memory measurement:', result);
+      return result; // { bytes, breakdown: [...] } includes workers/iframes
+    } catch (error) {
+      console.log('🧠 measureUserAgentSpecificMemory failed:', error);
+      return null;
+    }
+  }
+  return null;
+}
 
 /**
  * Get WASM memory size for DuckDB worker
@@ -75,27 +57,11 @@ export function getDuckDBWasmMemorySize(db: any): number {
       // For now, return 0 and we'll implement this when we have access to the memory object
     }
 
-    // Fallback: simulate stable WASM memory usage for DuckDB
-    if (db) {
-      const now = Date.now();
-
-      if (!wasmBaseline || (now - wasmBaseline.lastUpdate) > 10000) {
-        // Update baseline every 10 seconds
-        wasmBaseline = {
-          size: (32 + Math.floor(Math.random() * 32)) * 1024 * 1024, // 32-64MB
-          lastUpdate: now
-        };
-      }
-
-      // Small variation (±2MB) for realistic changes
-      const variation = Math.floor(Math.random() * 4 - 2) * 1024 * 1024;
-      return Math.max(wasmBaseline.size + variation, 16 * 1024 * 1024);
-    }
-
-    return 0;
+    // Return -1 when we can't get real WASM memory data
+    return -1;
   } catch (error) {
     console.warn('Failed to get WASM memory size:', error);
-    return 0;
+    return -1;
   }
 }
 

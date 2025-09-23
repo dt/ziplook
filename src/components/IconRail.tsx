@@ -85,7 +85,7 @@ function IconRail({ activeView, onViewChange, onMemoryMonitorOpen }: IconRailPro
       <div style={{ flex: 1 }}></div>
 
       {/* Memory monitor button at bottom */}
-      {onMemoryMonitorOpen && (
+      {false && onMemoryMonitorOpen && (
         <button
           className="icon-rail-item opacity-70 hover:opacity-100"
           onClick={onMemoryMonitorOpen}

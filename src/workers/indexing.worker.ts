@@ -7,8 +7,6 @@
 import { LogSearchIndex } from '../services/logSearchIndex';
 import { LogParser } from '../services/logParser';
 import { QueryParser } from '../services/queryParser';
-import { getPerfMeta } from '../utils/memoryReporting';
-import type { PerfMeta } from '../state/types';
 
 interface SetZipWorkerPortMessage {
   type: 'setZipWorkerPort';
@@ -55,7 +53,6 @@ interface SearchResponseMessage {
   success: boolean;
   results?: any[];
   error?: string;
-  perfMeta: PerfMeta;
 }
 
 type IndexingWorkerMessage = SetZipWorkerPortMessage | RegisterFilesMessage | StartIndexingMessage | IndexSingleFileMessage | StopIndexingMessage | SearchMessage | GetFileStatusesMessage;
@@ -66,7 +63,6 @@ interface IndexingProgressResponse {
   current: number;
   total: number;
   fileName: string;
-  perfMeta: PerfMeta;
 }
 
 interface IndexingCompleteResponse {
@@ -76,7 +72,6 @@ interface IndexingCompleteResponse {
   totalEntries: number;
   error?: string;
   ruleDescription?: string;
-  perfMeta: PerfMeta;
 }
 
 interface IndexingFileResultResponse {
@@ -84,14 +79,12 @@ interface IndexingFileResultResponse {
   id: string;
   filePath: string;
   entries: any[];
-  perfMeta: PerfMeta;
 }
 
 interface IndexingErrorResponse {
   type: 'indexingError';
   id: string;
   error: string;
-  perfMeta: PerfMeta;
 }
 
 interface FileStatusesResponse {
@@ -108,7 +101,6 @@ interface FileStatusesResponse {
     error?: string;
   }>;
   error?: string;
-  perfMeta: PerfMeta;
 }
 
 
@@ -121,10 +113,6 @@ let globalEntryIdCounter = 0; // Global counter to ensure unique IDs across all 
 // Initialize search index when worker boots
 const searchIndex = new LogSearchIndex();
 
-// Helper to get current performance metadata for this worker
-function getIndexingWorkerPerfMeta(): PerfMeta {
-  return getPerfMeta('indexing', 0); // No WASM memory for indexing worker
-}
 
 // Using imported LogParser instead of local WorkerLogParser
 
@@ -348,8 +336,7 @@ async function startIndexing(message: StartIndexingMessage) {
         current: i + 1,
         total: actualLogFiles.length,
         fileName: logFile.name,
-        perfMeta: getIndexingWorkerPerfMeta()
-      } as IndexingProgressResponse);
+        } as IndexingProgressResponse);
 
       try {
         // Request this single file from zip worker
@@ -387,8 +374,7 @@ async function startIndexing(message: StartIndexingMessage) {
             id,
             filePath: logFile.path,
             entries: parseResult.entries,
-            perfMeta: getIndexingWorkerPerfMeta()
-          } as IndexingFileResultResponse);
+                } as IndexingFileResultResponse);
         }
 
         // Brief pause to keep worker responsive and avoid overwhelming the system
@@ -407,8 +393,7 @@ async function startIndexing(message: StartIndexingMessage) {
         success: true,
         totalEntries,
         ruleDescription: actualLogFiles.length > 0 ? '(*.log)' : undefined,
-        perfMeta: getIndexingWorkerPerfMeta()
-      } as IndexingCompleteResponse);
+        } as IndexingCompleteResponse);
     }
 
   } catch (error) {
@@ -417,8 +402,7 @@ async function startIndexing(message: StartIndexingMessage) {
         type: 'indexingError',
         id,
         error: error instanceof Error ? error.message : 'Unknown error',
-        perfMeta: getIndexingWorkerPerfMeta()
-      } as IndexingErrorResponse);
+        } as IndexingErrorResponse);
     }
   }
 }
@@ -448,7 +432,6 @@ async function indexSingleFile(message: IndexSingleFileMessage) {
       current: 1,
       total: 1,
       fileName: file.name,
-      perfMeta: getIndexingWorkerPerfMeta()
     } as IndexingProgressResponse);
 
     // Request file content from zip worker
@@ -482,8 +465,7 @@ async function indexSingleFile(message: IndexSingleFileMessage) {
         id,
         filePath: file.path,
         entries: parseResult.entries,
-        perfMeta: getIndexingWorkerPerfMeta()
-      } as IndexingFileResultResponse);
+        } as IndexingFileResultResponse);
 
       self.postMessage({
         type: 'indexingComplete',
@@ -491,8 +473,7 @@ async function indexSingleFile(message: IndexSingleFileMessage) {
         success: true,
         totalEntries: parseResult.entries.length,
         ruleDescription: undefined, // Single file indexing doesn't include rule description
-        perfMeta: getIndexingWorkerPerfMeta()
-      } as IndexingCompleteResponse);
+        } as IndexingCompleteResponse);
     }
 
   } catch (error) {
@@ -503,7 +484,6 @@ async function indexSingleFile(message: IndexSingleFileMessage) {
       type: 'indexingError',
       id,
       error: errorMessage,
-      perfMeta: getIndexingWorkerPerfMeta()
     } as IndexingErrorResponse);
   }
 }
@@ -522,8 +502,7 @@ async function performSearch(message: SearchMessage) {
         id,
         success: false,
         error: 'Search index not ready',
-        perfMeta: getIndexingWorkerPerfMeta()
-      } as SearchResponseMessage);
+        } as SearchResponseMessage);
       return;
     }
 
@@ -559,7 +538,6 @@ async function performSearch(message: SearchMessage) {
       id,
       success: true,
       results,
-      perfMeta: getIndexingWorkerPerfMeta()
     } as SearchResponseMessage);
 
   } catch (error) {
@@ -569,7 +547,6 @@ async function performSearch(message: SearchMessage) {
       id,
       success: false,
       error: error instanceof Error ? error.message : 'Unknown search error',
-      perfMeta: getIndexingWorkerPerfMeta()
     } as SearchResponseMessage);
   }
 }
@@ -586,7 +563,6 @@ async function getFileStatuses(message: GetFileStatusesMessage) {
       id,
       success: true,
       fileStatuses,
-      perfMeta: getIndexingWorkerPerfMeta()
     } as FileStatusesResponse);
 
   } catch (error) {
@@ -596,7 +572,6 @@ async function getFileStatuses(message: GetFileStatusesMessage) {
       id,
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
-      perfMeta: getIndexingWorkerPerfMeta()
     } as FileStatusesResponse);
   }
 }

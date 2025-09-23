@@ -1,9 +1,8 @@
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import type { AppState, ViewerTab, ZipEntryMeta, TableMeta, PerfMeta, MemoryReports } from './types';
+import type { AppState, ViewerTab, ZipEntryMeta, TableMeta } from './types';
 import { getWorkerManager } from '../services/WorkerManager';
 import { setWorkerManager } from '../services/monacoConfig';
-import { getPerfMeta } from '../utils/memoryReporting';
 
 export type AppAction =
   | { type: 'SET_ZIP'; name: string; size: number; entries: ZipEntryMeta[] }
@@ -22,20 +21,14 @@ export type AppAction =
   | { type: 'SET_WORKERS_READY'; ready: boolean }
   | { type: 'SET_INDEXING_STATUS'; status: 'none' | 'indexing' | 'ready'; ruleDescription?: string }
   | { type: 'SET_INDEXING_PROGRESS'; progress: { current: number; total: number; fileName: string } | null }
-  | { type: 'UPDATE_MEMORY_REPORT'; workerId: 'main' | 'db' | 'indexing' | 'zip'; perfMeta: PerfMeta };
+;
 
 const initialState: AppState = {
   openTabs: [],
   activeTabId: undefined,
   filesIndex: {},
   fileCache: new Map(),
-  tables: {},
-  memoryReports: {
-    main: null,
-    db: null,
-    indexing: null,
-    zip: null
-  }
+  tables: {}
 };
 
 function appReducer(state: AppState, action: AppAction): AppState {
@@ -283,28 +276,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
       };
     }
 
-    case 'UPDATE_MEMORY_REPORT': {
-      const currentReport = state.memoryReports?.[action.workerId];
-      const newPerfMeta = {
-        ...action.perfMeta,
-        maxSeenJSHeapSize: Math.max(
-          action.perfMeta.usedJSHeapSize,
-          currentReport?.maxSeenJSHeapSize || 0
-        ),
-        maxSeenWasmSize: Math.max(
-          action.perfMeta.wasmMemorySize,
-          currentReport?.maxSeenWasmSize || 0
-        )
-      };
-
-      return {
-        ...state,
-        memoryReports: {
-          ...state.memoryReports,
-          [action.workerId]: newPerfMeta
-        } as MemoryReports
-      };
-    }
 
     default:
       return state;
@@ -315,8 +286,6 @@ interface AppContextValue {
   state: AppState;
   dispatch: React.Dispatch<AppAction>;
   waitForWorkers: () => Promise<any>;
-  updateMemoryReport: (workerId: 'main' | 'db' | 'indexing' | 'zip', perfMeta: PerfMeta) => void;
-  updateMainMemory: () => void;
 }
 
 export const AppContext = createContext<AppContextValue | undefined>(undefined);
@@ -438,10 +407,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
           // These entries need to be added to a search index
           // For now, just log them - SearchView will handle the actual indexing
         },
-        onMemoryReport: (workerId: 'main' | 'db' | 'indexing' | 'zip', perfMeta: any) => {
-          if (!mounted) return;
-          dispatch({ type: 'UPDATE_MEMORY_REPORT', workerId, perfMeta });
-        },
         onTableLoadProgress: (tableName: string, status: string, rowCount?: number, error?: string) => {
           if (!mounted) return;
 
@@ -522,19 +487,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Function to update memory report from a worker
-  const updateMemoryReport = (workerId: 'main' | 'db' | 'indexing' | 'zip', perfMeta: PerfMeta) => {
-    dispatch({ type: 'UPDATE_MEMORY_REPORT', workerId, perfMeta });
-  };
-
-  // Function to update main thread memory
-  const updateMainMemory = () => {
-    const mainPerfMeta = getPerfMeta('main', 0);
-    updateMemoryReport('main', mainPerfMeta);
-  };
-
   return (
-    <AppContext.Provider value={{ state, dispatch, waitForWorkers, updateMemoryReport, updateMainMemory }}>
+    <AppContext.Provider value={{ state, dispatch, waitForWorkers }}>
       {children}
     </AppContext.Provider>
   );

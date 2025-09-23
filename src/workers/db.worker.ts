@@ -13,8 +13,6 @@ import duckdb_wasm from '@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm?url';
 import mvp_worker from '@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url';
 import duckdb_wasm_eh from '@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url';
 import eh_worker from '@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url';
-import { getPerfMeta, getDuckDBWasmMemorySize } from '../utils/memoryReporting';
-import type { PerfMeta } from '../state/types';
 
 // Message types
 interface SetZipWorkerPortMessage {
@@ -103,7 +101,6 @@ interface DatabaseInitializedResponse {
   id: string;
   success: boolean;
   error?: string;
-  perfMeta: PerfMeta;
 }
 
 interface TableLoadProgressResponse {
@@ -117,7 +114,6 @@ interface TableLoadProgressResponse {
   originalName?: string;
   isError?: boolean;
   size?: number;
-  perfMeta: PerfMeta;
 }
 
 interface TableLoadingCompleteResponse {
@@ -126,7 +122,6 @@ interface TableLoadingCompleteResponse {
   success: boolean;
   tablesLoaded: number;
   error?: string;
-  perfMeta: PerfMeta;
 }
 
 interface QueryResultResponse {
@@ -135,7 +130,6 @@ interface QueryResultResponse {
   success: boolean;
   data?: any[];
   error?: string;
-  perfMeta: PerfMeta;
 }
 
 interface TableSchemaResponse {
@@ -144,7 +138,6 @@ interface TableSchemaResponse {
   success: boolean;
   schema?: any[];
   error?: string;
-  perfMeta: PerfMeta;
 }
 
 interface LoadedTablesResponse {
@@ -153,7 +146,6 @@ interface LoadedTablesResponse {
   success: boolean;
   tables?: string[];
   error?: string;
-  perfMeta: PerfMeta;
 }
 
 interface DuckDBFunctionsResponse {
@@ -162,7 +154,6 @@ interface DuckDBFunctionsResponse {
   success: boolean;
   functions?: Array<{name: string; type: string; description?: string}>;
   error?: string;
-  perfMeta: PerfMeta;
 }
 
 interface DuckDBKeywordsResponse {
@@ -171,7 +162,6 @@ interface DuckDBKeywordsResponse {
   success: boolean;
   keywords?: string[];
   error?: string;
-  perfMeta: PerfMeta;
 }
 
 
@@ -189,11 +179,6 @@ let workerProtoDecoder: ProtoDecoder | null = null;
 
 const LARGE_FILE_THRESHOLD = 20 * 1024 * 1024; // 20MB
 
-// Helper to get current performance metadata for this worker
-function getDBWorkerPerfMeta(): PerfMeta {
-  const wasmMemorySize = getDuckDBWasmMemorySize(db);
-  return getPerfMeta('db', wasmMemorySize);
-}
 
 function sendMessageToZipWorker(message: any): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -236,7 +221,6 @@ async function initializeDatabase(message: InitializeDatabaseMessage) {
       type: 'databaseInitialized',
       id,
       success: true,
-      perfMeta: getDBWorkerPerfMeta()
     } as DatabaseInitializedResponse);
     return;
   }
@@ -303,7 +287,6 @@ async function initializeDatabase(message: InitializeDatabaseMessage) {
       type: 'databaseInitialized',
       id,
       success: true,
-      perfMeta: getDBWorkerPerfMeta()
     } as DatabaseInitializedResponse);
 
   } catch (error) {
@@ -313,7 +296,6 @@ async function initializeDatabase(message: InitializeDatabaseMessage) {
       id,
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
-      perfMeta: getDBWorkerPerfMeta()
     } as DatabaseInitializedResponse);
   }
 }
@@ -343,8 +325,7 @@ async function startTableLoading(message: StartTableLoadingMessage) {
         id,
         success: true,
         tablesLoaded,
-        perfMeta: getDBWorkerPerfMeta()
-      } as TableLoadingCompleteResponse);
+        } as TableLoadingCompleteResponse);
     }
 
   } catch (error) {
@@ -355,8 +336,7 @@ async function startTableLoading(message: StartTableLoadingMessage) {
         success: false,
         tablesLoaded: 0,
         error: error instanceof Error ? error.message : 'Unknown error',
-        perfMeta: getDBWorkerPerfMeta()
-      } as TableLoadingCompleteResponse);
+        } as TableLoadingCompleteResponse);
     }
   }
 }
@@ -384,7 +364,6 @@ async function loadSingleTable(table: any, loadingId: string) {
       originalName,
       isError,
       size,
-      perfMeta: getDBWorkerPerfMeta()
     } as TableLoadProgressResponse);
 
     // Check if already loaded
@@ -404,8 +383,7 @@ async function loadSingleTable(table: any, loadingId: string) {
         nodeId,
         originalName,
         isError,
-        perfMeta: getDBWorkerPerfMeta()
-      } as TableLoadProgressResponse);
+        } as TableLoadProgressResponse);
       return;
     }
 
@@ -421,8 +399,7 @@ async function loadSingleTable(table: any, loadingId: string) {
         originalName,
         isError,
         size,
-        perfMeta: getDBWorkerPerfMeta()
-      } as TableLoadProgressResponse);
+        } as TableLoadProgressResponse);
       return;
     }
 
@@ -452,7 +429,6 @@ async function loadSingleTable(table: any, loadingId: string) {
       nodeId,
       originalName,
       isError,
-      perfMeta: getDBWorkerPerfMeta()
     } as TableLoadProgressResponse);
 
   } catch (error) {
@@ -468,7 +444,6 @@ async function loadSingleTable(table: any, loadingId: string) {
       nodeId,
       originalName,
       isError,
-      perfMeta: getDBWorkerPerfMeta()
     } as TableLoadProgressResponse);
   }
 }
@@ -676,7 +651,6 @@ async function executeQuery(message: ExecuteQueryMessage) {
       id,
       success: false,
       error: 'Database not initialized',
-      perfMeta: getDBWorkerPerfMeta()
     } as QueryResultResponse);
     return;
   }
@@ -727,7 +701,6 @@ async function executeQuery(message: ExecuteQueryMessage) {
       id,
       success: true,
       data: sanitizedData,
-      perfMeta: getDBWorkerPerfMeta()
     } as QueryResultResponse);
   } catch (error) {
     console.error('Query failed:', error);
@@ -736,7 +709,6 @@ async function executeQuery(message: ExecuteQueryMessage) {
       id,
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
-      perfMeta: getDBWorkerPerfMeta()
     } as QueryResultResponse);
   }
 }
@@ -756,7 +728,6 @@ async function getTableSchema(message: GetTableSchemaMessage) {
       id,
       success: true,
       schema: data,
-      perfMeta: getDBWorkerPerfMeta()
     } as TableSchemaResponse);
   } catch (error) {
     self.postMessage({
@@ -764,7 +735,6 @@ async function getTableSchema(message: GetTableSchemaMessage) {
       id,
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
-      perfMeta: getDBWorkerPerfMeta()
     } as TableSchemaResponse);
   }
 }
@@ -778,7 +748,6 @@ async function getLoadedTables(message: GetLoadedTablesMessage) {
       id,
       success: false,
       error: 'Database not initialized',
-      perfMeta: getDBWorkerPerfMeta()
     } as LoadedTablesResponse);
     return;
   }
@@ -796,7 +765,6 @@ async function getLoadedTables(message: GetLoadedTablesMessage) {
       id,
       success: true,
       tables,
-      perfMeta: getDBWorkerPerfMeta()
     } as LoadedTablesResponse);
   } catch (error) {
     self.postMessage({
@@ -804,7 +772,6 @@ async function getLoadedTables(message: GetLoadedTablesMessage) {
       id,
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
-      perfMeta: getDBWorkerPerfMeta()
     } as LoadedTablesResponse);
   }
 }
@@ -818,7 +785,6 @@ async function getDuckDBFunctions(message: GetDuckDBFunctionsMessage) {
       id,
       success: false,
       error: 'Database not initialized',
-      perfMeta: getDBWorkerPerfMeta()
     } as DuckDBFunctionsResponse);
     return;
   }
@@ -844,7 +810,6 @@ async function getDuckDBFunctions(message: GetDuckDBFunctionsMessage) {
       id,
       success: true,
       functions,
-      perfMeta: getDBWorkerPerfMeta()
     } as DuckDBFunctionsResponse);
   } catch (err) {
     console.warn('Failed to get DuckDB functions:', err);
@@ -875,7 +840,6 @@ async function getDuckDBFunctions(message: GetDuckDBFunctionsMessage) {
       id,
       success: true,
       functions: fallbackFunctions,
-      perfMeta: getDBWorkerPerfMeta()
     } as DuckDBFunctionsResponse);
   }
 }
@@ -889,7 +853,6 @@ async function getDuckDBKeywords(message: GetDuckDBKeywordsMessage) {
       id,
       success: false,
       error: 'Database not initialized',
-      perfMeta: getDBWorkerPerfMeta()
     } as DuckDBKeywordsResponse);
     return;
   }
@@ -907,7 +870,6 @@ async function getDuckDBKeywords(message: GetDuckDBKeywordsMessage) {
       id,
       success: true,
       keywords,
-      perfMeta: getDBWorkerPerfMeta()
     } as DuckDBKeywordsResponse);
   } catch (err) {
     console.warn('Failed to get DuckDB keywords:', err);
@@ -923,7 +885,6 @@ async function getDuckDBKeywords(message: GetDuckDBKeywordsMessage) {
       id,
       success: true,
       keywords: fallbackKeywords,
-      perfMeta: getDBWorkerPerfMeta()
     } as DuckDBKeywordsResponse);
   }
 }

@@ -1,212 +1,68 @@
 /**
- * Memory Monitor Modal - displays current memory usage across all workers
+ * Memory Monitor Modal - displays memory usage using performance.measureUserAgentSpecificMemory
  */
 
 import { useEffect, useState } from 'react';
-import { useApp } from '../state/AppContext';
-import { formatBytes, getMemoryPercentage } from '../utils/memoryReporting';
-import type { PerfMeta } from '../state/types';
+import { formatBytes } from '../utils/memoryReporting';
 
 interface MemoryMonitorProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+interface MemoryMeasurement {
+  bytes: number;
+  breakdown: Array<{
+    bytes: number;
+    attribution: Array<{
+      url: string;
+      scope: string;
+    }>;
+  }>;
+}
+
 export function MemoryMonitor({ isOpen, onClose }: MemoryMonitorProps) {
-  const { state, updateMainMemory } = useApp();
+  const [memoryData, setMemoryData] = useState<MemoryMeasurement | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [deviceMemory, setDeviceMemory] = useState<number | undefined>();
 
-  // Update main thread memory and get device memory on mount
+  const measureMemory = async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      if (typeof performance !== 'undefined' && 'measureUserAgentSpecificMemory' in performance) {
+        // TODO: This API requires cross-origin isolation (COOP/COEP headers).
+        // We'll need to use coi-serviceworker to enable this, or alternatively
+        // explore counting index sizes and DuckDB table sizes ourselves.
+        const result = await (performance as any).measureUserAgentSpecificMemory();
+        setMemoryData(result);
+      } else {
+        setError('measureUserAgentSpecificMemory not available');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to measure memory');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
-      updateMainMemory();
-
       // Get device memory if available
       if ('deviceMemory' in navigator) {
         setDeviceMemory((navigator as any).deviceMemory);
       }
+
+      measureMemory();
     }
-  }, [isOpen]);
-
-  // Auto-refresh main memory every 2 seconds when modal is open
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const interval = setInterval(() => {
-      updateMainMemory();
-    }, 2000);
-
-    return () => clearInterval(interval);
   }, [isOpen]);
 
   if (!isOpen) {
     return null;
   }
 
-  const memoryReports = state.memoryReports || {
-    main: null,
-    db: null,
-    indexing: null,
-    zip: null
-  };
-
-  // Calculate totals
-  const getTotalUsed = () => {
-    let total = 0;
-    Object.values(memoryReports).forEach(report => {
-      if (report) {
-        total += report.usedJSHeapSize + report.wasmMemorySize;
-      }
-    });
-    return total;
-  };
-
-  const getTotalAvailable = () => {
-    let total = 0;
-    Object.values(memoryReports).forEach(report => {
-      if (report) {
-        total += report.totalJSHeapSize;
-      }
-    });
-    return total;
-  };
-
-  const renderWorkerMemory = (workerId: string, report: PerfMeta | null) => {
-    if (!report) {
-      return (
-        <div key={workerId} style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '4px 0',
-          borderBottom: '1px solid var(--border-primary)'
-        }}>
-          <span style={{
-            textTransform: 'capitalize',
-            fontSize: '12px',
-            fontWeight: '500',
-            color: 'var(--text-primary)'
-          }}>{workerId}:</span>
-          <span style={{
-            fontSize: '12px',
-            color: 'var(--text-muted)'
-          }}>No data</span>
-        </div>
-      );
-    }
-
-    const jsUsage = report.usedJSHeapSize;
-    const jsTotal = report.totalJSHeapSize;
-    const wasmUsage = report.wasmMemorySize;
-    const totalUsage = jsUsage + wasmUsage;
-    const maxSeenJS = report.maxSeenJSHeapSize || jsUsage;
-    const maxSeenWasm = report.maxSeenWasmSize || wasmUsage;
-
-    // Calculate percentages based on JS heap limit as the scale
-    const jsPercentage = jsTotal > 0 ? getMemoryPercentage(jsUsage, jsTotal) : 0;
-    const wasmPercentage = jsTotal > 0 ? getMemoryPercentage(wasmUsage, jsTotal) : 0;
-    const totalPercentage = jsPercentage + wasmPercentage;
-    const maxSeenTotalPercentage = jsTotal > 0 ? getMemoryPercentage(maxSeenJS + maxSeenWasm, jsTotal) : 0;
-
-    return (
-      <div key={workerId} style={{
-        padding: '4px 0',
-        borderBottom: '1px solid var(--border-primary)'
-      }}>
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <span style={{
-            textTransform: 'capitalize',
-            fontSize: '12px',
-            fontWeight: '500',
-            color: 'var(--text-primary)'
-          }}>{workerId}:</span>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-primary)' }}>
-              {formatBytes(totalUsage)}
-              {jsTotal > 0 && (
-                <>
-                  {' / '}
-                  <span style={{ color: 'var(--text-secondary)' }}>{formatBytes(jsTotal)}</span>
-                  <span style={{
-                    marginLeft: '4px',
-                    color: 'var(--text-muted)'
-                  }}>
-                    ({Math.min(totalPercentage, 999)}%)
-                  </span>
-                </>
-              )}
-            </div>
-            {wasmUsage > 0 && (
-              <div style={{
-                fontSize: '10px',
-                color: 'var(--text-muted)'
-              }}>
-                JS: {formatBytes(jsUsage)} + WASM: {formatBytes(wasmUsage)}
-              </div>
-            )}
-          </div>
-        </div>
-        {/* Stacked progress bar showing JS + WASM as parts of combined total */}
-        {jsTotal > 0 && (
-          <div style={{
-            marginTop: '4px',
-            width: '100%',
-            backgroundColor: 'var(--border-secondary)',
-            borderRadius: '3px',
-            height: '6px',
-            position: 'relative'
-          }}>
-            {/* JS heap usage */}
-            <div
-              style={{
-                height: '6px',
-                borderRadius: '3px 0 0 3px',
-                backgroundColor: 'var(--accent-primary)',
-                width: `${Math.min(jsPercentage, 100)}%`,
-                position: 'absolute',
-                left: 0
-              }}
-            />
-            {/* WASM usage stacked on top of JS */}
-            {wasmUsage > 0 && (
-              <div
-                style={{
-                  height: '6px',
-                  borderRadius: '0 3px 3px 0',
-                  backgroundColor: 'rgba(0, 122, 204, 0.6)',
-                  width: `${Math.min(wasmPercentage, 100 - jsPercentage)}%`,
-                  position: 'absolute',
-                  left: `${Math.min(jsPercentage, 100)}%`
-                }}
-              />
-            )}
-            {/* Max seen tick mark for combined usage */}
-            {(maxSeenJS + maxSeenWasm) > totalUsage && (
-              <div
-                style={{
-                  position: 'absolute',
-                  left: `${Math.min(maxSeenTotalPercentage, 100)}%`,
-                  top: 0,
-                  width: '2px',
-                  height: '6px',
-                  backgroundColor: 'var(--text-muted)',
-                  transform: 'translateX(-1px)'
-                }}
-              />
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const totalUsed = getTotalUsed();
-  const totalAvailable = getTotalAvailable();
-  const overallPercentage = totalAvailable > 0 ? getMemoryPercentage(totalUsed, totalAvailable) : 0;
 
   return (
     <div
@@ -268,45 +124,98 @@ export function MemoryMonitor({ isOpen, onClose }: MemoryMonitorProps) {
         </div>
 
         <div style={{
-          padding: '10px',
+          padding: '16px',
           overflow: 'auto',
           maxHeight: 'calc(80vh - 60px)'
         }}>
-          {/* Overall Summary */}
-          <div style={{
-            backgroundColor: 'var(--bg-tertiary)',
-            padding: '8px',
-            borderRadius: '4px',
-            marginBottom: '12px',
-            border: '1px solid var(--border-primary)'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-              <span style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-primary)' }}>Total:</span>
-              <span style={{ fontSize: '12px', color: 'var(--text-primary)' }}>
-                {formatBytes(totalUsed)}
-                {totalAvailable > 0 && (
-                  <>
-                    {' / '}
-                    {formatBytes(totalAvailable)} <span style={{ color: 'var(--text-muted)' }}>({overallPercentage}%)</span>
-                  </>
-                )}
-              </span>
+          {deviceMemory && (
+            <div style={{
+              fontSize: '12px',
+              color: 'var(--text-muted)',
+              marginBottom: '16px',
+              textAlign: 'center'
+            }}>
+              Device Memory: {deviceMemory}GB
             </div>
-            {deviceMemory && (
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                Device Memory: {deviceMemory}GB
+          )}
+
+          {isLoading && (
+            <div style={{
+              textAlign: 'center',
+              color: 'var(--text-muted)',
+              fontSize: '14px'
+            }}>
+              Measuring memory usage...
+            </div>
+          )}
+
+          {error && (
+            <div style={{
+              backgroundColor: 'var(--bg-tertiary)',
+              border: '1px solid #ff6b6b',
+              borderRadius: '4px',
+              padding: '12px',
+              marginBottom: '16px'
+            }}>
+              <div style={{ color: '#ff6b6b', fontSize: '12px', fontWeight: '500', marginBottom: '4px' }}>
+                Error
               </div>
-            )}
-          </div>
+              <div style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+                {error}
+              </div>
+              {error.includes('not available') && (
+                <div style={{ color: 'var(--text-muted)', fontSize: '10px', marginTop: '8px' }}>
+                  This API requires Chrome with cross-origin isolation enabled.
+                </div>
+              )}
+            </div>
+          )}
 
-          {/* Worker Details */}
-          <div style={{ marginBottom: '12px' }}>
-            {renderWorkerMemory('main', memoryReports.main)}
-            {renderWorkerMemory('db', memoryReports.db)}
-            {renderWorkerMemory('indexing', memoryReports.indexing)}
-            {renderWorkerMemory('zip', memoryReports.zip)}
-          </div>
+          {memoryData && (
+            <div>
+              <div style={{
+                backgroundColor: 'var(--bg-tertiary)',
+                padding: '12px',
+                borderRadius: '4px',
+                marginBottom: '16px',
+                border: '1px solid var(--border-primary)'
+              }}>
+                <div style={{ fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)', marginBottom: '8px' }}>
+                  Total Memory Usage
+                </div>
+                <div style={{ fontSize: '18px', color: 'var(--accent-primary)' }}>
+                  {formatBytes(memoryData.bytes)}
+                </div>
+              </div>
 
+              {memoryData.breakdown && memoryData.breakdown.length > 0 && (
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-primary)', marginBottom: '8px' }}>
+                    Breakdown by Context
+                  </div>
+                  {memoryData.breakdown.map((item, index) => (
+                    <div key={index} style={{
+                      backgroundColor: 'var(--bg-tertiary)',
+                      padding: '8px',
+                      borderRadius: '4px',
+                      marginBottom: '8px',
+                      border: '1px solid var(--border-primary)'
+                    }}>
+                      <div style={{ fontSize: '12px', color: 'var(--text-primary)' }}>
+                        {formatBytes(item.bytes)}
+                      </div>
+                      {item.attribution && item.attribution.map((attr, attrIndex) => (
+                        <div key={attrIndex} style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          {attr.scope}: {attr.url}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+            </div>
+          )}
         </div>
       </div>
     </div>

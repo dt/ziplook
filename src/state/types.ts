@@ -111,5 +111,4 @@ export interface AppState {
   indexingStatus?: 'none' | 'indexing' | 'ready'; // Global indexing status
   indexingProgress?: { current: number; total: number; fileName: string } | null; // Current indexing progress
   indexingRuleDescription?: string; // Description of the rule used for indexing (e.g., "*.log")
-  memoryReports?: MemoryReports; // Memory usage reports from workers
 }
