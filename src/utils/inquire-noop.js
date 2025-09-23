@@ -18,4 +18,4 @@ function inquire(moduleName) {
   return null;
 }
 
-module.exports = inquire;
+export default inquire;
