@@ -1045,7 +1045,6 @@ function SearchView() {
                     setHasSearched(false); // Reset search state when query changes
                   }}
                   onKeyDown={(e) => {
-                    console.log("🔍 Key pressed:", e.key);
                     if (e.key === "Enter") {
                       console.log("🔍 Enter pressed, calling handleSearch");
                       handleSearch();

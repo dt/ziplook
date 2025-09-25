@@ -136,9 +136,6 @@ export class WorkerManager {
     return this.sendMessage({ type: "getFileStatuses", to: "indexingWorker" });
   }
 
-  async readFile(path: string): Promise<{ text?: string; bytes?: Uint8Array }> {
-    return this.sendMessage({ type: "readFile", to: "zipWorker", path });
-  }
 
   async readFileStream(
     path: string,
@@ -154,7 +151,7 @@ export class WorkerManager {
       } as any);
 
       this.controllerWorker.postMessage({
-        type: "readFile", // Use readFile for streaming too
+        type: "readFileChunked", // Use readFileChunked for streaming
         to: "zipWorker",
         path,
         id
@@ -206,11 +203,16 @@ export class WorkerManager {
       const pending = this.pendingRequests.get(message.id);
       if (pending && (pending as any).onChunk) {
         // Decode bytes to text for file viewer
-        const chunk = message.result.chunk;
+        const chunk = message.result.bytes;
         const decodedChunk = chunk instanceof Uint8Array ? new TextDecoder().decode(chunk) : chunk;
-        (pending as any).onChunk(decodedChunk, message.result.progress);
+        const progressInfo = {
+          done: message.result.done,
+          loaded: chunk?.length || 0,
+          total: 0 // Total not available in chunk format
+        };
+        (pending as any).onChunk(decodedChunk, progressInfo);
 
-        if (message.result.progress.done) {
+        if (message.result.done) {
           this.pendingRequests.delete(message.id);
           pending.resolve(undefined);
         }

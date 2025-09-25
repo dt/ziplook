@@ -121,9 +121,9 @@ function handleRoutedMessage(message: RoutedMessage) {
 
     if (message.type === "readFileChunk") {
       // Accumulate byte chunks
-      request.chunks.push(message.chunk);
+      request.chunks.push(message.bytes);
 
-      if (message.progress.done) {
+      if (message.done) {
         // All chunks received, concatenate bytes
         const totalLength = request.chunks.reduce((sum, chunk) => sum + chunk.length, 0);
         const totalBytes = new Uint8Array(totalLength);
@@ -298,7 +298,7 @@ async function startIndexing(message: any) {
       try {
         // Request this single file from zip worker
         const fileResponse = await sendMessageToZipWorker({
-          type: "readFile",
+          type: "readFileChunked",
           path: logFile.path,
         });
 
@@ -453,7 +453,7 @@ async function indexSingleFile(message: any) {
 
     // Request file content from zip worker
     const fileResponse = await sendMessageToZipWorker({
-      type: "readFile",
+      type: "readFileChunked",
       path: file.path,
     });
 

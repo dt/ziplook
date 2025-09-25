@@ -181,17 +181,18 @@ async function loadZipFile(zipData: Uint8Array): Promise<void> {
 async function loadZipData(zipData: Uint8Array): Promise<ZipEntryMeta[]> {
   if (!zipWorker) throw new Error("Zip worker not initialized");
 
-  return new Promise((resolve, reject) => {
+  // First initialize the zip worker
+  await new Promise<void>((resolve, reject) => {
     const id = generateId();
-    const timeout = setTimeout(() => reject(new Error("Zip load timeout")), 30000);
+    const timeout = setTimeout(() => reject(new Error("Zip initialization timeout")), 30000);
 
     pendingRequests.set(id, {
       resolve: (response: any) => {
         clearTimeout(timeout);
-        if (response.success) {
-          resolve(response.entries || []);
-        } else {
-          reject(new Error(response.error || "Failed to load zip"));
+        if (response.type === 'initializeComplete') {
+          resolve();
+        } else if (response.type === 'error') {
+          reject(new Error(response.error || "Failed to initialize zip"));
         }
       },
       reject: (error: Error) => {
@@ -203,7 +204,33 @@ async function loadZipData(zipData: Uint8Array): Promise<ZipEntryMeta[]> {
     zipWorker!.postMessage({
       type: "initialize",
       id,
-      zipData
+      buffer: zipData.buffer.slice(zipData.byteOffset, zipData.byteOffset + zipData.byteLength)
+    });
+  });
+
+  // Then get the entries
+  return new Promise((resolve, reject) => {
+    const id = generateId();
+    const timeout = setTimeout(() => reject(new Error("Get entries timeout")), 30000);
+
+    pendingRequests.set(id, {
+      resolve: (response: any) => {
+        clearTimeout(timeout);
+        if (response.type === 'getEntriesComplete') {
+          resolve(response.entries || []);
+        } else if (response.type === 'error') {
+          reject(new Error(response.error || "Failed to get entries"));
+        }
+      },
+      reject: (error: Error) => {
+        clearTimeout(timeout);
+        reject(error);
+      }
+    });
+
+    zipWorker!.postMessage({
+      type: "getEntries",
+      id
     });
   });
 }
@@ -283,15 +310,27 @@ async function readStackFile(path: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const id = generateId();
     const timeout = setTimeout(() => reject(new Error("Stack file read timeout")), 30000);
+    const chunks: Uint8Array[] = [];
 
     pendingRequests.set(id, {
       resolve: (response: any) => {
-        clearTimeout(timeout);
-        if (response.success && response.result?.bytes) {
-          // Decode bytes to text for stack files
-          const text = new TextDecoder().decode(response.result.bytes);
-          resolve(text);
-        } else {
+        if (response.type === 'readFileChunk') {
+          chunks.push(response.bytes);
+          if (response.done) {
+            clearTimeout(timeout);
+            // Combine all chunks and decode to text
+            const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+            const combined = new Uint8Array(totalLength);
+            let offset = 0;
+            for (const chunk of chunks) {
+              combined.set(chunk, offset);
+              offset += chunk.length;
+            }
+            const text = new TextDecoder().decode(combined);
+            resolve(text);
+          }
+        } else if (response.type === 'error') {
+          clearTimeout(timeout);
           reject(new Error(response.error || "Failed to read stack file"));
         }
       },
@@ -302,7 +341,7 @@ async function readStackFile(path: string): Promise<string> {
     });
 
     zipWorker!.postMessage({
-      type: "readFile",
+      type: "readFileChunked",
       id,
       path
     });
@@ -410,12 +449,20 @@ function handleWorkerMessage(fromWorker: string, event: MessageEvent) {
   // Handle responses to our requests
   if (message.id && pendingRequests.has(message.id)) {
     const request = pendingRequests.get(message.id)!;
-    pendingRequests.delete(message.id);
 
     if (message.type === "error") {
+      pendingRequests.delete(message.id);
       request.reject(new Error(message.error));
     } else {
-      request.resolve(message);
+      // For readFileChunk messages, only delete the request when done
+      if (message.type === "readFileChunk" && !message.done) {
+        // Keep the request active for more chunks
+        request.resolve(message);
+      } else {
+        // Final message or non-chunk message
+        pendingRequests.delete(message.id);
+        request.resolve(message);
+      }
     }
     return;
   }

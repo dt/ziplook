@@ -1,5 +1,6 @@
 import { readFile } from "fs/promises";
 import { getWorkerManager } from "../services/WorkerManager";
+import { readFileBuffered } from "../utils/fileUtils";
 import type { FileEntry } from "../state/types";
 
 let cachedDebugZip: ArrayBuffer | null = null;
@@ -20,7 +21,7 @@ export async function getFileFromDebugZip(path: string): Promise<Uint8Array> {
   const workerManager = await getWorkerManager();
   await workerManager.loadZipData(new Uint8Array(buffer));
 
-  const result = await workerManager.readFile(path);
+  const result = await readFileBuffered(workerManager, path);
   if (result.bytes) {
     return result.bytes;
   } else if (result.text) {
@@ -35,7 +36,7 @@ export async function getTextFromDebugZip(path: string): Promise<string> {
   const workerManager = await getWorkerManager();
   await workerManager.loadZipData(new Uint8Array(buffer));
 
-  const result = await workerManager.readFile(path);
+  const result = await readFileBuffered(workerManager, path);
   if (result.text) {
     return result.text;
   } else {

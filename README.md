@@ -63,7 +63,7 @@ ZipLook uses a multi-worker architecture:
 
 #### Workers and Orchestration
 - **WorkerManager**: Central orchestrator that manages communication between three specialized workers
-- **ZipReader Worker**: Handles zip file reading, decompression, and file streaming using fflate
+- **ZipReader Worker**: Handles zip file reading, decompression, and file streaming using native DecompressionStream API
 - **DB Worker**: Manages DuckDB WASM instance, SQL execution, and table loading
 - **Indexing Worker**: Builds and manages FlexSearch indexes for log file search
 
@@ -88,7 +88,7 @@ Workers communicate via MessageChannels for direct data transfer. The WorkerMana
 
 #### Key Libraries
 - **DuckDB WASM**: SQL engine for local data analysis
-- **fflate**: Streaming zip decompression
+- **DecompressionStream API**: Native browser streaming zip decompression
 - **Monaco Editor**: SQL editor with autocomplete
 - **FlexSearch**: Full-text search
 - **protobufjs**: Protocol buffer encoding/decoding

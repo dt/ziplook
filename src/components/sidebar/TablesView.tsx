@@ -44,7 +44,8 @@ function TablesView() {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
     () => {
       // Default collapse all empty table sections
-      const initial = new Set<string>(); // Don't collapse empty tables by default
+      const initial = new Set<string>();
+      initial.add("cluster-empty"); // Collapse cluster empty tables by default
       // Add all possible node empty sections (nodes 1-10 should cover most cases)
       for (let i = 1; i <= 10; i++) {
         initial.add(`node-${i}-empty`);

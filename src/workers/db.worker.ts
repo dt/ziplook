@@ -215,15 +215,15 @@ function handleRoutedMessage(message: RoutedMessage) {
 
     if (message.type === "readFileChunk") {
       // Accumulate chunks
-      request.chunks.push(message.chunk);
+      request.chunks.push(message.bytes);
       // Decode chunk to text before accumulating
-      if (message.chunk instanceof Uint8Array) {
-        request.totalText += new TextDecoder().decode(message.chunk);
+      if (message.bytes instanceof Uint8Array) {
+        request.totalText += new TextDecoder().decode(message.bytes);
       } else {
-        request.totalText += message.chunk;
+        request.totalText += message.bytes;
       }
 
-      if (message.progress.done) {
+      if (message.done) {
         // All chunks received, resolve with complete response
         clearTimeout(request.timeoutId);
         pendingZipRequests.delete(message.id);
@@ -371,8 +371,18 @@ async function startTableLoading(message: StartTableLoadingMessage) {
         break;
       }
 
-      await loadSingleTable(table, id);
-      tablesLoaded++;
+      if (table.size > LARGE_FILE_THRESHOLD) {
+         self.postMessage({
+          type: "tableLoadProgress",
+          tableName: table.name,
+          status: "deferred",
+          nodeId: table.nodeId,
+          size: table.size,
+        });
+      } else {
+        await loadSingleTable(table, id);
+        tablesLoaded++;
+      }
     }
 
     if (!shouldStop && currentLoadingId === id) {
@@ -402,7 +412,7 @@ async function loadSingleTableFromMessage(message: LoadSingleTableMessage) {
 async function loadSingleTable(table: any, _loadingId: string) {
   const { name: tableName, path, size, nodeId, originalName, isError } = table;
   const startTime = performance.now();
-  
+
   if (!conn) {
     throw new Error("Database not initialized");
   }
@@ -439,23 +449,12 @@ async function loadSingleTable(table: any, _loadingId: string) {
       return;
     }
 
-    // Check file size - defer loading if too large
-    if (size > LARGE_FILE_THRESHOLD) {
-      self.postMessage({
-        type: "tableLoadProgress",
-        tableName,
-        status: "deferred",
-        nodeId,
-        originalName,
-        isError,
-        size,
-      });
-      return;
-    }
+    // Note: loadSingleTable is specifically for loading deferred tables on demand
+    // So we don't check size limits here - user explicitly requested loading
 
     // Request file from zip worker
     const fileResponse = await sendMessageToZipWorker({
-      type: "readFile",
+      type: "readFileChunked",
       path,
     });
 
@@ -476,6 +475,7 @@ async function loadSingleTable(table: any, _loadingId: string) {
       "\t",
       originalName,
     );
+
     self.postMessage({
       type: "tableLoadProgress",
       tableName,
@@ -486,10 +486,9 @@ async function loadSingleTable(table: any, _loadingId: string) {
       isError,
     });
   } catch (error) {
-    const errorEndTime = performance.now();
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
-    console.error(`📊 DB Worker: Failed to load table ${tableName} in ${(errorEndTime - startTime).toFixed(2)}ms:`, error);
+    console.error(`Failed to load table ${tableName}:`, error);
 
     self.postMessage({
       type: "tableLoadProgress",
@@ -710,7 +709,6 @@ function rewriteQuery(sql: string): string {
 
 async function executeQuery(message: any) {
   const { id, sql } = message;
-  console.log(`🗄️  DB Worker: Executing query: ${sql}`);
 
   if (!conn) {
     sendResponse(message, {
@@ -766,7 +764,6 @@ async function executeQuery(message: any) {
       return sanitizedRow;
     });
 
-    console.log(`🗄️  DB Worker: Query completed, returning ${sanitizedData.length} rows`);
     sendResponse(message, {
       type: "queryResult",
       id,
