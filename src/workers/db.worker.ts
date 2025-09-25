@@ -307,7 +307,11 @@ async function initializeDatabase(message: InitializeDatabaseMessage) {
     // Preload JSON extension to avoid loading it later during table creation
     try {
       await conn.query(`
-        SET custom_extension_repository = '${new URL('../../duckdb-extensions', import.meta.url).href}';
+        SET custom_extension_repository = '${
+          import.meta.env.DEV
+            ? new URL('/duckdb-extensions', location.origin).href
+            : new URL('../duckdb-extensions', import.meta.url).href
+        }';
         SET autoinstall_extension_repository = 'custom';
         -- optional hardening
         SET allow_community_extensions = false;
