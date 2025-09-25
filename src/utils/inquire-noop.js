@@ -18,5 +18,5 @@ function inquire(moduleName) {
   return null;
 }
 
-// Export exactly like the original @protobufjs/inquire
-module.exports = inquire;
+// Export exactly like the original @protobufjs/inquire using ES module syntax
+export default inquire;
