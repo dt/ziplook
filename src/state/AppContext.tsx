@@ -26,6 +26,7 @@ export type AppAction =
   | { type: "UPDATE_TABLE"; name: string; updates: Partial<TableMeta> }
   | { type: "SET_TABLES_LOADING"; loading: boolean }
   | { type: "SET_STACK_DATA"; stackData: Record<string, string> }
+  | { type: "ADD_STACK_FILE"; filePath: string; content: string }
   | { type: "SET_WORKER_MANAGER"; workerManager: any }
   | { type: "SET_WORKERS_READY"; ready: boolean }
   | {
@@ -36,7 +37,8 @@ export type AppAction =
   | {
       type: "SET_INDEXING_PROGRESS";
       progress: { current: number; total: number; fileName: string } | null;
-    };
+    }
+  | { type: "SET_FILE_STATUSES"; fileStatuses: any[] };
 
 const initialState: AppState = {
   openTabs: [],
@@ -44,6 +46,7 @@ const initialState: AppState = {
   filesIndex: {},
   fileCache: new Map(),
   tables: {},
+  stackData: {}, // Initialize as empty object so stackgazer can be enabled when stacks are loaded
 };
 
 function appReducer(state: AppState, action: AppAction): AppState {
@@ -251,7 +254,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case "UPDATE_TABLE": {
       const existing = state.tables[action.name];
-      if (!existing) return state;
+      if (!existing) {
+        return state;
+      }
 
       return {
         ...state,
@@ -273,6 +278,18 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         stackData: action.stackData,
+      };
+    }
+
+    case "ADD_STACK_FILE": {
+      const newStackData = {
+        ...state.stackData,
+        [action.filePath]: action.content,
+      };
+      console.log(`🎯 Added stack file to state: ${action.filePath}, total files: ${Object.keys(newStackData).length}`);
+      return {
+        ...state,
+        stackData: newStackData,
       };
     }
 
@@ -305,6 +322,13 @@ function appReducer(state: AppState, action: AppAction): AppState {
       };
     }
 
+    case "SET_FILE_STATUSES": {
+      return {
+        ...state,
+        fileStatuses: action.fileStatuses,
+      };
+    }
+
     default:
       return state;
   }
@@ -332,37 +356,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       state.indexingStatus !== "indexing" &&
       state.indexingStatus !== "ready"
     ) {
-      // Send all files to indexing worker - let it decide which ones to index
-      const allFiles = state.zip.entries.filter((entry: any) => !entry.isDir);
-
-      if (allFiles.length > 0) {
-        // Mark indexing as started
-        dispatch({
-          type: "SET_INDEXING_STATUS",
-          status: "indexing",
-          ruleDescription: undefined,
-        });
-
-        // Register all files with indexing worker (it will auto-queue log files)
-        state.workerManager
-          .registerFiles(
-            allFiles.map((f: any) => ({
-              path: f.path,
-              name: f.name,
-              size: f.size,
-            })),
-          )
-          .catch((error: any) => {
-            console.error("❌ Failed to register files:", error);
-            dispatch({
-              type: "SET_INDEXING_STATUS",
-              status: "none",
-              ruleDescription: undefined,
-            });
-          });
-      } else {
-        dispatch({ type: "SET_INDEXING_STATUS", status: "ready" });
-      }
+      // Controller drives all business logic including file registration and indexing
+      // Main thread should be purely reactive - no proactive calls to workers
     }
   }, [
     state.zip,
@@ -373,79 +368,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     state.indexingStatus,
   ]);
 
-  // Handle stack data loading when table loading completes
-  useEffect(() => {
-    const shouldLoadStackData =
-      !state.tablesLoading &&
-      !state.stackData &&
-      state.workerManager &&
-      state.zip &&
-      Object.keys(state.filesIndex).length > 0;
-
-    if (shouldLoadStackData) {
-      // Find stack files in the zip entries
-      const stackFiles =
-        state.zip?.entries.filter((entry) =>
-          entry.path.endsWith("stacks.txt"),
-        ) || [];
-
-      if (stackFiles.length > 0) {
-        dispatch({
-          type: "SET_INDEXING_STATUS",
-          status: "indexing",
-          ruleDescription: undefined,
-        });
-
-        // Request stack file content from zip worker
-        const stackPromises = stackFiles.map(async (entry) => {
-          try {
-            const response = await state.workerManager.readFile(entry.path);
-            if (response.text) {
-              return {
-                [entry.path]: response.text,
-              };
-            }
-          } catch (err) {
-            console.warn(`Failed to read stack file ${entry.path}:`, err);
-          }
-          return null;
-        });
-
-        Promise.all(stackPromises)
-          .then((results) => {
-            const stackData: Record<string, string> = {};
-            results.forEach((result) => {
-              if (result) {
-                Object.assign(stackData, result);
-              }
-            });
-
-            dispatch({ type: "SET_STACK_DATA", stackData });
-            dispatch({
-              type: "SET_INDEXING_STATUS",
-              status: "none",
-              ruleDescription: undefined,
-            }); // Reset to allow log indexing
-          })
-          .catch((error) => {
-            console.error("Failed to load stack data:", error);
-            dispatch({
-              type: "SET_INDEXING_STATUS",
-              status: "none",
-              ruleDescription: undefined,
-            });
-          });
-      } else {
-        dispatch({ type: "SET_INDEXING_STATUS", status: "none" });
-      }
-    }
-  }, [
-    state.tablesLoading,
-    state.stackData,
-    state.workerManager,
-    state.zip,
-    state.filesIndex,
-  ]);
+  // Stack data is now loaded by the controller and sent via stackFileContent notifications
+  // UI is purely reactive - no direct file reading
 
   // Function to wait for workers to be ready
   const waitForWorkers = async () => {
@@ -501,6 +425,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             error?: string,
           ) => {
             if (!mounted) return;
+
 
             // Update table status in app state
             const updates: any = {};

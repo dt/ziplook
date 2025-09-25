@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { resolve } from "path";
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -22,7 +23,7 @@ export default defineConfig({
       // Source: @protobufjs/inquire uses eval("quire".replace(/^/,"re")) to dynamically require() modules
       // Purpose: Allows protobufjs to conditionally load Node.js modules (like 'fs') without breaking bundlers
       // Browser safety: require() doesn't exist in browsers, so this always returns null anyway
-      "@protobufjs/inquire": "/src/utils/inquire-noop.js",
+      "@protobufjs/inquire": resolve(__dirname, "src/utils/inquire-noop.js"),
     },
   },
   build: {

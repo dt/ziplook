@@ -1,9 +1,8 @@
 import { readFile } from "fs/promises";
-import { ZipReader } from "../zip/ZipReader";
+import { getWorkerManager } from "../services/WorkerManager";
 import type { FileEntry } from "../state/types";
 
 let cachedDebugZip: ArrayBuffer | null = null;
-let cachedZipReader: ZipReader | null = null;
 
 export async function getDebugZip(): Promise<ArrayBuffer> {
   if (!cachedDebugZip) {
@@ -16,28 +15,32 @@ export async function getDebugZip(): Promise<ArrayBuffer> {
   return cachedDebugZip;
 }
 
-export async function getDebugZipReader(): Promise<ZipReader> {
-  if (!cachedZipReader) {
-    const buffer = await getDebugZip();
-    cachedZipReader = new ZipReader(new Uint8Array(buffer));
-    await cachedZipReader.init();
-  }
-  return cachedZipReader;
-}
-
 export async function getFileFromDebugZip(path: string): Promise<Uint8Array> {
-  const reader = await getDebugZipReader();
-  const entries = reader.getEntries();
-  const entry = entries.find((e) => e.filename === path);
-  if (!entry) {
+  const buffer = await getDebugZip();
+  const workerManager = await getWorkerManager();
+  await workerManager.loadZipData(new Uint8Array(buffer));
+
+  const result = await workerManager.readFile(path);
+  if (result.bytes) {
+    return result.bytes;
+  } else if (result.text) {
+    return new TextEncoder().encode(result.text);
+  } else {
     throw new Error(`File not found in debug.zip: ${path}`);
   }
-  return await reader.getFileData(entry);
 }
 
 export async function getTextFromDebugZip(path: string): Promise<string> {
-  const data = await getFileFromDebugZip(path);
-  return new TextDecoder().decode(data);
+  const buffer = await getDebugZip();
+  const workerManager = await getWorkerManager();
+  await workerManager.loadZipData(new Uint8Array(buffer));
+
+  const result = await workerManager.readFile(path);
+  if (result.text) {
+    return result.text;
+  } else {
+    throw new Error(`File not found or not text: ${path}`);
+  }
 }
 
 export function createMockFileEntry(overrides?: Partial<FileEntry>): FileEntry {

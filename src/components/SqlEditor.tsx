@@ -29,7 +29,6 @@ function SqlEditor({ tab }: SqlEditorProps) {
   const lastNotifiedQuery = useRef(tab.query);
   const monacoRef = useRef<Monaco | null>(null);
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
-  const isMonacoSetup = useRef(false);
 
   // Calculate editor height based on content
   const calculateEditorHeight = useCallback(() => {
@@ -131,7 +130,7 @@ function SqlEditor({ tab }: SqlEditorProps) {
 
     try {
       const data = await state.workerManager.executeQuery(query);
-      setResults(data);
+      setResults(Array.isArray(data) ? data : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Query failed");
     } finally {
@@ -140,11 +139,8 @@ function SqlEditor({ tab }: SqlEditorProps) {
   }, [query, state.workerManager]);
 
   const handleEditorWillMount = (monaco: Monaco) => {
-    // Setup DuckDB language only once globally
-    if (!isMonacoSetup.current) {
-      setupDuckDBLanguage(monaco);
-      isMonacoSetup.current = true;
-    }
+    // Setup DuckDB language - global guard prevents duplicates
+    setupDuckDBLanguage(monaco);
   };
 
   const handleEditorDidMount = async (
@@ -181,7 +177,7 @@ function SqlEditor({ tab }: SqlEditorProps) {
 
         try {
           const data = await state.workerManager.executeQuery(currentQuery);
-          setResults(data);
+          setResults(Array.isArray(data) ? data : []);
         } catch (err) {
           setError(err instanceof Error ? err.message : "Query failed");
         } finally {
@@ -333,7 +329,7 @@ function SqlEditor({ tab }: SqlEditorProps) {
               <table className="sql-table">
                 <thead>
                   <tr>
-                    {Object.keys(results[0]).map((col) => (
+                    {results[0] && Object.keys(results[0]).map((col) => (
                       <th key={col}>{col}</th>
                     ))}
                   </tr>

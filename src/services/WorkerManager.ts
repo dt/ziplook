@@ -1,11 +1,19 @@
 /**
- * Worker Manager - orchestrates zip worker, DB worker, and indexing worker communication
- * Implements the planned architecture for worker-to-worker communication
+ * Thin proxy to the controller worker - main thread is purely reactive
+ * Controller drives all business logic, main thread just responds to notifications
  */
 
 import type { ZipEntryMeta } from "../state/types";
 
 interface WorkerManagerOptions {
+  // Stage progression callbacks
+  onLoadingStage?: (stage: string, message: string) => void;
+  onFileList?: (entries: any[], totalFiles: number) => void;
+  onTableAdded?: (table: any) => void;
+  onSendStackFileToIframe?: (path: string, content: string) => void;
+  onStackProcessingComplete?: (stackFilesCount: number) => void;
+
+  // Legacy indexing callbacks (still needed)
   onIndexingProgress?: (progress: {
     current: number;
     total: number;
@@ -18,6 +26,11 @@ interface WorkerManagerOptions {
     ruleDescription?: string,
   ) => void;
   onIndexingFileResult?: (filePath: string, entries: any[]) => void;
+
+  // File status update callbacks
+  onFileStatusUpdate?: (fileStatuses: any[]) => void;
+
+  // Legacy table callbacks (still needed for individual table progress)
   onTableLoadProgress?: (
     tableName: string,
     status: string,
@@ -32,779 +45,336 @@ interface WorkerManagerOptions {
   onDatabaseInitialized?: (success: boolean, error?: string) => void;
 }
 
-// Global singleton instance
-let globalWorkerManager: WorkerManager | null = null;
-let initializationPromise: Promise<WorkerManager> | null = null;
-
 export class WorkerManager {
-  private zipWorker: Worker | null = null;
-  private dbWorker: Worker | null = null;
-  private indexingWorker: Worker | null = null;
-  private zipToDbChannel: MessageChannel | null = null;
-  private zipToIndexingChannel: MessageChannel | null = null;
-  private pendingZipRequests = new Map<
-    string,
-    {
-      resolve: (value: any) => void;
-      reject: (error: Error) => void;
-    }
-  >();
-  private pendingDbRequests = new Map<
-    string,
-    {
-      resolve: (value: any) => void;
-      reject: (error: Error) => void;
-    }
-  >();
-  private pendingIndexingRequests = new Map<
-    string,
-    {
-      resolve: (value: any) => void;
-      reject: (error: Error) => void;
-    }
-  >();
+  private controllerWorker: Worker;
+  private pendingRequests = new Map<string, { resolve: any; reject: any }>();
+  private requestCounter = 0;
   private options: WorkerManagerOptions;
-  private databaseInitialized = false;
 
   constructor(options: WorkerManagerOptions = {}) {
     this.options = options;
+
+    this.controllerWorker = new Worker(
+      new URL("../workers/controller.worker.ts", import.meta.url),
+      { type: "module" }
+    );
+
+    this.controllerWorker.onmessage = this.handleMessage.bind(this);
+    this.controllerWorker.onerror = (error) => {
+      console.error("❌ Controller worker error:", error);
+    };
   }
 
-  // Allow updating callbacks after initialization
   updateCallbacks(options: WorkerManagerOptions) {
     this.options = { ...this.options, ...options };
+    // Don't send callback functions to worker - they're handled in main thread
   }
 
   async loadZipData(zipData: Uint8Array): Promise<ZipEntryMeta[]> {
-    if (!this.zipWorker) {
-      throw new Error("Zip worker not initialized");
-    }
-
-    try {
-      // Load zip data into existing worker
-      const entries = await this.sendZipWorkerMessage({
-        type: "initialize",
-        zipData,
-      });
-
-      if (!entries.success) {
-        throw new Error(entries.error || "Failed to load zip data");
-      }
-
-      return entries.entries || [];
-    } catch (error) {
-      console.error("Failed to load zip data:", error);
-      throw error;
-    }
+    // Use the new loadZip command that runs the full pipeline - handled by controller directly
+    await this.sendMessage({ type: "loadZip", zipData });
+    // Return empty array - main thread will get notifications with actual entries
+    return [];
   }
 
   async initializeWorkers(): Promise<void> {
-    try {
-      // Create zip worker first
-      this.zipWorker = new Worker(
-        new URL("../workers/zipReader.worker.ts", import.meta.url),
-        { type: "module" },
-      );
-
-      this.zipWorker.onmessage = (event) => {
-        this.handleZipWorkerMessage(event.data);
-      };
-
-      this.zipWorker.onerror = (error) => {
-        console.error("❌ Zip worker error:", error);
-      };
-
-      // Create DB worker
-      this.dbWorker = new Worker(
-        new URL("../workers/db.worker.ts", import.meta.url),
-        { type: "module" },
-      );
-
-      this.dbWorker.onmessage = (event) => {
-        this.handleDbWorkerMessage(event.data);
-      };
-
-      this.dbWorker.onerror = (error) => {
-        console.error("❌ DB worker error:", error);
-      };
-
-      // Create indexing worker
-      this.indexingWorker = new Worker(
-        new URL("../workers/indexing.worker.ts", import.meta.url),
-        { type: "module" },
-      );
-
-      this.indexingWorker.onmessage = (event) => {
-        this.handleIndexingWorkerMessage(event.data);
-      };
-
-      this.indexingWorker.onerror = (error) => {
-        console.error("❌ Indexing worker error:", error);
-      };
-
-      // Create channels for direct worker communication
-      this.zipToDbChannel = new MessageChannel();
-      this.zipToIndexingChannel = new MessageChannel();
-
-      // Connect DB worker to zip worker
-      this.dbWorker.postMessage(
-        {
-          type: "setZipWorkerPort",
-          port: this.zipToDbChannel.port1,
-        },
-        [this.zipToDbChannel.port1],
-      );
-
-      this.zipWorker.postMessage(
-        {
-          type: "setDbWorkerPort",
-          port: this.zipToDbChannel.port2,
-        },
-        [this.zipToDbChannel.port2],
-      );
-
-      // Connect indexing worker to zip worker
-      this.indexingWorker.postMessage(
-        {
-          type: "setZipWorkerPort",
-          port: this.zipToIndexingChannel.port1,
-        },
-        [this.zipToIndexingChannel.port1],
-      );
-
-      this.zipWorker.postMessage(
-        {
-          type: "setIndexingWorkerPort",
-          port: this.zipToIndexingChannel.port2,
-        },
-        [this.zipToIndexingChannel.port2],
-      );
-
-      // Initialize the database
-      await this.initializeDatabase();
-    } catch (error) {
-      console.error("❌ Failed to initialize workers:", error);
-      throw error;
-    }
+    // Init is handled by controller directly, no 'to' field needed
+    return this.sendMessage({ type: "init" });
   }
 
   async initializeDatabase(): Promise<void> {
-    if (!this.dbWorker) {
-      throw new Error("DB worker not initialized");
-    }
-
-    // If already initialized, return immediately
-    if (this.databaseInitialized) {
-      return;
-    }
-
-    return new Promise((resolve, reject) => {
-      const id = this.generateRequestId();
-      this.pendingDbRequests.set(id, {
-        resolve: (response) => {
-          if (response.success) {
-            this.databaseInitialized = true;
-            if (this.options.onDatabaseInitialized) {
-              this.options.onDatabaseInitialized(true);
-            }
-            resolve();
-          } else {
-            this.databaseInitialized = false;
-            if (this.options.onDatabaseInitialized) {
-              this.options.onDatabaseInitialized(false, response.error);
-            }
-            reject(
-              new Error(response.error || "Failed to initialize database"),
-            );
-          }
-        },
-        reject,
-      });
-
-      this.dbWorker!.postMessage({
-        type: "initializeDatabase",
-        id,
-      });
-    });
+    // Database initialization is handled by controller during init
+    return Promise.resolve();
   }
 
-  async startTableLoading(
-    tables: Array<{
-      name: string;
-      path: string;
-      size: number;
-      nodeId?: number;
-      originalName?: string;
-      isError?: boolean;
-    }>,
-  ): Promise<void> {
-    if (!this.dbWorker) {
-      throw new Error("DB worker not initialized");
-    }
-
-    // Wait for database to be initialized before starting table loading
-    if (!this.databaseInitialized) {
-      await this.initializeDatabase();
-    }
-
-    // Send table loading request to DB worker
-    this.dbWorker.postMessage({
-      type: "startTableLoading",
-      id: `table_loading_${Date.now()}`,
-      tables,
-    });
+  async startTableLoading(tables: Array<any>): Promise<void> {
+    return this.sendMessage({ type: "startTableLoading", to: "dbWorker", tables });
   }
 
-  async loadSingleTable(table: {
-    name: string;
-    path: string;
-    size: number;
-    nodeId?: number;
-    originalName?: string;
-    isError?: boolean;
-  }): Promise<void> {
-    if (!this.dbWorker) {
-      throw new Error("DB worker not initialized");
-    }
-
-    // Wait for database to be initialized before loading table
-    if (!this.databaseInitialized) {
-      await this.initializeDatabase();
-    }
-
-    this.dbWorker.postMessage({
-      type: "loadSingleTable",
-      id: `single_table_${Date.now()}`,
-      table,
-    });
+  async loadSingleTable(table: any): Promise<void> {
+    return this.sendMessage({ type: "loadSingleTable", to: "dbWorker", table });
   }
 
   async executeQuery(sql: string): Promise<any[]> {
-    if (!this.dbWorker) {
-      throw new Error("DB worker not initialized");
-    }
-
-    // Wait for database to be initialized before executing query
-    if (!this.databaseInitialized) {
-      await this.initializeDatabase();
-    }
-
-    return new Promise((resolve, reject) => {
-      const id = this.generateRequestId();
-      this.pendingDbRequests.set(id, {
-        resolve: (response) => {
-          if (response.success) {
-            resolve(response.data || []);
-          } else {
-            reject(new Error(response.error || "Query failed"));
-          }
-        },
-        reject,
-      });
-
-      this.dbWorker!.postMessage({
-        type: "executeQuery",
-        id,
-        sql,
-      });
-    });
+    const result = await this.sendMessage({ type: "executeQuery", to: "dbWorker", sql });
+    return result;
   }
 
   async getTableSchema(tableName: string): Promise<any[]> {
-    if (!this.dbWorker) {
-      throw new Error("DB worker not initialized");
-    }
-
-    // Wait for database to be initialized
-    if (!this.databaseInitialized) {
-      await this.initializeDatabase();
-    }
-
-    return new Promise((resolve, reject) => {
-      const id = this.generateRequestId();
-      this.pendingDbRequests.set(id, {
-        resolve: (response) => {
-          if (response.success) {
-            resolve(response.schema || []);
-          } else {
-            reject(new Error(response.error || "Failed to get table schema"));
-          }
-        },
-        reject,
-      });
-
-      this.dbWorker!.postMessage({
-        type: "getTableSchema",
-        id,
-        tableName,
-      });
-    });
+    return this.sendMessage({ type: "getTableSchema", to: "dbWorker", tableName });
   }
 
   async getLoadedTables(): Promise<string[]> {
-    if (!this.dbWorker) {
-      throw new Error("DB worker not initialized");
-    }
-
-    // Wait for database to be initialized
-    if (!this.databaseInitialized) {
-      await this.initializeDatabase();
-    }
-
-    return new Promise((resolve, reject) => {
-      const id = this.generateRequestId();
-      this.pendingDbRequests.set(id, {
-        resolve: (response) => {
-          if (response.success) {
-            resolve(response.tables || []);
-          } else {
-            reject(new Error(response.error || "Failed to get loaded tables"));
-          }
-        },
-        reject,
-      });
-
-      this.dbWorker!.postMessage({
-        type: "getLoadedTables",
-        id,
-      });
-    });
+    return this.sendMessage({ type: "getLoadedTables", to: "dbWorker" });
   }
 
-  async getDuckDBFunctions(): Promise<
-    Array<{ name: string; type: string; description?: string }>
-  > {
-    if (!this.dbWorker) {
-      throw new Error("DB worker not initialized");
-    }
-
-    // Wait for database to be initialized
-    if (!this.databaseInitialized) {
-      await this.initializeDatabase();
-    }
-
-    return new Promise((resolve, reject) => {
-      const id = this.generateRequestId();
-      this.pendingDbRequests.set(id, {
-        resolve: (response) => {
-          if (response.success) {
-            resolve(response.functions || []);
-          } else {
-            reject(
-              new Error(response.error || "Failed to get DuckDB functions"),
-            );
-          }
-        },
-        reject,
-      });
-
-      this.dbWorker!.postMessage({
-        type: "getDuckDBFunctions",
-        id,
-      });
-    });
+  async getDuckDBFunctions(): Promise<Array<{ name: string; type: string; description?: string }>> {
+    return this.sendMessage({ type: "getDuckDBFunctions", to: "dbWorker" });
   }
 
   async getDuckDBKeywords(): Promise<string[]> {
-    if (!this.dbWorker) {
-      throw new Error("DB worker not initialized");
-    }
-
-    // Wait for database to be initialized
-    if (!this.databaseInitialized) {
-      await this.initializeDatabase();
-    }
-
-    return new Promise((resolve, reject) => {
-      const id = this.generateRequestId();
-      this.pendingDbRequests.set(id, {
-        resolve: (response) => {
-          if (response.success) {
-            resolve(response.keywords || []);
-          } else {
-            reject(
-              new Error(response.error || "Failed to get DuckDB keywords"),
-            );
-          }
-        },
-        reject,
-      });
-
-      this.dbWorker!.postMessage({
-        type: "getDuckDBKeywords",
-        id,
-      });
-    });
+    return this.sendMessage({ type: "getDuckDBKeywords", to: "dbWorker" });
   }
 
-  async registerFiles(
-    files: Array<{ path: string; name: string; size: number }>,
-  ): Promise<void> {
-    if (!this.indexingWorker) {
-      throw new Error("Indexing worker not initialized");
-    }
-
-    if (!this.zipToIndexingChannel) {
-      throw new Error("Zip worker channel not established");
-    }
-
-    // Send file registration to indexing worker
-    this.indexingWorker.postMessage({
-      type: "registerFiles",
-      id: `register_${Date.now()}`,
-      files,
-    });
+  async registerFiles(files: Array<{ path: string; name: string; size: number }>): Promise<void> {
+    return this.sendMessage({ type: "registerFiles", to: "indexingWorker", files });
   }
 
   async startIndexing(filePaths: string[]): Promise<void> {
-    if (!this.indexingWorker) {
-      throw new Error("Indexing worker not initialized");
-    }
-
-    if (!this.zipToIndexingChannel) {
-      throw new Error("Zip worker channel not established");
-    }
-
-    // Send indexing request to indexing worker
-    this.indexingWorker.postMessage({
-      type: "startIndexing",
-      id: `indexing_${Date.now()}`,
-      filePaths,
-    });
+    return this.sendMessage({ type: "startIndexing", to: "indexingWorker", filePaths });
   }
 
-  async indexSingleFile(file: {
-    path: string;
-    name: string;
-    size: number;
-  }): Promise<void> {
-    if (!this.indexingWorker) {
-      throw new Error("Indexing worker not initialized");
-    }
-
-    if (!this.zipToIndexingChannel) {
-      throw new Error("Zip worker channel not established");
-    }
-
-    // Send single file indexing request to indexing worker
-    this.indexingWorker.postMessage({
-      type: "indexSingleFile",
-      id: `single_indexing_${Date.now()}`,
-      file,
-    });
+  async indexSingleFile(file: { path: string; name: string; size: number }): Promise<void> {
+    return this.sendMessage({ type: "indexSingleFile", to: "indexingWorker", file });
   }
 
   async searchLogs(query: string): Promise<any[]> {
-    if (!this.indexingWorker) {
-      throw new Error("Indexing worker not initialized");
-    }
-
-    return new Promise((resolve, reject) => {
-      const id = this.generateRequestId();
-      this.pendingIndexingRequests.set(id, {
-        resolve: (response) => {
-          if (response.success) {
-            resolve(response.results || []);
-          } else {
-            reject(new Error(response.error || "Search failed"));
-          }
-        },
-        reject,
-      });
-
-      this.indexingWorker!.postMessage({
-        type: "search",
-        id,
-        query,
-      });
-    });
+    return this.sendMessage({ type: "searchLogs", to: "indexingWorker", query });
   }
 
   async getFileStatuses(): Promise<any[]> {
-    if (!this.indexingWorker) {
-      throw new Error("Indexing worker not initialized");
-    }
-
-    return new Promise((resolve, reject) => {
-      const id = this.generateRequestId();
-      this.pendingIndexingRequests.set(id, {
-        resolve: (response) => {
-          if (response.success) {
-            resolve(response.fileStatuses || []);
-          } else {
-            reject(new Error(response.error || "Get file statuses failed"));
-          }
-        },
-        reject,
-      });
-
-      this.indexingWorker!.postMessage({
-        type: "getFileStatuses",
-        id,
-      });
-    });
+    return this.sendMessage({ type: "getFileStatuses", to: "indexingWorker" });
   }
 
   async readFile(path: string): Promise<{ text?: string; bytes?: Uint8Array }> {
-    if (!this.zipWorker) {
-      throw new Error("Zip worker not initialized");
-    }
-
-    const response = await this.sendZipWorkerMessage({
-      type: "readFile",
-      path,
-    });
-
-    if (!response.success) {
-      throw new Error(response.error || "Failed to read file");
-    }
-
-    return response.result;
+    return this.sendMessage({ type: "readFile", to: "zipWorker", path });
   }
 
   async readFileStream(
     path: string,
-    onChunk: (
-      chunk: string,
-      progress: { loaded: number; total: number; done: boolean },
-    ) => void,
+    onChunk: (chunk: string, progress: { loaded: number; total: number; done: boolean }) => void,
   ): Promise<void> {
-    if (!this.zipWorker) {
-      throw new Error("Zip worker not initialized");
-    }
-
+    // For streaming, we need to handle chunks directly
     return new Promise((resolve, reject) => {
-      const id = this.generateRequestId();
+      const id = `req_${++this.requestCounter}`;
+      this.pendingRequests.set(id, {
+        resolve,
+        reject,
+        onChunk
+      } as any);
 
-      const cleanup = () => {
-        this.pendingZipRequests.delete(id);
-      };
-
-      this.pendingZipRequests.set(id, {
-        resolve: () => {
-          cleanup();
-          resolve();
-        },
-        reject: (error: Error) => {
-          cleanup();
-          reject(error);
-        },
-      });
-
-      // Set up temporary listener for chunks
-      const originalHandler = this.zipWorker!.onmessage;
-      this.zipWorker!.onmessage = (event) => {
-        const response = event.data;
-
-        if (response.id === id && response.type === "readFileChunk") {
-          onChunk(response.chunk, response.progress);
-
-          if (response.progress.done) {
-            this.zipWorker!.onmessage = originalHandler;
-            const request = this.pendingZipRequests.get(id);
-            if (request) {
-              request.resolve(undefined);
-            }
-          }
-        } else if (response.id === id && response.type === "error") {
-          this.zipWorker!.onmessage = originalHandler;
-          const request = this.pendingZipRequests.get(id);
-          if (request) {
-            request.reject(new Error(response.error));
-          }
-        } else {
-          // Forward other messages to original handler
-          if (originalHandler && this.zipWorker) {
-            originalHandler.call(this.zipWorker, event);
-          }
-        }
-      };
-
-      this.zipWorker!.postMessage({
-        type: "readFileChunked",
-        id,
+      this.controllerWorker.postMessage({
+        type: "readFile", // Use readFile for streaming too
+        to: "zipWorker",
         path,
+        id
       });
     });
   }
 
-  private sendZipWorkerMessage(message: any): Promise<any> {
-    return new Promise((resolve, reject) => {
-      if (!this.zipWorker) {
-        reject(new Error("Zip worker not available"));
-        return;
-      }
-
-      const id = this.generateRequestId();
-      this.pendingZipRequests.set(id, { resolve, reject });
-
-      this.zipWorker.postMessage({ ...message, id });
-    });
-  }
-
-  private handleZipWorkerMessage(response: any) {
-    const request = this.pendingZipRequests.get(response.id);
-    if (request) {
-      this.pendingZipRequests.delete(response.id);
-
-      if (response.type === "error") {
-        request.reject(new Error(response.error));
-      } else {
-        request.resolve(response);
-      }
-    }
-  }
-
-  private handleDbWorkerMessage(response: any) {
-    // Handle progress/status messages
-    switch (response.type) {
-      case "tableLoadProgress":
-        if (this.options.onTableLoadProgress) {
-          this.options.onTableLoadProgress(
-            response.tableName,
-            response.status,
-            response.rowCount,
-            response.error,
-          );
-        }
-        break;
-
-      case "tableLoadingComplete":
-        if (this.options.onTableLoadingComplete) {
-          this.options.onTableLoadingComplete(
-            response.success,
-            response.tablesLoaded,
-            response.error,
-          );
-        }
-        break;
-
-      case "tableLoadingError":
-        if (this.options.onTableLoadingComplete) {
-          this.options.onTableLoadingComplete(false, 0, response.error);
-        }
-        break;
-
-      default:
-        // Handle request/response messages
-        const request = this.pendingDbRequests.get(response.id);
-        if (request) {
-          this.pendingDbRequests.delete(response.id);
-          request.resolve(response);
-        }
-        break;
-    }
-  }
-
-  private handleIndexingWorkerMessage(response: any) {
-    switch (response.type) {
-      case "indexingProgress":
-        if (this.options.onIndexingProgress) {
-          this.options.onIndexingProgress({
-            current: response.current,
-            total: response.total,
-            fileName: response.fileName,
-          });
-        }
-        break;
-
-      case "indexingComplete":
-        if (this.options.onIndexingComplete) {
-          this.options.onIndexingComplete(
-            response.success,
-            response.totalEntries,
-            response.error,
-            response.ruleDescription,
-          );
-        }
-        break;
-
-      case "indexingFileResult":
-        if (this.options.onIndexingFileResult) {
-          this.options.onIndexingFileResult(
-            response.filePath,
-            response.entries,
-          );
-        }
-        break;
-
-      case "indexingError":
-        if (this.options.onIndexingComplete) {
-          this.options.onIndexingComplete(false, 0, response.error, undefined);
-        }
-        break;
-
-      case "searchResponse":
-      case "fileStatuses":
-        // Handle search response and file statuses response
-        const request = this.pendingIndexingRequests.get(response.id);
-        if (request) {
-          this.pendingIndexingRequests.delete(response.id);
-          request.resolve(response);
-        }
-        break;
-
-      default:
-    }
-  }
-
-  private generateRequestId(): string {
-    return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  cancelStream(): void {
+    this.sendMessage({ type: "cancelStream", to: "zipWorker" });
   }
 
   destroy() {
-    if (this.zipWorker) {
-      this.zipWorker.terminate();
-      this.zipWorker = null;
+    this.controllerWorker.terminate();
+    this.pendingRequests.clear();
+  }
+
+  private async sendMessage(message: any): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const id = `req_${++this.requestCounter}`;
+      this.pendingRequests.set(id, { resolve, reject });
+
+      const messageWithId = { ...message, id };
+
+      // Transfer Uint8Arrays efficiently
+      const transferable: Transferable[] = [];
+      if (message.zipData instanceof Uint8Array) {
+        transferable.push(message.zipData.buffer);
+      }
+
+      if (transferable.length > 0) {
+        this.controllerWorker.postMessage(messageWithId, transferable);
+      } else {
+        this.controllerWorker.postMessage(messageWithId);
+      }
+    });
+  }
+
+  private handleMessage(event: MessageEvent) {
+    const message = event.data;
+
+    // Handle notifications from controller
+    if (message.messageType === "notification") {
+      this.handleNotification(message);
+      return;
     }
 
-    if (this.dbWorker) {
-      this.dbWorker.terminate();
-      this.dbWorker = null;
+    // Handle chunk events for streaming FIRST - check for readFileChunk in response result
+    if (message.type === "response" && message.result?.type === "readFileChunk") {
+      const pending = this.pendingRequests.get(message.id);
+      if (pending && (pending as any).onChunk) {
+        // Decode bytes to text for file viewer
+        const chunk = message.result.chunk;
+        const decodedChunk = chunk instanceof Uint8Array ? new TextDecoder().decode(chunk) : chunk;
+        (pending as any).onChunk(decodedChunk, message.result.progress);
+
+        if (message.result.progress.done) {
+          this.pendingRequests.delete(message.id);
+          pending.resolve(undefined);
+        }
+      }
+      return;
     }
 
-    if (this.indexingWorker) {
-      this.indexingWorker.terminate();
-      this.indexingWorker = null;
+    // Handle worker messages (forwarded by controller)
+    if (message.from && message.type) {
+      this.handleWorkerMessage(message);
+      return;
     }
 
-    if (this.zipToDbChannel) {
-      this.zipToDbChannel.port1.close();
-      this.zipToDbChannel.port2.close();
-      this.zipToDbChannel = null;
-    }
+    // Handle command responses
+    if (message.type === "response" && message.id) {
+      const pending = this.pendingRequests.get(message.id);
+      if (pending) {
+        this.pendingRequests.delete(message.id);
 
-    if (this.zipToIndexingChannel) {
-      this.zipToIndexingChannel.port1.close();
-      this.zipToIndexingChannel.port2.close();
-      this.zipToIndexingChannel = null;
-    }
-
-    this.pendingZipRequests.clear();
-    this.pendingDbRequests.clear();
-    this.pendingIndexingRequests.clear();
-
-    // Clear global reference
-    if (globalWorkerManager === this) {
-      globalWorkerManager = null;
+        if (message.success !== false) {
+          pending.resolve(message.result);
+        } else {
+          pending.reject(new Error(message.error || "Request failed"));
+        }
+      }
+      return;
     }
   }
 
-  /**
-   * Cancel any ongoing stream operations
-   * Provides compatibility with ZipReader interface
-   */
-  cancelStream(): void {
-    // TODO: Implement proper cancellation for streaming operations
-    // For now, just log that cancellation was requested
+  private handleWorkerMessage(message: any) {
+    switch (message.type) {
+      case "tableLoadProgress":
+        this.options.onTableLoadProgress?.(
+          message.tableName,
+          message.status,
+          message.rowCount,
+          message.error
+        );
+        break;
+
+      case "tableLoadingComplete":
+        this.options.onTableLoadingComplete?.(
+          message.success,
+          message.tablesLoaded,
+          message.error
+        );
+        break;
+
+      case "indexingProgress":
+        this.options.onIndexingProgress?.({
+          current: message.current,
+          total: message.total,
+          fileName: message.fileName
+        });
+        break;
+
+      case "indexingComplete":
+        this.options.onIndexingComplete?.(
+          message.success,
+          message.totalEntries,
+          message.error,
+          message.ruleDescription
+        );
+        break;
+
+      case "tableDiscovered":
+        this.options.onTableAdded?.(message.table);
+        break;
+
+      case "indexingFileResult":
+        this.options.onIndexingFileResult?.(message.filePath, message.entries);
+        break;
+
+      case "fileStatusUpdate":
+        this.options.onFileStatusUpdate?.(message.fileStatuses || []);
+        break;
+
+      case "readFileChunk":
+        // Forward readFileChunk messages as response
+        this.handleMessage({
+          data: {
+            type: "response",
+            id: message.id,
+            success: true,
+            result: message
+          }
+        } as MessageEvent);
+        break;
+
+      default:
+        console.log(`🎯 Unhandled worker message from ${message.from}:`, message.type, message);
+    }
+  }
+
+  private handleNotification(message: any) {
+    switch (message.type) {
+      case "loadingStage":
+        this.options.onLoadingStage?.(message.stage, message.message);
+        break;
+
+      case "fileList":
+        console.log(`🎯 File list received: ${message.totalFiles} files`);
+        this.options.onFileList?.(message.entries, message.totalFiles);
+        break;
+
+
+      case "sendStackFileToIframe":
+        this.options.onSendStackFileToIframe?.(message.path, message.content);
+        break;
+
+      case "stackProcessingComplete":
+        this.options.onStackProcessingComplete?.(message.stackFilesCount);
+        break;
+
+      case "status":
+        console.log(`🎯 Status: ${message.message}`);
+        break;
+
+      case "error":
+        console.error(`🎯 Error: ${message.message}`);
+        break;
+
+      case "zipLoaded":
+        // DEPRECATED: Keep for backwards compatibility but prefer fileList
+        console.log(`🎯 Zip loaded (deprecated): ${message.entries.length} files`);
+        this.options.onFileList?.(message.entries, message.entries.length);
+        break;
+
+      case "indexingProgress":
+        this.options.onIndexingProgress?.({
+          current: message.current,
+          total: message.total,
+          fileName: message.fileName
+        });
+        break;
+
+      case "indexingComplete":
+        this.options.onIndexingComplete?.(
+          message.success,
+          message.totalEntries,
+          message.error,
+          message.ruleDescription
+        );
+        break;
+
+      case "indexingError":
+        console.error("Indexing error:", message.error);
+        break;
+
+      case "fileStatusUpdate":
+        this.options.onFileStatusUpdate?.(message.fileStatuses || []);
+        break;
+
+      default:
+        console.log("🎯 Unknown notification:", message);
+    }
   }
 }
 
-// Public API to get/create the singleton WorkerManager
-export async function getWorkerManager(
-  options?: WorkerManagerOptions,
-): Promise<WorkerManager> {
-  // If already initialized, just update callbacks if provided and return
+// Global singleton
+let globalWorkerManager: WorkerManager | null = null;
+let initializationPromise: Promise<WorkerManager> | null = null;
+
+export async function getWorkerManager(options?: WorkerManagerOptions): Promise<WorkerManager> {
   if (globalWorkerManager) {
     if (options) {
       globalWorkerManager.updateCallbacks(options);
@@ -812,7 +382,6 @@ export async function getWorkerManager(
     return globalWorkerManager;
   }
 
-  // If initialization is already in progress, wait for it
   if (initializationPromise) {
     const manager = await initializationPromise;
     if (options) {
@@ -821,13 +390,9 @@ export async function getWorkerManager(
     return manager;
   }
 
-  // Start initialization
-
   initializationPromise = (async () => {
     globalWorkerManager = new WorkerManager(options || {});
-
     await globalWorkerManager.initializeWorkers();
-
     return globalWorkerManager;
   })();
 

@@ -12,6 +12,8 @@ interface SchemaCache {
 
 let schemaCache: SchemaCache | null = null;
 let workerManager: WorkerManager | null = null;
+let updateInProgress: Promise<SchemaCache | null> | null = null;
+let isMonacoSetup = false;
 
 export function setWorkerManager(manager: WorkerManager) {
   workerManager = manager;
@@ -23,44 +25,83 @@ async function updateSchemaCache() {
     return null;
   }
 
-  const tables = await workerManager.getLoadedTables();
-  const columns = new Map<string, Array<{ name: string; type: string }>>();
-
-  for (const table of tables) {
-    try {
-      const schema = await workerManager.getTableSchema(table);
-      columns.set(
-        table,
-        schema.map((col) => ({
-          name: col.column_name,
-          type: col.data_type,
-        })),
-      );
-    } catch (err) {
-      console.warn(`Failed to get schema for ${table}:`, err);
-    }
+  // Prevent concurrent updates
+  if (updateInProgress) {
+    await updateInProgress;
+    return schemaCache;
   }
 
-  // Get DuckDB functions and keywords
-  const functions = await workerManager.getDuckDBFunctions();
-  const keywords = await workerManager.getDuckDBKeywords();
+  updateInProgress = (async () => {
+    const tables = await workerManager!.getLoadedTables();
+    const columns = new Map<string, Array<{ name: string; type: string }>>();
 
-  schemaCache = {
-    tables,
-    columns,
-    functions,
-    keywords,
-    lastUpdated: Date.now(),
-  };
+    // Handle case where tables is undefined or not an array
+    if (!Array.isArray(tables)) {
+      console.warn('Monaco: getLoadedTables returned invalid data:', tables);
+      return null;
+    }
 
-  // // console.log('Schema cache updated:', {
-  //   tables: tables.length,
-  //   columns: columns.size,
-  //   functions: functions.length,
-  //   keywords: keywords.length
-  // });
+    // Get all table schemas in one query for efficiency
+    try {
 
-  return schemaCache;
+      const allSchemas = await workerManager!.executeQuery(`
+        SELECT
+          CASE
+            WHEN table_schema IS NOT NULL AND table_schema != '' AND table_schema != 'main'
+            THEN table_schema || '.' || table_name
+            ELSE table_name
+          END as full_table_name,
+          column_name,
+          data_type
+        FROM information_schema.columns
+        ORDER BY full_table_name, ordinal_position
+      `);
+
+      // Debug: log the first few results to see the format
+      if (allSchemas.length > 0) {
+      }
+
+      // Group columns by table name
+      for (const row of allSchemas) {
+        const tableName = row.full_table_name;
+        if (tables.includes(tableName)) {
+          if (!columns.has(tableName)) {
+            columns.set(tableName, []);
+          }
+          columns.get(tableName)!.push({
+            name: row.column_name,
+            type: row.data_type,
+          });
+        }
+      }
+
+    } catch (err) {
+      console.warn('Failed to get table schemas in bulk:', err);
+      // Fallback: no schema information
+    }
+
+    // Get DuckDB functions and keywords
+    const functions = await workerManager!.getDuckDBFunctions();
+    const keywords = await workerManager!.getDuckDBKeywords();
+
+
+    schemaCache = {
+      tables,
+      columns,
+      functions,
+      keywords,
+      lastUpdated: Date.now(),
+    };
+
+    return schemaCache;
+  })();
+
+  try {
+    await updateInProgress;
+    return schemaCache;
+  } finally {
+    updateInProgress = null;
+  }
 }
 
 // SQL Context Extraction
@@ -374,6 +415,12 @@ export async function setupLogLanguage(monaco: Monaco) {
 }
 
 export async function setupDuckDBLanguage(monaco: Monaco) {
+  // Prevent multiple setups - Monaco registration should only happen once globally
+  if (isMonacoSetup) {
+    return;
+  }
+
+  isMonacoSetup = true;
   // Register DuckDB SQL as a custom language
   monaco.languages.register({ id: "duckdb-sql" });
 
@@ -669,17 +716,18 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
     triggerCharacters: [".", " ", "(", ","],
 
     async provideCompletionItems(model, position, _context, _token) {
-      // // console.log('provideCompletionItems called at position:', position);
-
-      // Ensure schema cache is fresh
-      if (!schemaCache || Date.now() - schemaCache.lastUpdated > 5000) {
+      // Only update schema cache if it doesn't exist (first time setup)
+      // Cache is valid for 5 minutes to avoid constant refreshing during typing
+      if (!schemaCache) {
+        await updateSchemaCache();
+      } else if (Date.now() - schemaCache.lastUpdated > 300000) { // 5 minutes
         await updateSchemaCache();
       }
 
       if (!schemaCache) {
-        // // console.log('No schema cache available');
         return { suggestions: [] };
       }
+
 
       const fullText = model.getValue();
       const offset = model.getOffsetAt(position);
@@ -718,7 +766,12 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
       const lastChars = textUntilPosition.toLowerCase().slice(-50);
       const isAfterFrom = /\bfrom\s+[\w_]*$/i.test(lastChars);
       const isAfterJoin = /\bjoin\s+[\w_]*$/i.test(lastChars);
-      const isAfterWhere = /\bwhere\s+[\w_]*$/i.test(lastChars);
+      // More flexible WHERE detection: check if we're in a WHERE clause context
+      // Look for WHERE keyword followed by any content, ending with incomplete identifier
+      const isAfterWhere = /\bwhere\b.*?[a-zA-Z0-9_]*$/i.test(lastChars) &&
+                          !/\b(?:group\s+by|order\s+by|having|limit)\b/i.test(lastChars);
+      // Additional context: after AND/OR operators in WHERE clauses
+      const isAfterAndOr = /\b(?:and|or)\s+[a-zA-Z0-9_]*$/i.test(lastChars);
       // Fixed: \w already includes underscore, but let's be explicit
       const isAfterSelect = /\bselect\s+[a-zA-Z0-9_]*$/i.test(lastChars);
       const isAfterGroupBy = /\bgroup\s+by\s+[a-zA-Z0-9_]*$/i.test(lastChars);
@@ -763,7 +816,8 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
 
       // ===== B) Suggest tables after FROM/JOIN =====
       if (isAfterFrom || isAfterJoin) {
-        for (const table of schemaCache.tables) {
+        const tables = Array.isArray(schemaCache.tables) ? schemaCache.tables : [];
+        for (const table of tables) {
           pushUnique({
             label: table,
             kind: monaco.languages.CompletionItemKind.Class,
@@ -780,6 +834,7 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
       if (
         isAfterSelect ||
         isAfterWhere ||
+        isAfterAndOr ||
         isAfterGroupBy ||
         isAfterOrderBy ||
         isAfterComma
@@ -793,7 +848,8 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
         // console.log('Adding functions. Current word:', word.word, 'Functions available:', schemaCache.functions.length);
 
         let functionsAdded = 0;
-        for (const func of schemaCache.functions) {
+        const functions = Array.isArray(schemaCache.functions) ? schemaCache.functions : [];
+        for (const func of functions) {
           pushUnique({
             label: func.name,
             kind: monaco.languages.CompletionItemKind.Function,
@@ -937,7 +993,8 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
       // ===== D) After opening paren, suggest functions without parens =====
       if (isAfterParen) {
         // Use DuckDB-provided functions (without adding another paren)
-        for (const func of schemaCache.functions) {
+        const functions = Array.isArray(schemaCache.functions) ? schemaCache.functions : [];
+        for (const func of functions) {
           pushUnique({
             label: func.name,
             kind: monaco.languages.CompletionItemKind.Function,
@@ -955,7 +1012,8 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
 
       // ===== E) Keywords from DuckDB =====
       // Filter keywords based on context
-      const contextualKeywords = schemaCache.keywords.filter((kw) => {
+      const keywords = Array.isArray(schemaCache.keywords) ? schemaCache.keywords : [];
+      const contextualKeywords = keywords.filter((kw) => {
         // Don't suggest keywords that don't make sense in context
         if (
           isAfterSelect &&

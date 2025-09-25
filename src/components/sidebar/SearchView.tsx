@@ -46,22 +46,8 @@ function SearchView() {
     new Set(),
   );
 
-  // Real file statuses from worker
-  const [realFileStatuses, setRealFileStatuses] = useState<any[]>([]);
-
-  // Fetch file statuses from worker when ready or when indexing progress changes (not on every status change)
-  useEffect(() => {
-    if (state.workerManager && state.workersReady) {
-      state.workerManager
-        .getFileStatuses()
-        .then((statuses: any[]) => {
-          setRealFileStatuses(statuses);
-        })
-        .catch((error: any) => {
-          console.error("🔍 Failed to get file statuses:", error);
-        });
-    }
-  }, [state.workerManager, state.workersReady, indexingProgress]); // Removed indexStatus to prevent loops
+  // Get real file statuses from global state (updated by worker callbacks)
+  const realFileStatuses = state.fileStatuses || [];
 
   // Track previous indexed count to detect changes
   const [previousIndexedCount, setPreviousIndexedCount] = useState(0);
@@ -109,34 +95,16 @@ function SearchView() {
     }
   }, [realFileStatuses, lastSearchQuery, isSearching, previousIndexedCount]);
 
-  // Get file lists from zip entries and categorize them
+  // Get file lists ONLY from what the indexing worker has told us about
   const getFileLists = () => {
-    if (!state.zip) {
-      return { indexed: [], indexing: [], unindexed: [], errors: [] };
-    }
+    // Only show files that the indexing worker has explicitly told us about
+    const fileStatuses = Array.isArray(realFileStatuses) ? realFileStatuses : [];
 
-    const allFiles = state.zip.entries.filter((entry: any) => !entry.isDir);
-    // Use real file statuses from worker
-    const statusMap = new Map();
-    realFileStatuses.forEach((fileStatus: any) => {
-      statusMap.set(fileStatus.path, fileStatus.status);
-    });
-
-    // Categorize files based on actual status
-    const indexed = allFiles.filter(
-      (f: any) => statusMap.get(f.path) === "indexed",
-    );
-    const indexing = allFiles.filter(
-      (f: any) => statusMap.get(f.path) === "indexing",
-    );
-    const errors = allFiles.filter(
-      (f: any) => statusMap.get(f.path) === "error",
-    );
-    // Files explicitly marked as unindexed in the statusMap OR files not in statusMap at all
-    const unindexed = allFiles.filter(
-      (f: any) =>
-        statusMap.get(f.path) === "unindexed" || !statusMap.has(f.path),
-    );
+    // Categorize files based ONLY on worker status
+    const indexed = fileStatuses.filter((f: any) => f.status === "indexed");
+    const indexing = fileStatuses.filter((f: any) => f.status === "indexing");
+    const errors = fileStatuses.filter((f: any) => f.status === "error");
+    const unindexed = fileStatuses.filter((f: any) => f.status === "unindexed");
 
     return { indexed, indexing, unindexed, errors };
   };
@@ -169,28 +137,14 @@ function SearchView() {
   const handleSearch = async () => {
     if (!query.trim() || !state.workerManager || indexed.length === 0) return;
 
-    console.log("🔍 SearchView: Starting search with query:", query);
-    console.log("🔍 SearchView: Index status:", indexStatus);
-    console.log(
-      "🔍 SearchView: WorkerManager available:",
-      !!state.workerManager,
-    );
 
     setIsSearching(true);
     setHasSearched(true);
 
     try {
-      // Parse the query for display purposes
-      const parsedQuery = QueryParser.parse(query);
-      console.log("🔍 SearchView: Parsed query:", parsedQuery);
 
       // Use worker-based search
       const searchResults = await state.workerManager.searchLogs(query);
-      console.log(
-        "🔍 SearchView: Search completed, got",
-        searchResults.length,
-        "results",
-      );
       setResults(searchResults);
       setLastSearchQuery(query); // Store the query that generated these results
     } catch (error) {
@@ -254,7 +208,6 @@ function SearchView() {
   const handleIndexFile = async (file: any) => {
     if (!state.workerManager) return;
 
-    console.log("🔍 SearchView: Requesting indexing for file:", file.path);
 
     try {
       // Set status to indexing to show progress UI
@@ -757,6 +710,21 @@ function SearchView() {
   const renderIndexStatus = () => {
     switch (indexStatus) {
       case "none":
+        // Check if we actually have indexed files despite status being "none"
+        if (indexed.length > 0) {
+          return (
+            <div
+              className="index-status"
+              style={{
+                padding: "8px",
+                fontSize: "12px",
+                color: "var(--text-success)",
+              }}
+            >
+              Search ready - {indexed.length} files indexed{state.indexingRuleDescription ? ` ${state.indexingRuleDescription}` : ""}
+            </div>
+          );
+        }
         return (
           <div
             className="index-status"
@@ -801,7 +769,6 @@ function SearchView() {
           </div>
         );
       case "ready":
-        // TODO: Get stats from worker
         return (
           <div
             className="index-status"
@@ -811,7 +778,7 @@ function SearchView() {
               color: "var(--text-success)",
             }}
           >
-            Search index ready (TODO: show stats from worker)
+            Search ready - {indexed.length} files indexed{state.indexingRuleDescription ? ` ${state.indexingRuleDescription}` : ""}
           </div>
         );
     }
@@ -1163,7 +1130,7 @@ function SearchView() {
           <>
             <div style={{ flexShrink: 0 }}>
               {renderSectionHeader(
-                `INDEXED ${indexed.length}/${state.zip ? state.zip.entries.filter((entry: any) => !entry.isDir).length : 0}${state.indexingRuleDescription ? ` ${state.indexingRuleDescription}` : ""}`,
+                `INDEXED ${indexed.length}/${realFileStatuses.length}${state.indexingRuleDescription ? ` ${state.indexingRuleDescription}` : ""}`,
                 indexingExpanded,
                 () => toggleSection("indexing"),
               )}
@@ -1241,7 +1208,7 @@ function SearchView() {
       >
         {!indexingExpanded &&
           renderSectionHeader(
-            `INDEXED ${indexed.length}/${state.zip ? state.zip.entries.filter((entry: any) => !entry.isDir).length : 0}${state.indexingRuleDescription ? ` ${state.indexingRuleDescription}` : ""}`,
+            `INDEXED ${indexed.length}/${realFileStatuses.length}${state.indexingRuleDescription ? ` ${state.indexingRuleDescription}` : ""}`,
             indexingExpanded,
             () => toggleSection("indexing"),
           )}

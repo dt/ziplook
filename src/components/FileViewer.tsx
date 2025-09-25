@@ -34,11 +34,13 @@ function FileViewer({ tab }: FileViewerProps) {
   const [progress, setProgress] = useState({ loaded: 0, total: 0, percent: 0 });
   const [isStreaming, setIsStreaming] = useState(false);
   const abortRef = useRef<(() => void) | null>(null);
+  const loadInitiatedRef = useRef(false);
 
   useEffect(() => {
-    // Load once on mount
-    if (!content && !loading) {
+    // Load once on mount - prevent double loading during React StrictMode double mount
+    if (!content && !loading && !loadInitiatedRef.current) {
       console.log(`Loading file from zip: ${tab.id}`);
+      loadInitiatedRef.current = true;
       loadFile();
     }
 
@@ -95,6 +97,7 @@ function FileViewer({ tab }: FileViewerProps) {
             setLoading(false);
             setIsStreaming(false);
             abortRef.current = null;
+            loadInitiatedRef.current = false; // Reset for potential future loads
           }
         },
         (loaded: number, total: number) => {
@@ -111,6 +114,7 @@ function FileViewer({ tab }: FileViewerProps) {
       setLoading(false);
       setIsStreaming(false);
       abortRef.current = null;
+      loadInitiatedRef.current = false; // Reset on error for potential retry
     }
   }, [tab.fileId || tab.id]);
 

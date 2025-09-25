@@ -49,6 +49,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
   const abortRef = useRef<(() => void) | null>(null);
+  const loadInitiatedRef = useRef(false);
   const filterInputRef = useRef<HTMLInputElement>(null);
   const decorationIds = useRef<string[]>([]);
   const languageRef = useRef<string>("plaintext");
@@ -422,6 +423,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
             setLoading(false);
             setIsStreaming(false);
             abortRef.current = null;
+            loadInitiatedRef.current = false; // Reset for potential future loads
 
             // Final retry for pending line navigation
             if (pendingLineNumber.current) {
@@ -446,11 +448,13 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
       setLoading(false);
       setIsStreaming(false);
       abortRef.current = null;
+      loadInitiatedRef.current = false; // Reset on error for potential retry
     }
   }, [tab.fileId, state.filesIndex, state.workerManager]);
 
   useEffect(() => {
-    if (!content && !loading && state.workerManager) {
+    if (!content && !loading && state.workerManager && !loadInitiatedRef.current) {
+      loadInitiatedRef.current = true;
       loadFile();
     }
 

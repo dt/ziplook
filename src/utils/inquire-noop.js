@@ -18,4 +18,5 @@ function inquire(moduleName) {
   return null;
 }
 
-export default inquire;
+// Export exactly like the original @protobufjs/inquire
+module.exports = inquire;

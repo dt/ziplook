@@ -44,7 +44,7 @@ function TablesView() {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
     () => {
       // Default collapse all empty table sections
-      const initial = new Set(["cluster-empty"]);
+      const initial = new Set<string>(); // Don't collapse empty tables by default
       // Add all possible node empty sections (nodes 1-10 should cover most cases)
       for (let i = 1; i <= 10; i++) {
         initial.add(`node-${i}-empty`);
@@ -76,9 +76,10 @@ function TablesView() {
     const loadableTables = tables.filter((t) => !t.isError);
     if (loadableTables.length === 0) return null;
 
-    // Only count non-deferred tables (deferred tables aren't loaded until clicked)
+    // Only count non-deferred tables for loading progress (deferred tables aren't auto-loaded)
     const autoLoadTables = loadableTables.filter((t) => !t.deferred);
-    if (autoLoadTables.length === 0) return null;
+    // Show loading progress even if no auto-load tables (deferred tables should still be visible)
+    if (loadableTables.length === 0) return null;
 
     // Count tables that are either loaded or failed
     const completedCount = autoLoadTables.filter(

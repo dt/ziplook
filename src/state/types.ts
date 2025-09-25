@@ -144,4 +144,5 @@ export interface AppState {
     fileName: string;
   } | null; // Current indexing progress
   indexingRuleDescription?: string; // Description of the rule used for indexing (e.g., "*.log")
+  fileStatuses?: any[]; // Real-time file status updates from indexing worker
 }

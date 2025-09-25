@@ -25,9 +25,10 @@ function AppContent() {
 
   // DuckDB is now initialized in the DB worker through WorkerManager
 
-  // Send stack data to iframe when table loading finishes
-  useEffect(() => {
-    if (!state.zip || !state.stackData || state.tablesLoading) {
+  // Send stack data to iframe when explicitly told by controller
+  // This will be triggered by a specific action, not automatically
+  const sendStackDataToIframe = useCallback(() => {
+    if (!state.zip || !state.stackData) {
       return;
     }
 
@@ -41,6 +42,8 @@ function AppContent() {
       "stackgazer-preload",
     ) as HTMLIFrameElement;
     if (!preloadedIframe) return;
+
+    console.log(`🎯 Sending ${Object.keys(state.stackData).length} stack files to iframe:`, Object.keys(state.stackData));
 
     // Wait a bit for iframe to be ready, then send data one file at a time
     setTimeout(() => {
@@ -62,7 +65,16 @@ function AppContent() {
         console.error("App: Error sending data to stackgazer iframe:", error);
       }
     }, 100);
-  }, [state.zip, state.stackData, state.tablesLoading]);
+  }, [state.zip, state.stackData]);
+
+  // Expose function globally so DropZone can call it
+  useEffect(() => {
+    (window as any).sendStackDataToIframe = sendStackDataToIframe;
+    return () => {
+      delete (window as any).sendStackDataToIframe;
+    };
+  }, [sendStackDataToIframe]);
+
   const [isDragging, setIsDragging] = useState(false);
   const navigation = useKeyboardNavigation();
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
