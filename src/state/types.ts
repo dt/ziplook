@@ -57,6 +57,11 @@ export interface TableMeta {
   originalName?: string; // Original table name without node prefix
   isError?: boolean; // True for .err.txt files
   loadError?: string; // Error message if loading failed
+  chunkProgress?: { // For large file incremental loading
+    current: number;
+    total: number;
+    percentage: number;
+  };
 }
 
 // Search-related types
@@ -230,6 +235,11 @@ export interface IWorkerManagerCallbacks {
     status: string,
     rowCount?: number,
     error?: string,
+    chunkProgress?: {
+      current: number;
+      total: number;
+      percentage: number;
+    },
   ) => void;
   onTableLoadingComplete?: (
     success: boolean,

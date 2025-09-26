@@ -15,12 +15,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      // Replace @protobufjs/inquire with a safe no-op version for browser builds
-      // This eliminates the eval() usage that causes security warnings
-      // Source: @protobufjs/inquire uses eval("quire".replace(/^/,"re")) to dynamically require() modules
-      // Purpose: Allows protobufjs to conditionally load Node.js modules (like 'fs') without breaking bundlers
-      // Browser safety: require() doesn't exist in browsers, so this always returns null anyway
-      "@protobufjs/inquire": resolve(__dirname, "src/utils/inquire-noop.js"),
+      // Replace @protobufjs/inquire with our browser-safe version
+      '@protobufjs/inquire': resolve(__dirname, 'src/utils/inquire-replacement.js'),
       // exact-match so only the bare 'openpgp' specifier maps to the ESM file
       'openpgp$': resolve(__dirname, 'node_modules/openpgp/dist/openpgp.min.mjs'),
     },
@@ -28,6 +24,7 @@ export default defineConfig({
   optimizeDeps: {
     // ⚠️ keep React optimizable; only exclude openpgp
     exclude: ['openpgp'],
+    include: ['protobufjs'],
   },
   worker: {
     format: 'es',

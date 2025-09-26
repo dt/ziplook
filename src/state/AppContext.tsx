@@ -444,6 +444,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
             status: string,
             rowCount?: number,
             error?: string,
+            chunkProgress?: {
+              current: number;
+              total: number;
+              percentage: number;
+            },
           ) => {
             if (!mounted) return;
 
@@ -455,6 +460,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
               case "loading":
                 updates.loading = true;
                 updates.loaded = false;
+                // Add chunk progress if provided
+                if (chunkProgress) {
+                  updates.chunkProgress = chunkProgress;
+                }
                 break;
               case "completed":
                 updates.loading = false;
@@ -463,6 +472,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                   updates.rowCount = rowCount;
                 }
                 updates.deferred = false;
+                updates.chunkProgress = undefined; // Clear chunk progress
                 break;
               case "error":
                 updates.loading = false;

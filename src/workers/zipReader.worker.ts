@@ -448,6 +448,8 @@ async function chunkAndEmit(
     emit(buf.subarray(i, j), false);
     i = j;
   }
+  // Note: this function should not call emit with done=true
+  // The caller is responsible for signaling completion
 }
 
 // Compute and cache `dataStart` for an entry using the provider.

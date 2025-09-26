@@ -548,6 +548,20 @@ function TablesView() {
                         )}
                       </div>
                     )}
+                    {/* Chunk progress bar */}
+                    {table.chunkProgress && (
+                      <div className="chunk-progress-bar">
+                        <div
+                          className="chunk-progress-fill"
+                          style={{
+                            width: `${table.chunkProgress.percentage}%`,
+                            height: "3px",
+                            backgroundColor: "#007acc",
+                            transition: "width 0.3s ease",
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -685,6 +699,20 @@ function TablesView() {
                                     {formatFileSize(table.size || 0)}
                                   </span>
                                 )}
+                              </div>
+                            )}
+                            {/* Chunk progress bar */}
+                            {table.chunkProgress && (
+                              <div className="chunk-progress-bar">
+                                <div
+                                  className="chunk-progress-fill"
+                                  style={{
+                                    width: `${table.chunkProgress.percentage}%`,
+                                    height: "3px",
+                                    backgroundColor: "#007acc",
+                                    transition: "width 0.3s ease",
+                                  }}
+                                />
                               </div>
                             )}
                           </div>

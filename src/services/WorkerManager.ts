@@ -252,7 +252,8 @@ export class WorkerManager implements IWorkerManager {
           message.tableName as string,
           message.status as string,
           message.rowCount as number,
-          message.error as string
+          message.error as string,
+          message.chunkProgress as { current: number; total: number; percentage: number } | undefined
         );
         break;
 

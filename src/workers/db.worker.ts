@@ -167,7 +167,6 @@ interface PendingZipRequest {
   reject: (error: Error) => void;
   timeoutId: NodeJS.Timeout;
   chunks: Uint8Array[];
-  totalText: string;
 }
 
 const pendingZipRequests = new Map<string, PendingZipRequest>();
@@ -177,6 +176,214 @@ let shouldStop = false;
 
 // Worker-specific proto decoder
 let workerProtoDecoder: ProtoDecoder | null = null;
+
+// Process very large files incrementally by loading directly into DuckDB
+async function loadLargeFileIncrementally(
+  data: Uint8Array,
+  decoder: TextDecoder,
+  tableName: string,
+  delimiter: string,
+  nameForPreprocessing: string
+): Promise<number> {
+  if (!conn || !db) {
+    throw new Error("DuckDB not initialized");
+  }
+
+  const chunkSize = 50 * 1024 * 1024; // 50MB chunks
+  const totalSize = data.length;
+  let offset = 0;
+  let remainder = '';
+  let totalRows = 0;
+  let chunkNumber = 0;
+  let headers: string[] = [];
+
+  const totalChunks = Math.ceil(totalSize / chunkSize);
+  console.log(`📊 Loading large file incrementally in ${totalChunks} chunks`);
+
+  // Use quoted table name to preserve dots
+  const quotedTableName = `"${tableName}"`;
+
+  // Drop table if exists
+  await conn.query(`DROP TABLE IF EXISTS ${quotedTableName}`);
+
+  while (offset < totalSize) {
+    const end = Math.min(offset + chunkSize, totalSize);
+    const chunk = data.subarray(offset, end);
+
+    // Decode this chunk
+    const chunkText = decoder.decode(chunk, { stream: end < totalSize });
+    const fullText = remainder + chunkText;
+
+    // Split by lines and process complete lines
+    const lines = fullText.split('\n');
+
+    // Keep the last potentially incomplete line as remainder for next chunk
+    remainder = end < totalSize ? lines.pop() || '' : '';
+
+    if (lines.length > 0) {
+      // Reconstruct this chunk's content with complete lines
+      const chunkContent = lines.join('\n');
+
+      if (chunkContent.trim()) {
+        // Extract headers from first chunk
+        if (chunkNumber === 0) {
+          headers = lines[0].split(delimiter);
+          console.log(`📋 Headers: ${headers.join(', ')}`);
+        }
+
+        // Determine which lines are data (skip header on first chunk)
+        const dataLines = chunkNumber === 0 ? lines.slice(1) : lines;
+
+        if (dataLines.length > 0) {
+          // Create content with headers for processing
+          const contentForProcessing = [headers.join(delimiter), ...dataLines].join('\n');
+
+          let processedContent = contentForProcessing;
+
+          // Apply preprocessing if needed
+          const needsPreprocessing = shouldPreprocess(nameForPreprocessing, contentForProcessing);
+          if (needsPreprocessing && workerProtoDecoder) {
+            console.log(`🔧 Preprocessing chunk ${chunkNumber + 1}...`);
+            try {
+              processedContent = preprocessCSV(contentForProcessing, {
+                tableName: nameForPreprocessing,
+                delimiter,
+                decodeKeys: true,
+                decodeProtos: true,
+                protoDecoder: workerProtoDecoder,
+              });
+            } catch (err) {
+              console.warn(`⚠️ Preprocessing failed for chunk ${chunkNumber + 1}:`, err);
+            }
+          }
+
+          // Register this chunk as a temporary file
+          const chunkFileName = `${tableName}_chunk_${chunkNumber}.txt`;
+          await db.registerFileText(chunkFileName, processedContent);
+
+          // Load this chunk into the table
+          if (chunkNumber === 0) {
+            // First chunk - create table with headers
+            const sql = `
+              CREATE TABLE ${quotedTableName} AS
+              SELECT * FROM read_csv_auto(
+                '${chunkFileName}',
+                delim='${delimiter}',
+                header=true
+              )
+            `;
+            await conn.query(sql);
+            console.log(`📊 Created table from first chunk (${dataLines.length} data rows)`);
+          } else {
+            // Subsequent chunks - insert data
+            const sql = `
+              INSERT INTO ${quotedTableName}
+              SELECT * FROM read_csv_auto(
+                '${chunkFileName}',
+                delim='${delimiter}',
+                header=true
+              )
+            `;
+            await conn.query(sql);
+            console.log(`📊 Inserted ${dataLines.length} rows from chunk ${chunkNumber + 1}`);
+          }
+
+          chunkNumber++;
+
+          // Send progress event after each chunk
+          self.postMessage({
+            type: "tableLoadProgress",
+            tableName,
+            status: "loading",
+            chunkProgress: {
+              current: chunkNumber,
+              total: totalChunks,
+              percentage: Math.round((chunkNumber / totalChunks) * 100)
+            },
+            nodeId: undefined, // We don't have nodeId in this context
+            originalName: nameForPreprocessing,
+            isError: false,
+          });
+        }
+      }
+    }
+
+    offset = end;
+  }
+
+  // Handle any remaining content
+  if (remainder.trim()) {
+    let processedContent = remainder;
+
+    const needsPreprocessing = shouldPreprocess(nameForPreprocessing, remainder);
+    if (needsPreprocessing && workerProtoDecoder) {
+      try {
+        processedContent = preprocessCSV(remainder, {
+          tableName: nameForPreprocessing,
+          delimiter,
+          decodeKeys: true,
+          decodeProtos: true,
+          protoDecoder: workerProtoDecoder,
+        });
+      } catch (err) {
+        console.warn(`⚠️ Preprocessing failed for final chunk:`, err);
+      }
+    }
+
+    const chunkFileName = `${tableName}_final.txt`;
+    await db.registerFileText(chunkFileName, processedContent);
+
+    if (chunkNumber === 0) {
+      // Only remainder content
+      const sql = `
+        CREATE TABLE ${quotedTableName} AS
+        SELECT * FROM read_csv_auto(
+          '${chunkFileName}',
+          delim='${delimiter}',
+          header=true
+        )
+      `;
+      await conn.query(sql);
+    } else {
+      // Insert final chunk
+      const sql = `
+        INSERT INTO ${quotedTableName}
+        SELECT * FROM read_csv_auto(
+          '${chunkFileName}',
+          delim='${delimiter}',
+          header=true
+        )
+      `;
+      await conn.query(sql);
+    }
+
+    // Send final progress update if we processed a final chunk
+    if (remainder.trim()) {
+      chunkNumber++;
+      self.postMessage({
+        type: "tableLoadProgress",
+        tableName,
+        status: "loading",
+        chunkProgress: {
+          current: chunkNumber,
+          total: totalChunks,
+          percentage: 100 // Final chunk completes the loading
+        },
+        nodeId: undefined,
+        originalName: nameForPreprocessing,
+        isError: false,
+      });
+    }
+  }
+
+  // Get final row count
+  const countResult = await conn.query(`SELECT COUNT(*) as count FROM ${quotedTableName}`);
+  totalRows = countResult.toArray()[0].count;
+
+  console.log(`✅ Successfully loaded large table with ${totalRows} rows`);
+  loadedTables.add(tableName);
+  return totalRows;
+}
 
 interface ResponseMessage {
   type: string;
@@ -210,7 +417,7 @@ function sendMessageToZipWorker(message: { type: string; path?: string; id?: str
     }, 30000);
 
     // Store the pending request
-    pendingZipRequests.set(id, { resolve, reject, timeoutId, chunks: [], totalText: "" });
+    pendingZipRequests.set(id, { resolve, reject, timeoutId, chunks: [] });
 
     // Send routed message through main thread
     self.postMessage({
@@ -241,24 +448,58 @@ function handleRoutedMessage(message: RoutedMessage) {
       const bytes = message.bytes;
       if (bytes instanceof Uint8Array) {
         request.chunks.push(bytes);
-        request.totalText += new TextDecoder().decode(bytes);
       } else if (typeof bytes === 'string') {
         // Convert string to Uint8Array for consistency
         const encoder = new TextEncoder();
         request.chunks.push(encoder.encode(bytes));
-        request.totalText += bytes;
+      } else {
+        console.warn(`⚠️ Received unknown chunk type: ${typeof bytes}`);
       }
 
       if (message.done) {
-        // All chunks received, resolve with complete response
+        // All chunks received, concatenate and decode
         clearTimeout(request.timeoutId);
         pendingZipRequests.delete(message.id);
+        // Calculate total length and concatenate all chunks
+        const totalLength = request.chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+
+        const combined = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of request.chunks) {
+          combined.set(chunk, offset);
+          offset += chunk.length;
+        }
+
+        let totalText: string;
+        const decoder = new TextDecoder();
+
+        // For very large files, skip creating huge strings and load incrementally
+        if (totalLength > 200 * 1024 * 1024) { // 200MB threshold
+          console.log(`📄 Large file detected (${(totalLength / (1024 * 1024)).toFixed(1)}MB), will handle incrementally`);
+          totalText = "LARGE_FILE_PLACEHOLDER"; // Signal to use incremental loading
+        } else {
+          // Decode the complete data as text for smaller files
+          try {
+            totalText = decoder.decode(combined);
+          } catch (error) {
+            if (error instanceof RangeError && error.message.includes('Invalid string length')) {
+              throw new Error(`File is too large to process (${(totalLength / (1024 * 1024 * 1024)).toFixed(2)}GB). JavaScript string limitations exceeded.`);
+            }
+            throw error;
+          }
+        }
+
+        // For large files, include raw bytes in the response
+        const result: any = { text: totalText };
+        if (totalText === "LARGE_FILE_PLACEHOLDER") {
+          result.rawBytes = combined;
+        }
 
         request.resolve({
           type: "readFileComplete",
           id: message.id,
           success: true,
-          result: { text: request.totalText }
+          result
         });
       }
     }
@@ -357,6 +598,7 @@ async function initializeDatabase(message: InitializeDatabaseMessage) {
       // Access private properties through bracket notation for initialization
       (workerProtoDecoder as unknown as Record<string, unknown>).root = root;
       (workerProtoDecoder as unknown as Record<string, unknown>).loaded = true;
+      console.log("✓ Proto decoder initialized successfully in worker");
     } catch (protoError) {
       console.warn(
         "⚠️ Failed to initialize proto decoder in worker:",
@@ -507,6 +749,37 @@ async function loadSingleTable(table: TableInfo) {
 
     const text = fileResponse.result.text;
 
+    // Check if this is a large file that needs incremental loading
+    if (text === "LARGE_FILE_PLACEHOLDER") {
+      console.log(`🔄 Loading large table ${tableName} incrementally...`);
+      // Get the raw bytes from the response
+      const rawBytes = (fileResponse.result as any)?.rawBytes;
+      if (!rawBytes) {
+        throw new Error("Raw bytes not available for large file processing");
+      }
+
+      // Load directly using incremental approach
+      const rowCount = await loadLargeFileIncrementally(
+        rawBytes,
+        new TextDecoder(),
+        tableName,
+        "\t",
+        originalName || tableName
+      );
+
+      // Send completion event for incremental loading
+      self.postMessage({
+        type: "tableLoadProgress",
+        tableName,
+        status: "completed",
+        rowCount,
+        nodeId,
+        originalName,
+        isError,
+      });
+      return;
+    }
+
     // Load table using DuckDB logic (from duckdb.ts)
     const rowCount = await loadTableFromText(
       tableName,
@@ -570,7 +843,9 @@ async function loadTableFromText(
 
     // Use original table name for preprocessing detection, but processed name for proto mapping
     const nameForPreprocessing = originalName || tableName;
-    if (shouldPreprocess(nameForPreprocessing, content)) {
+    const needsPreprocessing = shouldPreprocess(nameForPreprocessing, content);
+
+    if (needsPreprocessing) {
       try {
         processedContent = preprocessCSV(content, {
           tableName: nameForPreprocessing, // Use original name for column mapping
@@ -581,7 +856,7 @@ async function loadTableFromText(
         });
         usePreprocessed = true;
       } catch (err) {
-        console.warn(`Preprocessing failed for ${tableName}:`, err);
+        console.warn(`❌ Preprocessing failed for ${tableName}:`, err);
         processedContent = content;
       }
     }
