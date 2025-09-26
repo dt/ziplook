@@ -11,5 +11,14 @@ function inquire(moduleName) {
   return null;
 }
 
-// Export in CommonJS format since protobufjs expects it
-module.exports = inquire;
+// Export in both CommonJS and ES module formats for maximum compatibility
+if (typeof module !== 'undefined' && module.exports) {
+  // CommonJS export
+  module.exports = inquire;
+} else if (typeof exports !== 'undefined') {
+  // CommonJS exports fallback
+  exports.default = inquire;
+}
+
+// Also export as default for ES modules
+export default inquire;
