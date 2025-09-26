@@ -67,7 +67,7 @@ function Sidebar({ activeView, isVisible, width }: SidebarProps) {
   return (
     <div
       className={`sidebar ${!isVisible ? "collapsed" : ""}`}
-      style={{ width: isVisible ? `${width}px` : 0 }}
+      style={{ width: isVisible ? `${width}px` : undefined }}
     >
       <div className="sidebar-header">
         <span>{getTitle()}</span>

@@ -16,12 +16,15 @@ export function useKeyboardShortcuts(shortcuts: KeyboardShortcut[]) {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Skip if user is typing in an input/textarea (unless it's a global shortcut)
+      // Skip if user is typing in an input/textarea/editor (unless it's a global shortcut)
       const target = e.target as HTMLElement;
       const isTyping =
         target.tagName === "INPUT" ||
         target.tagName === "TEXTAREA" ||
-        target.contentEditable === "true";
+        target.contentEditable === "true" ||
+        target.closest(".monaco-editor") !== null ||
+        target.classList.contains("inputarea") ||
+        target.classList.contains("monaco-inputbox");
 
       for (const shortcut of shortcutsRef.current) {
         const matchesKey =
