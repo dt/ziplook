@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import FilesView from "./sidebar/FilesView";
 import TablesView from "./sidebar/TablesView";
 import SearchView from "./sidebar/SearchView";
+import StackgazerView from "./sidebar/StackgazerView";
 import { useApp } from "../state/AppContext";
 
 interface SidebarProps {
@@ -59,7 +60,7 @@ function Sidebar({ activeView, isVisible, width }: SidebarProps) {
       case "search":
         return <SearchView />;
       case "stackgazer":
-        return null; // No sidebar content for stackgazer
+        return <StackgazerView />;
     }
   };
 

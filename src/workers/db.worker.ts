@@ -8,7 +8,7 @@ import { preprocessCSV, shouldPreprocess } from "../crdb/csvPreprocessor";
 import { getTableTypeHints } from "../crdb/columnTypeRegistry";
 import { ProtoDecoder } from "../crdb/protoDecoder";
 import * as protobuf from "protobufjs";
-import crdbDescriptors from "../../public/crdb.json";
+import crdbDescriptors from "../crdb.json";
 import duckdb_wasm from "@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm?url";
 import mvp_worker from "@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url";
 import duckdb_wasm_eh from "@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url";
@@ -174,7 +174,7 @@ function sendResponse(message: any, response: any) {
   }
 }
 
-const LARGE_FILE_THRESHOLD = 20 * 1024 * 1024; // 20MB
+const LARGE_FILE_THRESHOLD = 2 * 1024 * 1024; // 20MB
 
 function sendMessageToZipWorker(message: any): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -371,7 +371,11 @@ async function startTableLoading(message: StartTableLoadingMessage) {
         break;
       }
 
-      if (table.size > LARGE_FILE_THRESHOLD) {
+      if (table.isError) {
+        continue;
+      }
+
+      if (table.size > LARGE_FILE_THRESHOLD || (tables.length > 300 && table.path.includes('/nodes/'))) {
          self.postMessage({
           type: "tableLoadProgress",
           tableName: table.name,
@@ -411,7 +415,6 @@ async function loadSingleTableFromMessage(message: LoadSingleTableMessage) {
 
 async function loadSingleTable(table: any, _loadingId: string) {
   const { name: tableName, path, size, nodeId, originalName, isError } = table;
-  const startTime = performance.now();
 
   if (!conn) {
     throw new Error("Database not initialized");
@@ -1019,7 +1022,7 @@ function stopLoading(message: StopLoadingMessage) {
 // Process file list and decide what tables to load
 async function processFileList(message: ProcessFileListMessage) {
   try {
-    console.log(`🎯 DB Worker: Processing file list with ${message.fileList.length} files`);
+    // Processing file list
 
     // Simplified filter: just files that start with "system" and end with ".txt"
     const tablesToLoad = message.fileList.filter(
@@ -1028,7 +1031,7 @@ async function processFileList(message: ProcessFileListMessage) {
         (entry.path.includes("/system.") || entry.path.includes("/crdb_internal.")) &&
         entry.path.endsWith(".txt")
     );
-    console.log(`🎯 DB Worker: Found ${tablesToLoad.length} potential table files`);
+    // Found potential table files
 
     // Prepare tables with proper naming (same logic as DropZone had)
     const preparedTables = [];
@@ -1081,11 +1084,11 @@ async function processFileList(message: ProcessFileListMessage) {
 
     // Start loading the tables
     if (preparedTables.length > 0) {
-      console.log(`🎯 DB Worker: Found ${preparedTables.length} tables, checking if database is ready for data loading`);
+      // Found tables, checking if database is ready for data loading
 
       // Wait for database to be initialized before starting data loading
       if (!initialized) {
-        console.log(`🎯 DB Worker: Database not initialized yet, waiting...`);
+        // Database not initialized yet, waiting
 
         // Poll for initialization with a reasonable timeout
         const maxWaitTime = 30000; // 30 seconds
@@ -1100,10 +1103,10 @@ async function processFileList(message: ProcessFileListMessage) {
           throw new Error("Database initialization timeout while waiting to load tables");
         }
 
-        console.log(`🎯 DB Worker: Database is now initialized, proceeding with table loading`);
+        // Database is now initialized, proceeding with table loading
       }
 
-      console.log(`🎯 DB Worker: Starting to load ${preparedTables.length} tables`);
+      // Starting to load tables
 
       // Use the existing startTableLoading logic
       const fakeMessage = {

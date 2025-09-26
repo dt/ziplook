@@ -16,6 +16,23 @@ export interface UserInfo {
   // Add other user properties as needed
 }
 
+export interface PackageFile {
+  fileId: string;
+  fileName: string;
+  fileSize: number;
+  createdDate: string;
+  fileUploaded?: string;
+  // Add other file properties as needed
+}
+
+export interface PackageInfo {
+  packageId: string;
+  packageCode: string;
+  packageSender?: string;
+  files: PackageFile[];
+  // Add other package properties as needed
+}
+
 export interface SendSafelyResponse<T = any> {
   response: string;
   message?: string;
@@ -76,7 +93,7 @@ export class SendSafelyClient {
   /**
    * Make an authenticated request to the SendSafely API
    */
-  private async makeRequest<T = any>(
+  public async makeRequest<T = any>(
     method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     urlPath: string,
     body?: any
@@ -102,14 +119,15 @@ export class SendSafelyClient {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`SendSafely API Error (${response.status}): ${errorText}`);
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
     }
 
     const responseData = await response.json();
 
     // Check for SendSafely-specific error responses that still return HTTP 200
-    if (responseData.response === 'FAIL' || responseData.response === 'ERROR') {
-      throw new Error(`SendSafely API Error: ${responseData.message || 'Authentication failed'}`);
+    if (responseData.response && responseData.response !== 'SUCCESS') {
+      // Show the actual API response
+      throw new Error(`API response: "${responseData.response}", message: "${responseData.message || 'No message provided'}"`);
     }
 
     return responseData;
@@ -136,6 +154,152 @@ export class SendSafelyClient {
    */
   async getUserInfo(): Promise<UserInfo> {
     return this.verifyCredentials();
+  }
+
+  /**
+   * Generate PBKDF2 checksum for SendSafely API authentication
+   */
+  private async generateChecksum(password: string, salt: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(password),
+      { name: 'PBKDF2' },
+      false,
+      ['deriveBits']
+    );
+
+    const bits = await crypto.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        hash: 'SHA-256',
+        salt: encoder.encode(salt),
+        iterations: 1024
+      },
+      key,
+      256
+    );
+
+    return Array.from(new Uint8Array(bits))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
+  /**
+   * Get download URLs for file segments
+   *
+   * IMPORTANT:
+   * - Segment numbering starts at 1 (segment 0 is invalid)
+   * - endSegment parameter is REQUIRED for all requests
+   */
+  async getDownloadUrls(
+    packageId: string,
+    fileId: string,
+    keyCode: string,
+    packageCode: string,
+    startSegment: number = 1, // SendSafely segments start at 1
+    endSegment?: number
+  ): Promise<Array<{ part: number; url: string }>> {
+    try {
+      const checksum = await this.generateChecksum(keyCode, packageCode);
+
+      // Always include both startSegment and endSegment
+      const body: any = { checksum, startSegment };
+      if (endSegment !== undefined) {
+        body.endSegment = endSegment;
+      } else {
+        // Default to requesting just a few segments for testing
+        body.endSegment = startSegment + 24; // SendSafely typically returns up to 25 segments per request
+      }
+
+      const response = await this.makeRequest<any>(
+        'POST',
+        `/api/v2.0/package/${encodeURIComponent(packageId)}/file/${encodeURIComponent(fileId)}/download-urls/`,
+        body
+      );
+
+      // Handle different response formats
+      if (response.downloadUrls) {
+        return response.downloadUrls;
+      } else if (response.data?.downloadUrls) {
+        return response.data.downloadUrls;
+      } else {
+        throw new Error(`Unexpected download URLs response format: ${JSON.stringify(response)}`);
+      }
+    } catch (error) {
+      console.error('Failed to get download URLs:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get package information and file listing using packageCode and keyCode
+   */
+  async getPackageInfo(packageCode: string): Promise<PackageInfo> {
+    console.log(`Attempting to get package info for packageCode: ${packageCode}`);
+
+    try {
+      // Add 1 second delay to prevent modal blinking
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Try using packageCode directly as packageId
+      const response = await this.makeRequest<SendSafelyResponse<PackageInfo>>(
+        'GET',
+        `/api/v2.0/package/${packageCode}`
+      );
+
+      console.log('Package response:', response);
+
+      // Check if the response has the package data directly or in a data field
+      if ((response as any).packageId && (response as any).files) {
+        // Package info is directly in the response
+        return response as any as PackageInfo;
+      } else if (response.data) {
+        // Package info is in the data field
+        return response.data;
+      } else {
+        // Show what we actually got from the API
+        throw new Error(`Unexpected API response format: ${JSON.stringify(response)}`);
+      }
+    } catch (error) {
+      console.error('Package info request failed:', error);
+      throw error;
+    }
+  }
+}
+
+/**
+ * Parse SendSafely URL to extract package/recipient info
+ */
+export function parseSendSafelyUrl(url: string): { packageCode: string; keyCode: string; baseUrl: string } | null {
+  try {
+    // Return null for empty or invalid URLs
+    if (!url || typeof url !== 'string' || !url.trim()) {
+      return null;
+    }
+
+    const urlObj = new URL(url.trim());
+    const searchParams = urlObj.searchParams;
+
+    // Get keycode from hash fragment (after #keycode=) - case insensitive
+    const hash = urlObj.hash;
+    const keyCodeMatch = hash.match(/#keycode=([^&]+)/i); // Must start with # for fragment, case insensitive
+    const keyCode = keyCodeMatch ? keyCodeMatch[1] : null;
+    if (!keyCode) {
+      return null;
+    }
+
+    const baseUrl = `${urlObj.protocol}//${urlObj.host}`;
+
+    // Get packageCode from query params
+    const packageCode = searchParams.get('packageCode');
+    if (packageCode) {
+      return { packageCode, keyCode, baseUrl };
+    }
+    return null;
+  } catch (error) {
+    console.log('Error parsing SendSafely URL:', error);
+    return null;
   }
 }
 

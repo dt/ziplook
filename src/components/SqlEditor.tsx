@@ -9,7 +9,7 @@ import {
   setupDuckDBLanguage,
   refreshSchemaCache,
 } from "../services/monacoConfig";
-import { formatValue } from "../crdb";
+import { formatValue } from "../crdb/index";
 
 interface SqlEditorProps {
   tab: ViewerTab & { kind: "sql" };
@@ -308,7 +308,7 @@ function SqlEditor({ tab }: SqlEditorProps) {
             },
             matchBrackets: "always",
             autoClosingBrackets: "always",
-            autoClosingQuotes: "always",
+            autoClosingQuotes: "never",
             formatOnType: true,
             formatOnPaste: true,
             trimAutoWhitespace: true,

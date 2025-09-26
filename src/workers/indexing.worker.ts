@@ -211,26 +211,24 @@ async function startIndexing(message: any) {
   const { id, filePaths } = message;
 
   try {
-    let what = "";
+    let what = "all .log files";
     // If no filePaths provided, get all registered files and filter for log files
     let actualLogFiles = Array.from(registeredFiles.values());
     if (!filePaths) {
-      let incomplete = false;
       actualLogFiles = actualLogFiles.filter(file => {
+        if (registeredFiles.size > 500) {
+          what = "stderr";
+          return file.path.includes("stderr") ;
+        }
         if (!file.path.endsWith(".log")) {
           return false;
         }
         if (file.size > 20 * 1024 * 1024) {
-          incomplete = true;
+          what = "<20MB .log files";
           return false;
         }
         return true;
       });
-      if (incomplete) {
-        what = "<20MB .log files";
-      } else if (actualLogFiles.length > 0) {
-        what = "all .log files";
-      }
     } else {
       // Get file info from registered files
       actualLogFiles = filePaths.map((path: string) => {

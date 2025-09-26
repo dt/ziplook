@@ -1,6 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { resolve } from "path";
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -8,13 +12,6 @@ export default defineConfig({
   base: process.env.NODE_ENV === "production" ? "./" : "/",
   server: {
     hmr: false, // Disable hot module replacement but keep file watching for builds
-  },
-  worker: {
-    format: "es",
-  },
-  define: {
-    // Prevent Node.js globals from being included in browser build
-    global: "globalThis",
   },
   resolve: {
     alias: {
@@ -24,7 +21,27 @@ export default defineConfig({
       // Purpose: Allows protobufjs to conditionally load Node.js modules (like 'fs') without breaking bundlers
       // Browser safety: require() doesn't exist in browsers, so this always returns null anyway
       "@protobufjs/inquire": resolve(__dirname, "src/utils/inquire-noop.js"),
+      // exact-match so only the bare 'openpgp' specifier maps to the ESM file
+      'openpgp$': resolve(__dirname, 'node_modules/openpgp/dist/openpgp.min.mjs'),
     },
+  },
+  optimizeDeps: {
+    // ⚠️ keep React optimizable; only exclude openpgp
+    exclude: ['openpgp'],
+  },
+  worker: {
+    format: 'es',
+    rollupOptions: {
+      // avoids runtime chunk fetches from the worker in build
+      output: { inlineDynamicImports: true },
+    },
+  },
+  ssr: {
+    noExternal: ["openpgp"]
+  },
+  define: {
+    // Prevent Node.js globals from being included in browser build
+    global: "globalThis",
   },
   build: {
     minify: process.env.NODE_ENV === "production",

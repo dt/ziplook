@@ -29,14 +29,10 @@ export class ProtoDecoder {
     if (this.loaded) return;
 
     try {
-      // Browser environment - use fetch
-      const response = await fetch("./crdb.json");
-      if (!response.ok) {
-        throw new Error("CRDB JSON descriptor file not found");
-      }
-
-      const rootJson = await response.json();
-      this.root = protobuf.Root.fromJSON(rootJson);
+      // Import the JSON directly - no more fetching from public directory
+      const crdbDescriptors = await import("../crdb.json");
+      // Cast to any to handle TypeScript type incompatibility
+      this.root = protobuf.Root.fromJSON(crdbDescriptors.default as any);
       this.loaded = true;
     } catch (error) {
       console.error("Failed to load CRDB descriptors:", error);

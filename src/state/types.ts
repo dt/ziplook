@@ -134,6 +134,8 @@ export interface AppState {
   tables: Record<string, TableMeta>;
   tablesLoading?: boolean; // Global state for table loading
   stackData?: Record<string, string>; // Stack trace files: path -> content
+  stackFiles?: Array<{path: string; size: number; compressedSize: number}>; // Available stack files metadata
+  stackgazerReady?: boolean; // Whether all stack files have been loaded and sent to iframe
   searchIndex?: SearchIndex; // Log search index state
   workerManager?: any; // WorkerManager instance
   workersReady?: boolean; // Whether workers are initialized and ready

@@ -18,5 +18,10 @@ function inquire(moduleName) {
   return null;
 }
 
-// Export exactly like the original @protobufjs/inquire using ES module syntax
+// Export in both CommonJS and ES module formats for maximum compatibility
+// CommonJS export for protobufjs: util.inquire = require("@protobufjs/inquire")
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = inquire;
+}
+// ES module export for Vite/modern bundlers
 export default inquire;

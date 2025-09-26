@@ -721,7 +721,7 @@ function SearchView() {
                 color: "var(--text-success)",
               }}
             >
-              Search ready - {indexed.length} files indexed{state.indexingRuleDescription ? ` ${state.indexingRuleDescription}` : ""}
+              Search ready - {indexed.length} files{state.indexingRuleDescription ? ` (${state.indexingRuleDescription})` : ""} indexed
             </div>
           );
         }
@@ -778,7 +778,7 @@ function SearchView() {
               color: "var(--text-success)",
             }}
           >
-            Search ready - {indexed.length} files indexed{state.indexingRuleDescription ? ` ${state.indexingRuleDescription}` : ""}
+            Search ready - {indexed.length} files{state.indexingRuleDescription ? ` (${state.indexingRuleDescription})` : ""} indexed
           </div>
         );
     }
@@ -1129,7 +1129,7 @@ function SearchView() {
           <>
             <div style={{ flexShrink: 0 }}>
               {renderSectionHeader(
-                `INDEXED ${indexed.length}/${realFileStatuses.length}${state.indexingRuleDescription ? ` ${state.indexingRuleDescription}` : ""}`,
+                `Indexed ${indexed.length} of ${realFileStatuses.length} files${state.indexingRuleDescription ? ` (${state.indexingRuleDescription})` : ""}`,
                 indexingExpanded,
                 () => toggleSection("indexing"),
               )}
@@ -1207,7 +1207,7 @@ function SearchView() {
       >
         {!indexingExpanded &&
           renderSectionHeader(
-            `INDEXED ${indexed.length}/${realFileStatuses.length}${state.indexingRuleDescription ? ` ${state.indexingRuleDescription}` : ""}`,
+            `Indexed ${indexed.length} of ${realFileStatuses.length} files${state.indexingRuleDescription ? ` (${state.indexingRuleDescription})` : ""}`,
             indexingExpanded,
             () => toggleSection("indexing"),
           )}

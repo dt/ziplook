@@ -8,15 +8,19 @@ function TabBar() {
   const editInputRef = useRef<HTMLInputElement>(null);
 
   const handleTabClick = (tabId: string) => {
-    if (state.activeTabId === tabId && !editingTabId) {
-      // Click on active tab - start editing
+    if (!editingTabId) {
+      dispatch({ type: "SET_ACTIVE_TAB", id: tabId });
+    }
+  };
+
+  const handleTabDoubleClick = (tabId: string) => {
+    if (!editingTabId) {
+      // Double-click to start editing
       const tab = state.openTabs.find((t) => t.id === tabId);
       if (tab) {
         setEditingTabId(tabId);
         setEditingTitle(tab.title);
       }
-    } else if (!editingTabId) {
-      dispatch({ type: "SET_ACTIVE_TAB", id: tabId });
     }
   };
 
@@ -60,6 +64,7 @@ function TabBar() {
           key={tab.id}
           className={`tab ${state.activeTabId === tab.id ? "active" : ""}`}
           onClick={() => handleTabClick(tab.id)}
+          onDoubleClick={() => handleTabDoubleClick(tab.id)}
         >
           {editingTabId === tab.id ? (
             <input
@@ -73,6 +78,9 @@ function TabBar() {
             />
           ) : (
             <span className="tab-title" title={tab.title}>
+              <span className="tab-icon">
+                {tab.kind === "file" ? "📄" : tab.kind === "sql" ? "📖" : "⚠️"}
+              </span>
               {tab.title}
             </span>
           )}

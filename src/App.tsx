@@ -7,7 +7,6 @@ import "./styles/navigation.css";
 import IconRail from "./components/IconRail";
 import Sidebar from "./components/Sidebar";
 import MainPanel from "./components/MainPanel";
-import StackgazerView from "./components/StackgazerView";
 import { MemoryMonitor } from "./components/MemoryMonitor";
 import { AppProvider, useApp } from "./state/AppContext";
 import { NavigationProvider } from "./components/NavigationProvider";
@@ -233,17 +232,24 @@ function AppContent() {
     { key: "9", cmd: true, handler: () => handleTabSwitch(9) },
   ]);
 
+  // Check if stackgazer iframe should be full-screen
+  const isStackgazerFullScreen = activeView === "stackgazer" && state.zip && state.stackgazerReady;
+
   return (
     <>
       <div
-        className={`app-container ${!sidebarVisible || activeView === "stackgazer" ? "sidebar-collapsed" : ""}`}
+        className={`app-container ${
+          !sidebarVisible || isStackgazerFullScreen
+            ? "sidebar-collapsed"
+            : ""
+        }`}
       >
         <IconRail
           activeView={activeView}
           onViewChange={handleViewChange}
           onMemoryMonitorOpen={() => setMemoryMonitorOpen(true)}
         />
-        {activeView !== "stackgazer" && (
+        {!isStackgazerFullScreen && (
           <>
             <Sidebar
               activeView={activeView}
@@ -256,49 +262,20 @@ function AppContent() {
                 onMouseDown={handleMouseDown}
               />
             )}
-          </>
-        )}
-        {activeView === "stackgazer" ? (
-          state.zip && state.stackData ? (
-            <StackgazerView />
-          ) : (
             <MainPanel />
-          )
-        ) : (
-          <MainPanel />
+          </>
         )}
         {/* Preloaded iframe that gets repositioned when stackgazer is active */}
         <div
           id="stackgazer-iframe-container"
           style={{
-            position:
-              activeView === "stackgazer" && state.zip && state.stackData
-                ? "static"
-                : "absolute",
-            left:
-              activeView === "stackgazer" && state.zip && state.stackData
-                ? "auto"
-                : "-9999px",
-            top:
-              activeView === "stackgazer" && state.zip && state.stackData
-                ? "auto"
-                : "-9999px",
-            width:
-              activeView === "stackgazer" && state.zip && state.stackData
-                ? "100%"
-                : "1px",
-            height:
-              activeView === "stackgazer" && state.zip && state.stackData
-                ? "100%"
-                : "1px",
-            flex:
-              activeView === "stackgazer" && state.zip && state.stackData
-                ? 1
-                : "none",
-            display:
-              activeView === "stackgazer" && state.zip && state.stackData
-                ? "flex"
-                : "block",
+            position: isStackgazerFullScreen ? "static" : "absolute",
+            left: isStackgazerFullScreen ? "auto" : "-9999px",
+            top: isStackgazerFullScreen ? "auto" : "-9999px",
+            width: isStackgazerFullScreen ? "100%" : "1px",
+            height: isStackgazerFullScreen ? "100%" : "1px",
+            flex: isStackgazerFullScreen ? 1 : "none",
+            display: isStackgazerFullScreen ? "flex" : "block",
             flexDirection: "column",
             overflow: "hidden",
           }}

@@ -45,15 +45,65 @@ export function generateQueryTitle(
     return sourceTable;
   }
 
-  // Extract tables and create title
-  const tables = extractTablesFromQuery(query);
+  // New heuristic: split on first 'FROM'
+  const normalizedQuery = query.trim();
+  const fromMatch = normalizedQuery.match(/\bfrom\b/i);
 
-  if (tables.length === 0) {
-    return "Query";
+  if (!fromMatch) {
+    // No FROM clause, just clean up the query
+    let title = normalizedQuery.replace(/^\s*select\s+/i, '');
+    return title.length > 20 ? title.substring(0, 20) + '...' : title;
   }
 
-  const tableList = tables.slice(0, 3).join(", ");
-  const suffix = tables.length > 3 ? "..." : "";
+  const fromIndex = fromMatch.index!;
+  let selectPart = normalizedQuery.substring(0, fromIndex).trim();
+  let fromPart = normalizedQuery.substring(fromIndex + fromMatch[0].length).trim();
 
-  return `SELECT ... ${tableList}${suffix}`;
+  // Process SELECT part
+  selectPart = selectPart.replace(/^\s*select\s+/i, '');
+  if (selectPart.length > 20) {
+    selectPart = selectPart.substring(0, 20) + '...';
+  }
+
+  // Process FROM part
+  if (fromPart) {
+    // Split FROM part on WHERE
+    const whereMatch = fromPart.match(/\bwhere\b/i);
+    let tablesPart = fromPart;
+    let wherePart = '';
+
+    if (whereMatch) {
+      const whereIndex = whereMatch.index!;
+      tablesPart = fromPart.substring(0, whereIndex).trim();
+      wherePart = fromPart.substring(whereIndex + whereMatch[0].length).trim();
+    }
+
+    // Extract first table name from tables part
+    const tableMatch = tablesPart.match(/^\s*"?([^"\s,;()]+)"?/);
+    if (tableMatch) {
+      let tableName = tableMatch[1];
+
+      // Remove schema prefixes
+      tableName = tableName.replace(/^(system\.|crdb_internal\.)/i, '');
+
+      if (tableName.length > 20) {
+        tableName = tableName.substring(0, 20) + '...';
+      }
+
+      let result = `${selectPart} FROM ${tableName}`;
+
+      // Add WHERE part if present
+      if (wherePart) {
+        if (wherePart.length > 15) {
+          wherePart = wherePart.substring(0, 15) + '...';
+        }
+        result += ` WHERE ${wherePart}`;
+      }
+
+      return result;
+    }
+  }
+
+  // Fallback to just the SELECT part if FROM parsing fails
+  return selectPart || 'Query';
 }

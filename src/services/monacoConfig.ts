@@ -699,8 +699,8 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
       { open: "{", close: "}" },
       { open: "[", close: "]" },
       { open: "(", close: ")" },
-      { open: '"', close: '"' },
-      { open: "'", close: "'" },
+      { open: '"', close: '"', notIn: ["string"] },
+      { open: "'", close: "'", notIn: ["string"] },
     ],
     surroundingPairs: [
       { open: "{", close: "}" },

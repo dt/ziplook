@@ -227,6 +227,11 @@ body {
   margin-right: 8px;
 }
 
+.tab-icon {
+  margin-right: 6px;
+  font-size: 12px;
+}
+
 .tab-close {
   width: 16px;
   height: 16px;

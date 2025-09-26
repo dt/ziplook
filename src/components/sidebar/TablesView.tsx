@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useApp } from "../../state/AppContext";
 import { useKeyboardNavigation } from "../../hooks/useKeyboardNavigation";
 
@@ -43,12 +43,13 @@ function TablesView() {
   const [loadingTables, setLoadingTables] = useState<Set<string>>(new Set());
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
     () => {
-      // Default collapse all empty table sections
+      // Default collapse all empty table sections and node headers
       const initial = new Set<string>();
       initial.add("cluster-empty"); // Collapse cluster empty tables by default
-      // Add all possible node empty sections (nodes 1-10 should cover most cases)
+      // Add all possible node sections (nodes 1-10 should cover most cases)
       for (let i = 1; i <= 10; i++) {
-        initial.add(`node-${i}-empty`);
+        initial.add(`node-${i}`); // Collapse node headers by default
+        initial.add(`node-${i}-empty`); // Collapse node empty sections by default
       }
       return initial;
     },
@@ -191,35 +192,44 @@ function TablesView() {
     }));
 
   // Auto-expand sections when filtering
-  // Temporarily disabled to fix infinite loop caused by circular dependency
-  // useEffect(() => {
-  //   if (filter) {
-  //     setCollapsedSections(prev => {
-  //       const next = new Set(prev);
+  useEffect(() => {
+    if (!filter) return; // Don't expand when no filter
 
-  //       // Expand custom queries section if there are matches
-  //       if (customQueryTabs.length > 0) {
-  //         next.delete('custom-queries');
-  //       }
+    setCollapsedSections(prev => {
+      const next = new Set(prev);
+      let hasChanges = false;
 
-  //       // Expand cluster tables section if there are matches
-  //       if (clusterTables.length > 0) {
-  //         next.delete('cluster-tables');
-  //       }
+      // Expand custom queries section if there are matches
+      if (customQueryTabs.length > 0 && next.has('custom-queries')) {
+        next.delete('custom-queries');
+        hasChanges = true;
+      }
 
-  //       // Expand node tables section and individual nodes if there are matches
-  //       if (sortedNodeGroups.length > 0) {
-  //         next.delete('node-tables');
-  //         // Also expand individual node sections that have matches
-  //         sortedNodeGroups.forEach(({ nodeId }) => {
-  //           next.delete(`node-${nodeId}`);
-  //         });
-  //       }
+      // Expand cluster tables section if there are matches
+      if (clusterTables.length > 0 && next.has('cluster-tables')) {
+        next.delete('cluster-tables');
+        hasChanges = true;
+      }
 
-  //       return next;
-  //     });
-  //   }
-  // }, [filter, customQueryTabs.length, clusterTables.length, sortedNodeGroups]);
+      // Expand node tables section and individual nodes if there are matches
+      if (sortedNodeGroups.length > 0) {
+        if (next.has('node-tables')) {
+          next.delete('node-tables');
+          hasChanges = true;
+        }
+        // Also expand individual node sections that have matches
+        sortedNodeGroups.forEach(({ nodeId }) => {
+          if (next.has(`node-${nodeId}`)) {
+            next.delete(`node-${nodeId}`);
+            hasChanges = true;
+          }
+        });
+      }
+
+      // Only update state if there are actual changes
+      return hasChanges ? next : prev;
+    });
+  }, [filter, customQueryTabs.length, clusterTables.length, sortedNodeGroups.length]);
 
   // Update navigation items when filtered results change
   // Temporarily disabled to fix infinite loop

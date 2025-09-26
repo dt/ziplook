@@ -27,6 +27,8 @@ export type AppAction =
   | { type: "SET_TABLES_LOADING"; loading: boolean }
   | { type: "SET_STACK_DATA"; stackData: Record<string, string> }
   | { type: "ADD_STACK_FILE"; filePath: string; content: string }
+  | { type: "SET_STACK_FILES"; stackFiles: Array<{path: string; size: number; compressedSize: number}> }
+  | { type: "SET_STACKGAZER_READY"; ready: boolean }
   | { type: "SET_WORKER_MANAGER"; workerManager: any }
   | { type: "SET_WORKERS_READY"; ready: boolean }
   | {
@@ -290,6 +292,20 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         stackData: newStackData,
+      };
+    }
+
+    case "SET_STACK_FILES": {
+      return {
+        ...state,
+        stackFiles: action.stackFiles,
+      };
+    }
+
+    case "SET_STACKGAZER_READY": {
+      return {
+        ...state,
+        stackgazerReady: action.ready,
       };
     }
 

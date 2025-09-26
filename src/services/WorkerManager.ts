@@ -46,23 +46,36 @@ interface WorkerManagerOptions {
 }
 
 export class WorkerManager {
-  private controllerWorker: Worker;
+  private controllerWorker: Worker | null = null;
   private pendingRequests = new Map<string, { resolve: any; reject: any }>();
   private requestCounter = 0;
   private options: WorkerManagerOptions;
+  private workerInitialized = false;
 
   constructor(options: WorkerManagerOptions = {}) {
     this.options = options;
+    this.initializeWorker();
+  }
 
-    this.controllerWorker = new Worker(
-      new URL("../workers/controller.worker.ts", import.meta.url),
-      { type: "module" }
-    );
+  private async initializeWorker() {
+    try {
+      const ControllerWorker = (await import('../workers/controller.worker.ts?worker')).default;
+      this.controllerWorker = new ControllerWorker();
+      this.controllerWorker.onmessage = this.handleMessage.bind(this);
+      this.controllerWorker.onerror = (error) => {
+        console.error("❌ Controller worker error:", error);
+      };
+      this.workerInitialized = true;
+    } catch (error) {
+      console.error("❌ Failed to initialize controller worker:", error);
+    }
+  }
 
-    this.controllerWorker.onmessage = this.handleMessage.bind(this);
-    this.controllerWorker.onerror = (error) => {
-      console.error("❌ Controller worker error:", error);
-    };
+  private async waitForWorker(): Promise<Worker> {
+    while (!this.workerInitialized || !this.controllerWorker) {
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    return this.controllerWorker;
   }
 
   updateCallbacks(options: WorkerManagerOptions) {
@@ -77,9 +90,28 @@ export class WorkerManager {
     return [];
   }
 
+  async loadZipDataFromSendSafely(sendSafelyConfig: {
+    host: string;
+    apiKey: string;
+    apiSecret: string;
+    keyCode: string;
+    fileName: string;
+    packageInfo: any;
+  }): Promise<ZipEntryMeta[]> {
+    // Use the new loadZipFromSendSafely command that runs the full pipeline
+    await this.sendMessage({ type: "loadZipFromSendSafely", sendSafelyConfig });
+    // Return empty array - main thread will get notifications with actual entries
+    return [];
+  }
+
   async initializeWorkers(): Promise<void> {
     // Init is handled by controller directly, no 'to' field needed
     return this.sendMessage({ type: "init" });
+  }
+
+  async loadStackFiles(): Promise<void> {
+    // Trigger loading of stack files on demand
+    return this.sendMessage({ type: "loadStackFiles" });
   }
 
   async initializeDatabase(): Promise<void> {
@@ -141,6 +173,8 @@ export class WorkerManager {
     path: string,
     onChunk: (chunk: string, progress: { loaded: number; total: number; done: boolean }) => void,
   ): Promise<void> {
+    const worker = await this.waitForWorker();
+
     // For streaming, we need to handle chunks directly
     return new Promise((resolve, reject) => {
       const id = `req_${++this.requestCounter}`;
@@ -150,7 +184,7 @@ export class WorkerManager {
         onChunk
       } as any);
 
-      this.controllerWorker.postMessage({
+      worker.postMessage({
         type: "readFileChunked", // Use readFileChunked for streaming
         to: "zipWorker",
         path,
@@ -164,11 +198,15 @@ export class WorkerManager {
   }
 
   destroy() {
-    this.controllerWorker.terminate();
+    if (this.controllerWorker) {
+      this.controllerWorker.terminate();
+    }
     this.pendingRequests.clear();
   }
 
   private async sendMessage(message: any): Promise<any> {
+    const worker = await this.waitForWorker();
+
     return new Promise((resolve, reject) => {
       const id = `req_${++this.requestCounter}`;
       this.pendingRequests.set(id, { resolve, reject });
@@ -182,9 +220,9 @@ export class WorkerManager {
       }
 
       if (transferable.length > 0) {
-        this.controllerWorker.postMessage(messageWithId, transferable);
+        worker.postMessage(messageWithId, transferable);
       } else {
-        this.controllerWorker.postMessage(messageWithId);
+        worker.postMessage(messageWithId);
       }
     });
   }
