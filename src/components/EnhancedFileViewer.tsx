@@ -459,6 +459,27 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
         throw new Error("WorkerManager not available");
       }
 
+      // Check if file is too large for full loading (>500MB)
+      const maxFileSize = 500 * 1024 * 1024; // 500MB
+      if (fileEntry.size > maxFileSize) {
+        // Offer to load first portion instead of failing completely
+        const previewSize = 100 * 1024 * 1024; // 100MB
+        const confirmed = window.confirm(
+          `File is ${(fileEntry.size / (1024 * 1024 * 1024)).toFixed(2)}GB and exceeds viewer size limit (500MB).\n\nWould you like to view the first ${previewSize / (1024 * 1024)}MB instead?`
+        );
+
+        if (!confirmed) {
+          setError(`File viewing cancelled. File is too large (${(fileEntry.size / (1024 * 1024 * 1024)).toFixed(2)}GB) to display completely.`);
+          setLoading(false);
+          setIsStreaming(false);
+          return;
+        }
+
+        // User wants to see preview - we'll limit the streaming
+        // Set a flag to stop after preview size
+        setContent(`Loading first ${previewSize / (1024 * 1024)}MB of ${(fileEntry.size / (1024 * 1024 * 1024)).toFixed(2)}GB file...\n\n`);
+      }
+
       // First check by extension
       const extensionResult = detectBinary(fileEntry.path);
       if (extensionResult.isBinary) {
@@ -475,6 +496,9 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
       const startTime = Date.now();
       let lastUpdateTime = startTime;
       let hasSetInitialContent = false;
+      const isPreviewMode = fileEntry.size > maxFileSize;
+      const previewSize = 100 * 1024 * 1024; // 100MB
+      let previewLimitReached = false;
 
       await state.workerManager.readFileStream(
         fileEntry.path,
@@ -482,6 +506,19 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
           chunk: string,
           progressInfo: { loaded: number; total: number; done: boolean },
         ) => {
+          // In preview mode, stop accumulating after preview size limit
+          if (isPreviewMode && accumulatedContent.length >= previewSize && !previewLimitReached) {
+            previewLimitReached = true;
+            accumulatedContent += "\n\n--- Preview limit reached (100MB) ---\nShowing first portion of file only.";
+            state.workerManager?.cancelStream(); // Stop the stream
+            return;
+          }
+
+          // Skip adding more content if we've reached the preview limit
+          if (previewLimitReached) {
+            return;
+          }
+
           accumulatedContent += chunk;
 
           // Check content for binary on first chunk (if extension didn't already detect it)
