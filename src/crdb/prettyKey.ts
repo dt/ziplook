@@ -360,7 +360,7 @@ function decodeFloatAscending(buf: Uint8Array): [Uint8Array, number, Error?] {
     case floatNaN:
     case floatNaNDesc:
       return [buf.slice(1), NaN, undefined];
-    case floatNeg:
+    case floatNeg: {
       const [b1, u1, err1] = decodeUint64Ascending(buf.slice(1));
       if (err1) return [b1, 0, err1];
       const inverted = ~u1;
@@ -369,9 +369,10 @@ function decodeFloatAscending(buf: Uint8Array): [Uint8Array, number, Error?] {
       view.setBigUint64(0, BigInt(inverted), false); // big-endian
       const floatVal1 = view.getFloat64(0, false);
       return [b1, floatVal1, undefined];
+    }
     case floatZero:
       return [buf.slice(1), 0, undefined];
-    case floatPos:
+    case floatPos: {
       const [b2, u2, err2] = decodeUint64Ascending(buf.slice(1));
       if (err2) return [b2, 0, err2];
       // Convert uint64 to float64 bits
@@ -379,6 +380,7 @@ function decodeFloatAscending(buf: Uint8Array): [Uint8Array, number, Error?] {
       view2.setBigUint64(0, BigInt(u2), false); // big-endian
       const floatVal2 = view2.getFloat64(0, false);
       return [b2, floatVal2, undefined];
+    }
     default:
       return [
         new Uint8Array(),
@@ -445,18 +447,18 @@ function decodeDurationAscending(
     ];
   }
 
-  let b = buf.slice(1);
+  const b = buf.slice(1);
 
   // Decode sortNanos
-  let [b1, sortNanos, err1] = decodeVarintAscending(b);
+  const [b1, sortNanos, err1] = decodeVarintAscending(b);
   if (err1) return [b1, "", err1];
 
   // Decode months
-  let [b2, months, err2] = decodeVarintAscending(b1);
+  const [b2, months, err2] = decodeVarintAscending(b1);
   if (err2) return [b2, "", err2];
 
   // Decode days
-  let [b3, days, err3] = decodeVarintAscending(b2);
+  const [b3, days, err3] = decodeVarintAscending(b2);
   if (err3) return [b3, "", err3];
 
   // Basic duration formatting - convert nanos to a readable format
@@ -483,18 +485,18 @@ function decodeDurationDescending(
     return [new Uint8Array(), "", new Error("did not find marker")];
   }
 
-  let b = buf.slice(1);
+  const b = buf.slice(1);
 
   // Decode sortNanos (descending)
-  let [b1, sortNanos, err1] = decodeVarintDescending(b);
+  const [b1, sortNanos, err1] = decodeVarintDescending(b);
   if (err1) return [b1, "", err1];
 
   // Decode months (descending)
-  let [b2, months, err2] = decodeVarintDescending(b1);
+  const [b2, months, err2] = decodeVarintDescending(b1);
   if (err2) return [b2, "", err2];
 
   // Decode days (descending)
-  let [b3, days, err3] = decodeVarintDescending(b2);
+  const [b3, days, err3] = decodeVarintDescending(b2);
   if (err3) return [b3, "", err3];
 
   // Basic duration formatting (same as ascending after decoding)
@@ -556,7 +558,7 @@ function decodeBitArrayAscending(
   // Try to consume varints until we hit a terminator or run out of data
   try {
     while (b.length > 0) {
-      const [remaining, _, err] = decodeUvarintAscending(b);
+      const [remaining, , err] = decodeUvarintAscending(b);
       if (err) break;
       b = remaining;
 
@@ -586,7 +588,7 @@ function decodeBitArrayDescending(
 
   try {
     while (b.length > 0) {
-      const [remaining, _, err] = decodeUvarintDescending
+      const [remaining, , err] = decodeUvarintDescending
         ? decodeUvarintDescending(b)
         : decodeUvarintAscending(b);
       if (err) break;
@@ -661,7 +663,7 @@ function prettyPrintFirstValue(
       return [b.slice(1), "Arr", undefined];
 
     case Type.ArrayKeyAsc:
-    case Type.ArrayKeyDesc:
+    case Type.ArrayKeyDesc: {
       const encDir =
         typ === Type.ArrayKeyDesc ? Direction.Descending : Direction.Ascending;
       const [buf, arrayErr] = validateAndConsumeArrayKeyMarker(b, encDir);
@@ -712,36 +714,40 @@ function prettyPrintFirstValue(
       }
       result += "]";
       return [currentBuf, result, undefined];
+    }
 
     case Type.NotNull:
       return [b.slice(1), "!NULL", undefined];
 
-    case Type.Int:
-      let [remaining, intVal, err] =
+    case Type.Int: {
+      const [remaining, intVal, err] =
         dir === Direction.Descending
           ? decodeVarintDescending(b)
           : decodeVarintAscending(b);
       if (err) return [b, "", err];
       return [remaining, intVal.toString(), undefined];
+    }
 
-    case Type.Float:
-      let [floatRemaining, f, floatErr] =
+    case Type.Float: {
+      const [floatRemaining, f, floatErr] =
         dir === Direction.Descending
           ? decodeFloatDescending(b)
           : decodeFloatAscending(b);
       if (floatErr) return [b, "", floatErr];
       // Format float using 'g' format like Go's strconv.FormatFloat(f, 'g', -1, 64)
       return [floatRemaining, f.toString(), undefined];
+    }
 
-    case Type.Decimal:
-      let [decimalRemaining, decimalStr, decimalErr] =
+    case Type.Decimal: {
+      const [decimalRemaining, decimalStr, decimalErr] =
         dir === Direction.Descending
           ? decodeDecimalDescending(b)
           : decodeDecimalAscending(b);
       if (decimalErr) return [b, "", decimalErr];
       return [decimalRemaining, decimalStr, undefined];
+    }
 
-    case Type.Bytes:
+    case Type.Bytes: {
       if (dir === Direction.Descending) {
         return [
           b,
@@ -749,11 +755,12 @@ function prettyPrintFirstValue(
           new Error("descending bytes column dir but ascending bytes encoding"),
         ];
       }
-      let [bytesRemaining, str, bytesErr] = decodeUnsafeStringAscending(b);
+      const [bytesRemaining, str, bytesErr] = decodeUnsafeStringAscending(b);
       if (bytesErr) return [b, "", bytesErr];
       return [bytesRemaining, JSON.stringify(str), undefined];
+    }
 
-    case Type.BytesDesc:
+    case Type.BytesDesc: {
       if (dir === Direction.Ascending) {
         return [
           b,
@@ -761,12 +768,13 @@ function prettyPrintFirstValue(
           new Error("ascending bytes column dir but descending bytes encoding"),
         ];
       }
-      let [bytesDescRemaining, descStr, bytesDescErr] =
+      const [bytesDescRemaining, descStr, bytesDescErr] =
         decodeUnsafeStringDescending(b);
       if (bytesDescErr) return [b, "", bytesDescErr];
       return [bytesDescRemaining, JSON.stringify(descStr), undefined];
+    }
 
-    case Type.Time:
+    case Type.Time: {
       // Decode time: skip marker, then decode unix seconds and nanoseconds
       const timeB = b.slice(1); // skip time marker
       const [remaining1, sec, err1] =
@@ -788,6 +796,7 @@ function prettyPrintFirstValue(
       // Create JavaScript Date from unix timestamp
       const date = new Date(finalSec * 1000 + finalNsec / 1000000);
       return [remaining2, date.toISOString(), undefined];
+    }
 
     case Type.TimeTZ:
       // TODO: Implement DecodeTimeTZAscending/DecodeTimeTZDescending - currently stubbed
@@ -797,15 +806,16 @@ function prettyPrintFirstValue(
         return [b.slice(1), `<timetz:${b[0].toString(16)}>`, undefined];
       }
 
-    case Type.Duration:
-      let [durationRemaining, durationStr, durationErr] =
+    case Type.Duration: {
+      const [durationRemaining, durationStr, durationErr] =
         dir === Direction.Descending
           ? decodeDurationDescending(b)
           : decodeDurationAscending(b);
       if (durationErr) return [b, "", durationErr];
       return [durationRemaining, durationStr, undefined];
+    }
 
-    case Type.BitArray:
+    case Type.BitArray: {
       if (dir === Direction.Descending) {
         return [
           b,
@@ -815,12 +825,13 @@ function prettyPrintFirstValue(
           ),
         ];
       }
-      let [bitArrayRemaining, bitArrayStr, bitArrayErr] =
+      const [bitArrayRemaining, bitArrayStr, bitArrayErr] =
         decodeBitArrayAscending(b);
       if (bitArrayErr) return [b, "", bitArrayErr];
       return [bitArrayRemaining, bitArrayStr, undefined];
+    }
 
-    case Type.BitArrayDesc:
+    case Type.BitArrayDesc: {
       if (dir === Direction.Ascending) {
         return [
           b,
@@ -830,10 +841,11 @@ function prettyPrintFirstValue(
           ),
         ];
       }
-      let [bitArrayDescRemaining, bitArrayDescStr, bitArrayDescErr] =
+      const [bitArrayDescRemaining, bitArrayDescStr, bitArrayDescErr] =
         decodeBitArrayDescending(b);
       if (bitArrayDescErr) return [b, "", bitArrayDescErr];
       return [bitArrayDescRemaining, bitArrayDescStr, undefined];
+    }
 
     case Type.LTree:
       if (dir === Direction.Descending) {
@@ -907,11 +919,10 @@ function prettyPrintFirstValue(
 function prettyPrintValueImpl(
   valDirs: DirectionValue[],
   b: Uint8Array,
-  _sep: string,
 ): [string[], boolean] {
   const result: string[] = [];
   let allDecoded = true;
-  let currentDirs = [...valDirs];
+  const currentDirs = [...valDirs];
 
   while (b.length > 0) {
     const valDir =
@@ -945,7 +956,7 @@ function prettyPrintValue(
   b: Uint8Array,
   sep: string,
 ): string {
-  const [parts, allDecoded] = prettyPrintValueImpl(valDirs, b, sep);
+  const [parts, allDecoded] = prettyPrintValueImpl(valDirs, b);
 
   if (allDecoded) {
     return parts.join(sep);
@@ -962,7 +973,6 @@ function prettyPrintValue(
       const [retryParts, retryAllDecoded] = prettyPrintValueImpl(
         valDirs,
         tryBytes,
-        sep,
       );
       if (retryAllDecoded) {
         return retryParts.join(sep) + sep + "PrefixEnd";
@@ -1214,7 +1224,7 @@ function decodeShortKey(bytes: Uint8Array): DecodedKey | null {
 
   // Check for meta range keys (0x04)
   if (bytes[0] === 0x04) {
-    let pos = 1;
+    const pos = 1;
 
     // Special meta keys
     const remaining = bytes.slice(pos);

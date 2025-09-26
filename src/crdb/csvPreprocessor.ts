@@ -49,11 +49,11 @@ function tryReplaceWithPrettyKey(value: string): string {
           if (decoded.pretty !== hexStr) {
             return decoded.pretty;
           }
-        } catch (err) {
+        } catch {
           // Ignore prettyKey failures
         }
       }
-    } catch (err) {
+    } catch {
       // Ignore base64 decode failures
     }
   }
@@ -62,7 +62,7 @@ function tryReplaceWithPrettyKey(value: string): string {
 }
 
 // Recursively process an object/array to replace key fields
-function processObjectForKeys(obj: any): any {
+function processObjectForKeys(obj: unknown): unknown {
   if (obj === null || obj === undefined) {
     return obj;
   }
@@ -72,7 +72,7 @@ function processObjectForKeys(obj: any): any {
   }
 
   if (typeof obj === "object") {
-    const result: any = {};
+    const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj)) {
       if (key.toLowerCase().includes("key") && typeof value === "string") {
         result[key] = tryReplaceWithPrettyKey(value);
@@ -285,9 +285,9 @@ export function preprocessCSV(
           try {
             // Remove outer quotes
             jsonStr = jsonStr.slice(1, -1);
-            // Convert doubled quotes to single quotes (\"\") -> (\")
-            jsonStr = jsonStr.replace(/\"\"/g, '"');
-          } catch (e) {
+            // Convert doubled quotes to single quotes ("") -> (")
+            jsonStr = jsonStr.replace(/""/g, '"');
+          } catch {
             // Ignore JSON fix failures
           }
         }
@@ -308,7 +308,7 @@ export function preprocessCSV(
               return '"' + result.replace(/"/g, '""') + '"';
             }
             return result;
-          } catch (e) {
+          } catch {
             // If JSON parsing fails, leave original value
           }
         }

@@ -8,7 +8,7 @@ export interface ProtoDescriptor {
 
 export interface DecodedProto {
   raw: Uint8Array;
-  decoded: any;
+  decoded: unknown;
   typeName?: string;
   error?: string;
 }
@@ -32,7 +32,7 @@ export class ProtoDecoder {
       // Import the JSON directly - no more fetching from public directory
       const crdbDescriptors = await import("../crdb.json");
       // Cast to any to handle TypeScript type incompatibility
-      this.root = protobuf.Root.fromJSON(crdbDescriptors.default as any);
+      this.root = protobuf.Root.fromJSON(crdbDescriptors.default as Record<string, unknown>);
       this.loaded = true;
     } catch (error) {
       console.error("Failed to load CRDB descriptors:", error);
@@ -58,7 +58,7 @@ export class ProtoDecoder {
       }
 
       return this.decode(bytes, typeName);
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -112,26 +112,29 @@ export class ProtoDecoder {
     }
   }
 
-  private transformMessage(obj: any): any {
+  private transformMessage(obj: unknown): unknown {
     if (obj === null || obj === undefined) return obj;
 
     if (Array.isArray(obj)) {
       return obj.map((item) => this.transformMessage(item));
     }
 
-    if (typeof obj === "object") {
+    if (typeof obj === "object" && obj !== null) {
       // Special handling for Descriptor protos with union field
       // CRDB outputs these as {"database": {...}} or {"table": {...}}
-      if ("union" in obj && obj.union && obj[obj.union]) {
-        const unionType = obj.union;
-        const content = this.transformMessage(obj[unionType]);
-        // Return in CRDB format with union type as top-level key
-        return {
-          [unionType]: content,
-        };
+      if ("union" in obj && typeof obj === "object") {
+        const objRecord = obj as Record<string, unknown>;
+        if (objRecord.union && typeof objRecord.union === "string" && objRecord.union in objRecord) {
+          const unionType = objRecord.union;
+          const content = this.transformMessage(objRecord[unionType]);
+          // Return in CRDB format with union type as top-level key
+          return {
+            [unionType]: content,
+          };
+        }
       }
 
-      const transformed: any = {};
+      const transformed: Record<string, unknown> = {};
 
       for (const [key, value] of Object.entries(obj)) {
         // Convert snake_case to camelCase for consistency with CRDB output
@@ -147,7 +150,7 @@ export class ProtoDecoder {
     return this.transformValue("", obj);
   }
 
-  private transformValue(key: string, value: any): any {
+  private transformValue(key: string, value: unknown): unknown {
     // Handle base64 encoded bytes fields
     if (typeof value === "string") {
       // Handle key fields - try to replace with pretty key representation
@@ -180,7 +183,9 @@ export class ProtoDecoder {
             if (decoded.pretty !== hexStr) {
               return decoded.pretty;
             }
-          } catch {}
+          } catch {
+            // Ignore prettyKey failures
+          }
         }
       }
 
@@ -206,7 +211,9 @@ export class ProtoDecoder {
             ].join("-");
             return uuid;
           }
-        } catch {}
+        } catch {
+          // Ignore UUID conversion failures
+        }
       }
     }
 
@@ -219,7 +226,7 @@ export class ProtoDecoder {
         "start_key" in value ||
         "end_key" in value
       ) {
-        const transformed: any = {};
+        const transformed: Record<string, unknown> = {};
 
         for (const [k, v] of Object.entries(value)) {
           // Convert snake_case to camelCase
@@ -253,15 +260,18 @@ export class ProtoDecoder {
 
     const types: string[] = [];
 
-    function collectTypes(obj: any, prefix = ""): void {
-      if (obj && obj.nested) {
-        for (const [key, value] of Object.entries(obj.nested)) {
-          const fullName = prefix ? `${prefix}.${key}` : key;
-          if (value && (value as any).fields) {
-            types.push(fullName);
-          }
-          if (value && (value as any).nested) {
-            collectTypes(value, fullName);
+    function collectTypes(obj: unknown, prefix = ""): void {
+      if (obj && typeof obj === 'object' && obj !== null && 'nested' in obj) {
+        const nestedObj = obj as Record<string, unknown>;
+        if (nestedObj.nested && typeof nestedObj.nested === 'object') {
+          for (const [key, value] of Object.entries(nestedObj.nested)) {
+            const fullName = prefix ? `${prefix}.${key}` : key;
+            if (value && typeof value === 'object' && value !== null && 'fields' in value) {
+              types.push(fullName);
+            }
+            if (value && typeof value === 'object' && value !== null && 'nested' in value) {
+              collectTypes(value, fullName);
+            }
           }
         }
       }

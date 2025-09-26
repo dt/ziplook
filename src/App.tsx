@@ -4,10 +4,11 @@ import "./styles/App.css";
 import "./styles/crdb.css";
 import "./styles/error-viewer.css";
 import "./styles/navigation.css";
+
+// Remove global window function extension
 import IconRail from "./components/IconRail";
 import Sidebar from "./components/Sidebar";
 import MainPanel from "./components/MainPanel";
-import { MemoryMonitor } from "./components/MemoryMonitor";
 import { AppProvider, useApp } from "./state/AppContext";
 import { NavigationProvider } from "./components/NavigationProvider";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
@@ -20,7 +21,6 @@ function AppContent() {
   const [activeView, setActiveView] = useState<ActiveView>("tables");
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(360);
-  const [memoryMonitorOpen, setMemoryMonitorOpen] = useState(false);
 
   // DuckDB is now initialized in the DB worker through WorkerManager
 
@@ -66,11 +66,18 @@ function AppContent() {
     }, 100);
   }, [state.zip, state.stackData]);
 
-  // Expose function globally so DropZone can call it
+  // Handle iframe communication via postMessage instead of global functions
   useEffect(() => {
-    (window as any).sendStackDataToIframe = sendStackDataToIframe;
+    const handleStackMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type === 'sendStackData') {
+        sendStackDataToIframe();
+      }
+    };
+
+    window.addEventListener('message', handleStackMessage);
     return () => {
-      delete (window as any).sendStackDataToIframe;
+      window.removeEventListener('message', handleStackMessage);
     };
   }, [sendStackDataToIframe]);
 
@@ -247,7 +254,6 @@ function AppContent() {
         <IconRail
           activeView={activeView}
           onViewChange={handleViewChange}
-          onMemoryMonitorOpen={() => setMemoryMonitorOpen(true)}
         />
         {!isStackgazerFullScreen && (
           <>
@@ -293,11 +299,6 @@ function AppContent() {
         </div>
       </div>
 
-      {/* Memory Monitor Modal - rendered outside app container for proper overlay */}
-      <MemoryMonitor
-        isOpen={memoryMonitorOpen}
-        onClose={() => setMemoryMonitorOpen(false)}
-      />
     </>
   );
 }

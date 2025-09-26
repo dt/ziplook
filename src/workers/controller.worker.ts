@@ -5,10 +5,15 @@
 
 import type { ZipEntryMeta } from "../state/types";
 
+// Extend worker scope with typed state
+declare const self: Worker & {
+  zipEntries?: ZipEntryMeta[];
+};
+
 // Notification types sent to main thread
 interface Notification {
   type: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 // Main thread command types
@@ -16,7 +21,24 @@ interface Command {
   type: string; // Any command type - pure envelope routing
   to?: string; // Target worker for envelope routing
   id?: string;
-  [key: string]: any;
+  [key: string]: unknown;
+}
+
+// Response type for pending requests
+interface WorkerResponse {
+  success: boolean;
+  result?: unknown;
+  error?: string;
+  type?: string;
+  entries?: unknown;
+  bytes?: unknown;
+  done?: boolean;
+}
+
+// Pending request handler
+interface PendingRequest {
+  resolve: (response: WorkerResponse) => void;
+  reject: (error: Error) => void;
 }
 
 // Table preparation logic removed - DB worker now handles this
@@ -25,12 +47,12 @@ interface Command {
 let zipWorker: Worker | null = null;
 let dbWorker: Worker | null = null;
 let indexingWorker: Worker | null = null;
-let workers: Map<string, Worker> = new Map();
+const workers: Map<string, Worker> = new Map();
 let initialized = false;
 let stackParsingCompleted = false;
 
 // Pending requests from main thread
-let pendingRequests = new Map<string, { resolve: any; reject: any }>();
+const pendingRequests = new Map<string, PendingRequest>();
 
 // Helper to send notifications to main thread
 function notify(notification: Notification) {
@@ -73,12 +95,13 @@ async function initializeController(): Promise<void> {
       zipWorker.onmessageerror = (event) => {
         console.error("❌ Zip worker message error:", event);
       };
-    } catch (creationError: any) {
+    } catch (creationError: unknown) {
       console.error("❌ Failed to create zip worker:", creationError);
+      const error = creationError instanceof Error ? creationError : new Error(String(creationError));
       console.error("❌ Creation error details:", {
-        message: creationError?.message,
-        stack: creationError?.stack,
-        name: creationError?.name
+        message: error.message,
+        stack: error.stack,
+        name: error.name
       });
     }
 
@@ -135,7 +158,7 @@ async function initializeDatabase(): Promise<void> {
     }, 30000);
 
     pendingRequests.set(id, {
-      resolve: (response: any) => {
+      resolve: (response: WorkerResponse) => {
         clearTimeout(timeout);
         if (response.success) {
           // Database initialized
@@ -178,8 +201,8 @@ async function loadZipFile(zipData: Uint8Array): Promise<void> {
       totalFiles: zipEntries.length
     });
 
-    // Store zip entries globally for later stages
-    (globalThis as any).__zipEntries = zipEntries;
+    // Store zip entries in worker scope for later stages
+    self.zipEntries = zipEntries;
 
     // Stage 3: Table loading - let DB worker decide what to load
     notify({ type: "loadingStage", stage: "table-loading", message: "Starting table loading..." });
@@ -207,7 +230,20 @@ async function loadZipFile(zipData: Uint8Array): Promise<void> {
 }
 
 // Load zip file from SendSafely and run the entire pipeline
-async function loadZipFileFromSendSafely(sendSafelyConfig: any): Promise<void> {
+interface SendSafelyConfig {
+  host: string;
+  apiKey: string;
+  apiSecret: string;
+  keyCode: string;
+  fileName: string;
+  packageInfo: {
+    packageId: string;
+    keyCode: string;
+    serverSecret: string;
+  };
+}
+
+async function loadZipFileFromSendSafely(sendSafelyConfig: SendSafelyConfig): Promise<void> {
   try {
     // Reset pipeline state
     stackParsingCompleted = false;
@@ -227,8 +263,8 @@ async function loadZipFileFromSendSafely(sendSafelyConfig: any): Promise<void> {
       totalFiles: zipEntries.length
     });
 
-    // Store zip entries globally for later stages
-    (globalThis as any).__zipEntries = zipEntries;
+    // Store zip entries in worker scope for later stages
+    self.zipEntries = zipEntries;
 
     // Stage 3: Table loading - let DB worker decide what to load
     notify({ type: "loadingStage", stage: "table-loading", message: "Starting table loading..." });
@@ -264,7 +300,7 @@ async function loadZipData(zipData: Uint8Array): Promise<ZipEntryMeta[]> {
     const timeout = setTimeout(() => reject(new Error("Zip initialization timeout")), 30000);
 
     pendingRequests.set(id, {
-      resolve: (response: any) => {
+      resolve: (response: WorkerResponse) => {
         clearTimeout(timeout);
         if (response.type === 'initializeComplete') {
           resolve();
@@ -291,10 +327,10 @@ async function loadZipData(zipData: Uint8Array): Promise<ZipEntryMeta[]> {
     const timeout = setTimeout(() => reject(new Error("Get entries timeout")), 30000);
 
     pendingRequests.set(id, {
-      resolve: (response: any) => {
+      resolve: (response: WorkerResponse) => {
         clearTimeout(timeout);
         if (response.type === 'getEntriesComplete') {
-          resolve(response.entries || []);
+          resolve(response.entries as ZipEntryMeta[] || []);
         } else if (response.type === 'error') {
           reject(new Error(response.error || "Failed to get entries"));
         }
@@ -313,7 +349,7 @@ async function loadZipData(zipData: Uint8Array): Promise<ZipEntryMeta[]> {
 }
 
 // Load zip data from SendSafely into zip worker
-async function loadZipDataFromSendSafely(sendSafelyConfig: any): Promise<ZipEntryMeta[]> {
+async function loadZipDataFromSendSafely(sendSafelyConfig: SendSafelyConfig): Promise<ZipEntryMeta[]> {
   if (!zipWorker) throw new Error("Zip worker not initialized");
 
   // First initialize the zip worker with SendSafely config
@@ -322,7 +358,7 @@ async function loadZipDataFromSendSafely(sendSafelyConfig: any): Promise<ZipEntr
     const timeout = setTimeout(() => reject(new Error("SendSafely initialization timeout")), 30000);
 
     pendingRequests.set(id, {
-      resolve: (response: any) => {
+      resolve: (response: WorkerResponse) => {
         clearTimeout(timeout);
         if (response.type === 'initializeComplete') {
           resolve();
@@ -349,10 +385,10 @@ async function loadZipDataFromSendSafely(sendSafelyConfig: any): Promise<ZipEntr
     const timeout = setTimeout(() => reject(new Error("Get entries timeout")), 30000);
 
     pendingRequests.set(id, {
-      resolve: (response: any) => {
+      resolve: (response: WorkerResponse) => {
         clearTimeout(timeout);
         if (response.type === 'getEntriesComplete') {
-          resolve(response.entries || []);
+          resolve(response.entries as ZipEntryMeta[] || []);
         } else if (response.type === 'error') {
           reject(new Error(response.error || "Failed to get entries"));
         }
@@ -383,7 +419,7 @@ async function startStackParsing(): Promise<void> {
     notify({ type: "loadingStage", stage: "stack-parsing", message: "Processing stack files..." });
 
     // Get the stored zip entries
-    const storedEntries = (globalThis as any).__zipEntries;
+    const storedEntries = self.zipEntries;
     if (!storedEntries) {
       startIndexing();
       return;
@@ -407,14 +443,14 @@ async function loadStackFiles() {
 
   try {
     // Get the stored zip entries
-    const storedEntries = (globalThis as any).__zipEntries;
+    const storedEntries = self.zipEntries;
     if (!storedEntries) {
       console.warn("❌ Controller: No zip entries available for stack loading");
       return;
     }
 
     // Find all stacks.txt files
-    const stackFiles = storedEntries.filter((entry: any) =>
+    const stackFiles = storedEntries.filter((entry: ZipEntryMeta) =>
       !entry.isDir && entry.path.includes('stacks.txt')
     );
 
@@ -470,9 +506,9 @@ async function readStackFile(path: string): Promise<string> {
     const chunks: Uint8Array[] = [];
 
     pendingRequests.set(id, {
-      resolve: (response: any) => {
+      resolve: (response: WorkerResponse) => {
         if (response.type === 'readFileChunk') {
-          chunks.push(response.bytes);
+          chunks.push(response.bytes as Uint8Array);
           if (response.done) {
             clearTimeout(timeout);
             // Combine all chunks and decode to text
@@ -511,7 +547,7 @@ async function startIndexing(): Promise<void> {
   notify({ type: "loadingStage", stage: "indexing", message: "Starting file indexing..." });
 
   // Get the stored zip entries
-  const storedEntries = (globalThis as any).__zipEntries;
+  const storedEntries = self.zipEntries;
   if (!storedEntries) {
     notify({
       type: "loadingStage",
@@ -528,7 +564,7 @@ async function startIndexing(): Promise<void> {
       from: "mainThread",
       type: "registerFiles",
       id: generateId(),
-      files: storedEntries.map((entry: any) => ({
+      files: storedEntries.map((entry: ZipEntryMeta) => ({
         path: entry.path,
         name: entry.name,
         size: entry.size
@@ -546,8 +582,8 @@ async function startIndexing(): Promise<void> {
 }
 
 // Route messages between workers
-function routeMessage(message: any) {
-  if (message.to && workers.has(message.to)) {
+function routeMessage(message: Record<string, unknown>) {
+  if (message.to && typeof message.to === 'string' && workers.has(message.to)) {
     const targetWorker = workers.get(message.to)!;
     targetWorker.postMessage(message);
   } else {
@@ -626,9 +662,6 @@ function handleWorkerMessage(fromWorker: string, event: MessageEvent) {
 
   // Handle command responses (responses to registerFiles, startIndexing, etc.)
   if (message.id && !message.to && !message.from) {
-    // Only log errors to reduce noise
-    if (message.success === false) {
-    }
     self.postMessage({
       type: "response",
       id: message.id,
@@ -687,14 +720,14 @@ self.onmessage = async (event: MessageEvent<Command>) => {
       // Convert transferred ArrayBuffer back to Uint8Array
       const zipData = command.zipData instanceof ArrayBuffer
         ? new Uint8Array(command.zipData)
-        : command.zipData;
+        : command.zipData as Uint8Array;
       await loadZipFile(zipData);
       self.postMessage({ type: "response", id: command.id, success: true });
       return;
     }
 
     if (command.type === "loadZipFromSendSafely") {
-      await loadZipFileFromSendSafely(command.sendSafelyConfig);
+      await loadZipFileFromSendSafely(command.sendSafelyConfig as SendSafelyConfig);
       self.postMessage({ type: "response", id: command.id, success: true });
       return;
     }

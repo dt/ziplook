@@ -10,7 +10,7 @@ export interface NavigationItem {
   id: string;
   type: "file" | "table" | "query" | "folder";
   element?: HTMLElement;
-  data?: any;
+  data?: unknown;
 }
 
 interface NavigationState {

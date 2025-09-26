@@ -5,7 +5,7 @@ export interface ParsedKey {
   raw: string;
 }
 
-export function parseKey(key: any): ParsedKey {
+export function parseKey(key: unknown): ParsedKey {
   if (!key) return { type: "Unknown", raw: String(key) };
 
   const keyStr = String(key);
@@ -26,7 +26,7 @@ export function parseKey(key: any): ParsedKey {
   return { type: "Unknown", raw: keyStr };
 }
 
-export function parseTimestamp(value: any): Date | null {
+export function parseTimestamp(value: unknown): Date | null {
   if (!value) return null;
 
   if (value instanceof Date) return value;
@@ -58,8 +58,8 @@ export function parseTimestamp(value: any): Date | null {
   return isNaN(date.getTime()) ? null : date;
 }
 
-export function formatDuration(ms: any): string {
-  if (!ms || isNaN(ms)) return "0ms";
+export function formatDuration(ms: unknown): string {
+  if (!ms || typeof ms !== 'number' || isNaN(ms)) return "0ms";
 
   const absMs = Math.abs(ms);
   const sign = ms < 0 ? "-" : "";
@@ -71,8 +71,8 @@ export function formatDuration(ms: any): string {
   return `${sign}${(absMs / 86400000).toFixed(1)}d`;
 }
 
-export function formatBytes(bytes: any): string {
-  if (!bytes || isNaN(bytes)) return "0 B";
+export function formatBytes(bytes: unknown): string {
+  if (!bytes || typeof bytes !== 'number' || isNaN(bytes)) return "0 B";
 
   const absBytes = Math.abs(bytes);
   const sign = bytes < 0 ? "-" : "";

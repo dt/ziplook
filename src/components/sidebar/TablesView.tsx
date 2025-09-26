@@ -229,7 +229,7 @@ function TablesView() {
       // Only update state if there are actual changes
       return hasChanges ? next : prev;
     });
-  }, [filter, customQueryTabs.length, clusterTables.length, sortedNodeGroups.length]);
+  }, [filter, customQueryTabs.length, clusterTables.length, sortedNodeGroups]);
 
   // Update navigation items when filtered results change
   // Temporarily disabled to fix infinite loop
@@ -293,7 +293,7 @@ function TablesView() {
         });
       }
     },
-    [dispatch, state.workerManager],
+    [dispatch, state.workerManager, loadingTables],
   );
 
   const handleTableClick = async (table: (typeof tables)[0]) => {

@@ -1,8 +1,8 @@
-/* eslint-disable no-restricted-globals */
-/* eslint-disable no-console */
+ 
+ 
 
 // Test SendSafely import
-import { createSendSafelyClient } from '../utils/sendSafelyClient.js';
+import { createSendSafelyClient, SendSafelyClient } from '../utils/sendSafelyClient.js';
 import * as openpgp from 'openpgp';
 
 //
@@ -399,8 +399,7 @@ function toMeta(e: ZipEntryInternal): ZipEntryMeta {
 }
 
 function okMessage<T extends object>(m: T) {
-  // @ts-ignore
-  (self as any).postMessage(m);
+  self.postMessage(m);
 }
 
 function errMessage(id: string, error: unknown) {
@@ -587,11 +586,12 @@ async function onReadFileChunked(msg: ReadFileChunkedMsg) {
     }
 
     if (entry.method === 8 /* Deflate */) {
-      const Decomp: any = (globalThis as any).DecompressionStream;
-      if (typeof Decomp !== 'function') {
+      // Feature detection for DecompressionStream without global mutation
+      if (typeof DecompressionStream === 'undefined') {
         throw new Error('DecompressionStream API not available in this environment');
       }
-      const plainStream = compStream.pipeThrough(new Decomp('deflate-raw'));
+      const Decomp = DecompressionStream;
+      const plainStream = compStream.pipeThrough(new Decomp('deflate-raw') as ReadableWritablePair<Uint8Array, Uint8Array>);
       const reader = plainStream.getReader();
       for (;;) {
         const { value, done } = await reader.read();
@@ -626,12 +626,36 @@ self.addEventListener('message', (ev: MessageEvent<InMsg>) => {
       void onReadFileChunked(msg);
       break;
     default: {
-      const id = (msg as any).id ?? 'unknown';
-      okMessage<ErrorResp>({ type: 'error', id, error: `Unknown message type: ${(msg as any).type}` });
+      const id = (msg as Record<string, unknown>).id as string ?? 'unknown';
+      okMessage<ErrorResp>({ type: 'error', id, error: `Unknown message type: ${(msg as Record<string, unknown>).type}` });
     }
   }
 });
 
+
+interface SendSafelyPackageInfo {
+  packageId?: string;
+  packageCode?: string;
+  keyCode: string;
+  serverSecret?: string;
+  files?: Array<{
+    fileId: string;
+    fileName: string;
+    fileSize: number;
+    parts: number;
+  }>;
+  package?: {
+    packageId?: string;
+    packageCode?: string;
+    serverSecret?: string;
+    files: Array<{
+      fileId: string;
+      fileName: string;
+      fileSize: number;
+      parts: number;
+    }>;
+  };
+}
 
 type SendSafelyInit = {
   host: string;
@@ -639,7 +663,7 @@ type SendSafelyInit = {
   apiSecret: string;
   keyCode: string;
   fileName: string;
-  packageInfo: any; // The package info response from the API
+  packageInfo: SendSafelyPackageInfo;
 };
 
 
@@ -687,7 +711,7 @@ class SendSafelyProvider implements BytesProvider {
   // Discovered chunk characteristics (set during initialization)
   private firstChunkSize: number = 0;      // plaintext size of first chunk
   private middleChunkSize: number = 0;     // plaintext size of middle chunks
-  // @ts-ignore - lastChunkSize kept for potential future use
+  // @ts-expect-error - lastChunkSize kept for potential future use
   private _lastChunkSize: number = 0;      // plaintext size of last chunk
   private chunkSizesDiscovered = false;    // whether we've probed the chunks
 
@@ -695,7 +719,7 @@ class SendSafelyProvider implements BytesProvider {
   private urls = new Map<number, string>();   // partIdx -> presigned URL
   private urlPageSize = 25;
   private decLRU = new LRU<Uint8Array>(24);   // decrypted part cache (tune)
-  private client: any; // SendSafely client instance
+  private client: SendSafelyClient | null = null; // SendSafely client instance
 
   constructor(init: SendSafelyInit) {
     // Store credentials - client will be created on-demand
@@ -707,11 +731,16 @@ class SendSafelyProvider implements BytesProvider {
 
     // Extract package info from the provided response
     const pkgInfo = init.packageInfo;
-    this.packageId = pkgInfo.packageId ?? pkgInfo.package?.packageId;
-    this.packageCode = pkgInfo.packageCode ?? pkgInfo.package?.packageCode;
-    this.serverSecret = pkgInfo.serverSecret ?? pkgInfo.package?.serverSecret;
+    this.packageId = pkgInfo.packageId ?? pkgInfo.package?.packageId ?? '';
+    this.packageCode = pkgInfo.packageCode ?? pkgInfo.package?.packageCode ?? '';
+    this.serverSecret = pkgInfo.serverSecret ?? pkgInfo.package?.serverSecret ?? '';
 
-    const files = (pkgInfo.files ?? pkgInfo.package?.files) as Array<any>;
+    const files = (pkgInfo.files ?? pkgInfo.package?.files) as Array<{
+      fileId: string;
+      fileName: string;
+      fileSize: number;
+      parts: number;
+    }>;
     const f = files.find(x => x.fileName === this.fileName) ?? files[0];
     if (!f) throw new Error(`File not found in package: ${this.fileName}`);
 
@@ -950,6 +979,9 @@ class SendSafelyProvider implements BytesProvider {
     const startPartApi = startPart0Based + 1;
     const endPartApi = endPart0Based + 1;
 
+    if (!this.client) {
+      throw new Error('SendSafely client not initialized');
+    }
     const downloadUrls = await this.client.getDownloadUrls(
       this.packageId,
       this.fileId,

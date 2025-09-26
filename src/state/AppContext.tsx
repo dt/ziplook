@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer, useEffect } from "react";
 import type { ReactNode } from "react";
-import type { AppState, ViewerTab, ZipEntryMeta, TableMeta } from "./types";
+import type { AppState, ViewerTab, ZipEntryMeta, TableMeta, IWorkerManager } from "./types";
 import { getWorkerManager } from "../services/WorkerManager";
 import { setWorkerManager } from "../services/monacoConfig";
 
@@ -29,7 +29,7 @@ export type AppAction =
   | { type: "ADD_STACK_FILE"; filePath: string; content: string }
   | { type: "SET_STACK_FILES"; stackFiles: Array<{path: string; size: number; compressedSize: number}> }
   | { type: "SET_STACKGAZER_READY"; ready: boolean }
-  | { type: "SET_WORKER_MANAGER"; workerManager: any }
+  | { type: "SET_WORKER_MANAGER"; workerManager: IWorkerManager }
   | { type: "SET_WORKERS_READY"; ready: boolean }
   | {
       type: "SET_INDEXING_STATUS";
@@ -40,7 +40,7 @@ export type AppAction =
       type: "SET_INDEXING_PROGRESS";
       progress: { current: number; total: number; fileName: string } | null;
     }
-  | { type: "SET_FILE_STATUSES"; fileStatuses: any[] };
+  | { type: "SET_FILE_STATUSES"; fileStatuses: import("./types").FileIndexStatus[] };
 
 const initialState: AppState = {
   openTabs: [],
@@ -95,7 +95,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
         const existingFileTab = state.openTabs.find((tab) => {
           return (
             tab.kind === "file" &&
-            (tab as any).fileId === (action.tab as any).fileId
+            action.tab.kind === "file" &&
+            tab.fileId === action.tab.fileId
           );
         }) as (ViewerTab & { kind: "file" }) | undefined;
 
@@ -353,7 +354,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
 interface AppContextValue {
   state: AppState;
   dispatch: React.Dispatch<AppAction>;
-  waitForWorkers: () => Promise<any>;
+  waitForWorkers: () => Promise<IWorkerManager>;
 }
 
 export const AppContext = createContext<AppContextValue | undefined>(undefined);
@@ -403,15 +404,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         // Set up React-specific callbacks
         workerManager.updateCallbacks({
-          onIndexingProgress: (progress: any) => {
+          onIndexingProgress: (progress: {
+            current: number;
+            total: number;
+            fileName: string;
+          }) => {
             if (!mounted) return;
             dispatch({ type: "SET_INDEXING_PROGRESS", progress });
           },
           onIndexingComplete: (
-            success: any,
-            _totalEntries: any,
-            _error: any,
-            ruleDescription: any,
+            success: boolean,
+            _totalEntries: number,
+            _error?: string,
+            ruleDescription?: string,
           ) => {
             if (!mounted) return;
             dispatch({ type: "SET_INDEXING_PROGRESS", progress: null });
@@ -429,7 +434,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               });
             }
           },
-          onIndexingFileResult: (_filePath: any, _entries: any) => {
+          onIndexingFileResult: () => {
             if (!mounted) return;
             // These entries need to be added to a search index
             // For now, just log them - SearchView will handle the actual indexing
@@ -444,7 +449,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
 
             // Update table status in app state
-            const updates: any = {};
+            const updates: Partial<TableMeta> = {};
 
             switch (status) {
               case "loading":
@@ -477,11 +482,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               updates,
             });
           },
-          onTableLoadingComplete: (
-            _success: boolean,
-            _tablesLoaded: number,
-            _error?: string,
-          ) => {
+          onTableLoadingComplete: () => {
             if (!mounted) return;
 
             // Set tables loading state to false

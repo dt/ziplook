@@ -40,9 +40,9 @@ export function MemoryMonitor({ isOpen, onClose }: MemoryMonitorProps) {
         // We'll need to use coi-serviceworker to enable this, or alternatively
         // explore counting index sizes and DuckDB table sizes ourselves.
         const result = await (
-          performance as any
-        ).measureUserAgentSpecificMemory();
-        setMemoryData(result);
+          performance as { measureUserAgentSpecificMemory?: () => Promise<unknown> }
+        ).measureUserAgentSpecificMemory?.();
+        setMemoryData(result as MemoryMeasurement | null);
       } else {
         setError("measureUserAgentSpecificMemory not available");
       }
@@ -57,7 +57,7 @@ export function MemoryMonitor({ isOpen, onClose }: MemoryMonitorProps) {
     if (isOpen) {
       // Get device memory if available
       if ("deviceMemory" in navigator) {
-        setDeviceMemory((navigator as any).deviceMemory);
+        setDeviceMemory((navigator as { deviceMemory?: number }).deviceMemory);
       }
 
       measureMemory();

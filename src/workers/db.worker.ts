@@ -20,7 +20,12 @@ interface RoutedMessage {
   from: string;
   id: string;
   type: string;
-  [key: string]: any;
+  error?: string;
+  bytes?: string | Uint8Array;
+  done?: boolean;
+  success?: boolean;
+  result?: { text: string };
+  [key: string]: unknown;
 }
 
 interface InitializeDatabaseMessage {
@@ -124,7 +129,7 @@ interface TableSchemaResponse {
   type: "tableSchema";
   id: string;
   success: boolean;
-  schema?: any[];
+  schema?: Array<{ column_name: string; data_type: string }>;
   error?: string;
 }
 
@@ -149,23 +154,41 @@ interface DuckDBKeywordsResponse {
 let db: duckdb.AsyncDuckDB | null = null;
 let conn: duckdb.AsyncDuckDBConnection | null = null;
 let initialized = false;
-let pendingZipRequests = new Map<string, {
-  resolve: (value: any) => void;
+interface ReadFileCompleteResponse {
+  type: "readFileComplete";
+  id: string;
+  success: boolean;
+  result?: { text: string };
+  error?: string;
+}
+
+interface PendingZipRequest {
+  resolve: (value: ReadFileCompleteResponse) => void;
   reject: (error: Error) => void;
   timeoutId: NodeJS.Timeout;
-  chunks: string[];
+  chunks: Uint8Array[];
   totalText: string;
-}>();
-let loadedTables = new Set<string>();
+}
+
+const pendingZipRequests = new Map<string, PendingZipRequest>();
+const loadedTables = new Set<string>();
 let currentLoadingId: string | null = null;
 let shouldStop = false;
 
 // Worker-specific proto decoder
 let workerProtoDecoder: ProtoDecoder | null = null;
 
+interface ResponseMessage {
+  type: string;
+  id: string;
+  success: boolean;
+  result?: unknown;
+  error?: string;
+}
+
 // Helper to send responses with or without routing
-function sendResponse(message: any, response: any) {
-  if (message.from) {
+function sendResponse(message: RoutedMessage | DBWorkerMessage, response: ResponseMessage) {
+  if ('from' in message && message.from) {
     // Routed response
     self.postMessage({ ...response, to: message.from, from: "dbWorker" });
   } else {
@@ -176,7 +199,7 @@ function sendResponse(message: any, response: any) {
 
 const LARGE_FILE_THRESHOLD = 2 * 1024 * 1024; // 20MB
 
-function sendMessageToZipWorker(message: any): Promise<any> {
+function sendMessageToZipWorker(message: { type: string; path?: string; id?: string }): Promise<ReadFileCompleteResponse> {
   return new Promise((resolve, reject) => {
     const id = message.id || `zip_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -215,12 +238,15 @@ function handleRoutedMessage(message: RoutedMessage) {
 
     if (message.type === "readFileChunk") {
       // Accumulate chunks
-      request.chunks.push(message.bytes);
-      // Decode chunk to text before accumulating
-      if (message.bytes instanceof Uint8Array) {
-        request.totalText += new TextDecoder().decode(message.bytes);
-      } else {
-        request.totalText += message.bytes;
+      const bytes = message.bytes;
+      if (bytes instanceof Uint8Array) {
+        request.chunks.push(bytes);
+        request.totalText += new TextDecoder().decode(bytes);
+      } else if (typeof bytes === 'string') {
+        // Convert string to Uint8Array for consistency
+        const encoder = new TextEncoder();
+        request.chunks.push(encoder.encode(bytes));
+        request.totalText += bytes;
       }
 
       if (message.done) {
@@ -245,7 +271,7 @@ function handleRoutedMessage(message: RoutedMessage) {
       request.resolve({
         type: "readFileComplete",
         id: message.id,
-        success: message.success,
+        success: message.success ?? false,
         result: message.result,
         error: message.error
       });
@@ -327,9 +353,10 @@ async function initializeDatabase(message: InitializeDatabaseMessage) {
     try {
       workerProtoDecoder = new ProtoDecoder();
       // Create protobuf root directly from bundled JSON
-      const root = protobuf.Root.fromJSON(crdbDescriptors as any);
-      (workerProtoDecoder as any).root = root;
-      (workerProtoDecoder as any).loaded = true;
+      const root = protobuf.Root.fromJSON(crdbDescriptors as Record<string, unknown>);
+      // Access private properties through bracket notation for initialization
+      (workerProtoDecoder as unknown as Record<string, unknown>).root = root;
+      (workerProtoDecoder as unknown as Record<string, unknown>).loaded = true;
     } catch (protoError) {
       console.warn(
         "⚠️ Failed to initialize proto decoder in worker:",
@@ -384,7 +411,7 @@ async function startTableLoading(message: StartTableLoadingMessage) {
           size: table.size,
         });
       } else {
-        await loadSingleTable(table, id);
+        await loadSingleTable(table);
         tablesLoaded++;
       }
     }
@@ -409,11 +436,20 @@ async function startTableLoading(message: StartTableLoadingMessage) {
 }
 
 async function loadSingleTableFromMessage(message: LoadSingleTableMessage) {
-  const { id, table } = message;
-  await loadSingleTable(table, id);
+  const { table } = message;
+  await loadSingleTable(table);
 }
 
-async function loadSingleTable(table: any, _loadingId: string) {
+interface TableInfo {
+  name: string;
+  path: string;
+  size: number;
+  nodeId?: number;
+  originalName?: string;
+  isError?: boolean;
+}
+
+async function loadSingleTable(table: TableInfo) {
   const { name: tableName, path, size, nodeId, originalName, isError } = table;
 
   if (!conn) {
@@ -603,12 +639,13 @@ async function loadTableFromText(
       }
 
       await conn.query(sql);
-    } catch (parseError: any) {
+    } catch (parseError: unknown) {
+      const error = parseError instanceof Error ? parseError : new Error(String(parseError));
       // If preprocessing caused issues or CSV sniffing failed, try with original content
       if (
         usePreprocessed &&
-        (parseError.message?.includes("sniffing file") ||
-          parseError.message?.includes("Error when sniffing file"))
+        (error.message?.includes("sniffing file") ||
+          error.message?.includes("Error when sniffing file"))
       ) {
         // Re-register with original content
         await db.registerFileText(`${fileBaseName}.txt`, content);
@@ -624,10 +661,10 @@ async function loadTableFromText(
 
         await conn.query(sql);
       } else if (
-        parseError.message?.includes("Error when sniffing file") ||
-        parseError.message?.includes("not possible to automatically detect") ||
-        parseError.message?.includes("Could not convert string") ||
-        parseError.message?.includes("Conversion Error: CSV Error")
+        error.message?.includes("Error when sniffing file") ||
+        error.message?.includes("not possible to automatically detect") ||
+        error.message?.includes("Could not convert string") ||
+        error.message?.includes("Conversion Error: CSV Error")
       ) {
         // Some files have such complex data that DuckDB can't auto-detect them
         // Try with very explicit parameters and treat everything as VARCHAR
@@ -663,15 +700,16 @@ async function loadTableFromText(
 
         try {
           await conn.query(fallbackSql);
-        } catch (fallbackError: any) {
+        } catch (fallbackError: unknown) {
+          const fallbackErr = fallbackError instanceof Error ? fallbackError : new Error(String(fallbackError));
           console.error(
             `Even fallback failed for ${tableName}:`,
-            fallbackError.message,
+            fallbackErr.message,
           );
-          throw parseError; // Throw original error if fallback also fails
+          throw error; // Throw original error if fallback also fails
         }
       } else {
-        throw parseError;
+        throw error;
       }
     }
 
@@ -710,7 +748,7 @@ function rewriteQuery(sql: string): string {
   return rewritten;
 }
 
-async function executeQuery(message: any) {
+async function executeQuery(message: ExecuteQueryMessage | (RoutedMessage & ExecuteQueryMessage)) {
   const { id, sql } = message;
 
   if (!conn) {
@@ -753,13 +791,13 @@ async function executeQuery(message: any) {
 
     // Sanitize data to ensure it can be cloned for postMessage
     const sanitizedData = data.map((row) => {
-      const sanitizedRow: any = {};
+      const sanitizedRow: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(row)) {
         try {
           // Test if the value can be cloned by attempting JSON serialization
           JSON.stringify(value);
           sanitizedRow[key] = value;
-        } catch (e) {
+        } catch {
           // If value can't be serialized, convert to string
           sanitizedRow[key] = String(value);
         }
@@ -810,7 +848,7 @@ async function getTableSchema(message: GetTableSchemaMessage) {
   }
 }
 
-async function getLoadedTables(message: any) {
+async function getLoadedTables(message: GetLoadedTablesMessage | (RoutedMessage & GetLoadedTablesMessage)) {
   const { id } = message;
 
   if (!conn) {
@@ -875,7 +913,7 @@ async function getDuckDBFunctions(message: GetDuckDBFunctionsMessage) {
 
     // Sanitize data to ensure it can be cloned for postMessage
     const functions = rawFunctions.map((row) => {
-      const sanitizedRow: any = {};
+      const sanitizedRow: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(row)) {
         try {
           // Handle BigInt values explicitly
@@ -885,13 +923,13 @@ async function getDuckDBFunctions(message: GetDuckDBFunctionsMessage) {
             JSON.stringify(value);
             sanitizedRow[key] = value;
           }
-        } catch (e) {
+        } catch {
           sanitizedRow[key] = String(value);
         }
       }
       return {
-        name: sanitizedRow.function_name.toUpperCase(),
-        type: sanitizedRow.function_type,
+        name: String(sanitizedRow.function_name).toUpperCase(),
+        type: String(sanitizedRow.function_type),
       };
     });
 
@@ -1000,7 +1038,7 @@ async function getDuckDBKeywords(message: GetDuckDBKeywordsMessage) {
   }
 }
 
-async function query(sql: string): Promise<any> {
+async function query(sql: string): Promise<Record<string, unknown>[]> {
   if (!conn) {
     throw new Error("DuckDB not initialized");
   }
@@ -1158,34 +1196,34 @@ self.onmessage = (event: MessageEvent<DBWorkerMessage | RoutedMessage>) => {
   // Handle all other messages by type
   switch (message.type) {
     case "initializeDatabase":
-      initializeDatabase(message as any);
+      initializeDatabase(message as InitializeDatabaseMessage);
       break;
     case "startTableLoading":
-      startTableLoading(message as any);
+      startTableLoading(message as StartTableLoadingMessage);
       break;
     case "loadSingleTable":
-      loadSingleTableFromMessage(message as any);
+      loadSingleTableFromMessage(message as LoadSingleTableMessage);
       break;
     case "executeQuery":
-      executeQuery(message as any);
+      executeQuery(message as ExecuteQueryMessage | (RoutedMessage & ExecuteQueryMessage));
       break;
     case "getTableSchema":
-      getTableSchema(message as any);
+      getTableSchema(message as GetTableSchemaMessage);
       break;
     case "getLoadedTables":
-      getLoadedTables(message as any);
+      getLoadedTables(message as GetLoadedTablesMessage | (RoutedMessage & GetLoadedTablesMessage));
       break;
     case "getDuckDBFunctions":
-      getDuckDBFunctions(message as any);
+      getDuckDBFunctions(message as GetDuckDBFunctionsMessage);
       break;
     case "getDuckDBKeywords":
-      getDuckDBKeywords(message as any);
+      getDuckDBKeywords(message as GetDuckDBKeywordsMessage);
       break;
     case "stopLoading":
-      stopLoading(message as any);
+      stopLoading(message as StopLoadingMessage);
       break;
     case "processFileList":
-      processFileList(message as any);
+      processFileList(message as ProcessFileListMessage);
       break;
     default:
       console.error("Unknown DB worker message type:", message.type);

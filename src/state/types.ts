@@ -121,6 +121,124 @@ export interface SearchIndex {
   fileStatuses: Map<string, FileIndexStatus>;
 }
 
+// Worker management interfaces
+export interface LogEntry {
+  timestamp: Date;
+  level: string;
+  message: string;
+  file?: string;
+  line?: number;
+}
+
+export interface TableData {
+  name: string;
+  path: string;
+  size: number;
+  nodeId?: number;
+  originalName?: string;
+  isError?: boolean;
+  loaded?: boolean;
+  loading?: boolean;
+  sourceFile?: string;
+}
+
+export interface FileStatus {
+  path: string;
+  status: 'pending' | 'indexing' | 'completed' | 'error';
+  progress?: number;
+  error?: string;
+}
+
+export interface SendSafelyPackageInfo {
+  packageId: string;
+  keyCode: string;
+  serverSecret: string;
+}
+
+export interface SendSafelyConfig {
+  host: string;
+  apiKey: string;
+  apiSecret: string;
+  keyCode: string;
+  fileName: string;
+  packageInfo: SendSafelyPackageInfo;
+}
+
+// Worker manager interface - defines what the app expects from a worker coordinator
+export interface IWorkerManager {
+  // Core operations
+  loadZipData(zipData: Uint8Array): Promise<ZipEntryMeta[]>;
+  loadZipDataFromSendSafely(config: SendSafelyConfig): Promise<ZipEntryMeta[]>;
+  initializeWorkers(): Promise<void>;
+  destroy(): void;
+
+  // Database operations
+  executeQuery(sql: string): Promise<Record<string, unknown>[]>;
+  getTableSchema(tableName: string): Promise<Array<{ column_name: string; data_type: string }>>;
+  getLoadedTables(): Promise<string[]>;
+  getDuckDBFunctions(): Promise<Array<{ name: string; type: string; description?: string }>>;
+  getDuckDBKeywords(): Promise<string[]>;
+  loadSingleTable(table: TableData): Promise<void>;
+
+  // File operations
+  readFileStream(
+    path: string,
+    onChunk: (chunk: string, progress: { loaded: number; total: number; done: boolean }) => void,
+  ): Promise<void>;
+  cancelStream(): void;
+
+  // Indexing operations
+  searchLogs(query: string): Promise<SearchResult[]>;
+  getFileStatuses(): Promise<FileStatus[]>;
+  loadStackFiles(): Promise<void>;
+  startIndexing(filePaths: string[]): Promise<void>;
+  indexSingleFile(file: { path: string; name: string; size: number }): Promise<void>;
+
+  // Callback management
+  updateCallbacks(options: IWorkerManagerCallbacks): void;
+}
+
+// Callback interface - defines what events the worker manager can notify about
+export interface IWorkerManagerCallbacks {
+  // Stage progression callbacks
+  onLoadingStage?: (stage: string, message: string) => void;
+  onFileList?: (entries: ZipEntryMeta[], totalFiles: number) => void;
+  onTableAdded?: (table: TableData) => void;
+  onSendStackFileToIframe?: (path: string, content: string) => void;
+  onStackProcessingComplete?: (stackFilesCount: number) => void;
+
+  // Indexing callbacks
+  onIndexingProgress?: (progress: {
+    current: number;
+    total: number;
+    fileName: string;
+  }) => void;
+  onIndexingComplete?: (
+    success: boolean,
+    totalEntries: number,
+    error?: string,
+    ruleDescription?: string,
+  ) => void;
+  onIndexingFileResult?: (filePath: string, entries: LogEntry[]) => void;
+
+  // File status callbacks
+  onFileStatusUpdate?: (fileStatuses: FileStatus[]) => void;
+
+  // Table callbacks
+  onTableLoadProgress?: (
+    tableName: string,
+    status: string,
+    rowCount?: number,
+    error?: string,
+  ) => void;
+  onTableLoadingComplete?: (
+    success: boolean,
+    tablesLoaded: number,
+    error?: string,
+  ) => void;
+  onDatabaseInitialized?: (success: boolean, error?: string) => void;
+}
+
 export interface AppState {
   zip?: {
     name: string;
@@ -137,7 +255,7 @@ export interface AppState {
   stackFiles?: Array<{path: string; size: number; compressedSize: number}>; // Available stack files metadata
   stackgazerReady?: boolean; // Whether all stack files have been loaded and sent to iframe
   searchIndex?: SearchIndex; // Log search index state
-  workerManager?: any; // WorkerManager instance
+  workerManager?: IWorkerManager; // Worker manager instance
   workersReady?: boolean; // Whether workers are initialized and ready
   indexingStatus?: "none" | "indexing" | "ready"; // Global indexing status
   indexingProgress?: {
@@ -146,5 +264,5 @@ export interface AppState {
     fileName: string;
   } | null; // Current indexing progress
   indexingRuleDescription?: string; // Description of the rule used for indexing (e.g., "*.log")
-  fileStatuses?: any[]; // Real-time file status updates from indexing worker
+  fileStatuses?: FileIndexStatus[]; // Real-time file status updates from indexing worker
 }

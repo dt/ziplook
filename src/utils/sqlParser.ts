@@ -51,13 +51,13 @@ export function generateQueryTitle(
 
   if (!fromMatch) {
     // No FROM clause, just clean up the query
-    let title = normalizedQuery.replace(/^\s*select\s+/i, '');
+    const title = normalizedQuery.replace(/^\s*select\s+/i, '');
     return title.length > 20 ? title.substring(0, 20) + '...' : title;
   }
 
   const fromIndex = fromMatch.index!;
   let selectPart = normalizedQuery.substring(0, fromIndex).trim();
-  let fromPart = normalizedQuery.substring(fromIndex + fromMatch[0].length).trim();
+  const fromPart = normalizedQuery.substring(fromIndex + fromMatch[0].length).trim();
 
   // Process SELECT part
   selectPart = selectPart.replace(/^\s*select\s+/i, '');

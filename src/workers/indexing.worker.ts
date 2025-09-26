@@ -5,8 +5,9 @@
  */
 
 import { LogSearchIndex } from "../services/logSearchIndex";
-import { LogParser } from "../services/logParser";
+import { LogParser, type ParsedLogEntry } from "../services/logParser";
 import { QueryParser } from "../services/queryParser";
+import type { SearchResult, FileIndexStatus } from "../state/types";
 
 // Message format for centralized routing
 interface RoutedMessage {
@@ -14,7 +15,12 @@ interface RoutedMessage {
   from: string;
   id: string;
   type: string;
-  [key: string]: any;
+  filePath?: string;
+  error?: string;
+  bytes?: Uint8Array;
+  done?: boolean;
+  success?: boolean;
+  result?: { text: string };
 }
 
 interface IndexingProgressResponse {
@@ -34,11 +40,12 @@ interface IndexingCompleteResponse {
   ruleDescription?: string;
 }
 
+
 interface IndexingFileResultResponse {
   type: "indexingFileResult";
   id: string;
   filePath: string;
-  entries: any[];
+  entries: ParsedLogEntry[];
 }
 
 interface IndexingErrorResponse {
@@ -48,9 +55,66 @@ interface IndexingErrorResponse {
 }
 
 
+interface ZipFileResponse {
+  type: string;
+  id: string;
+  success: boolean;
+  result?: { text: string };
+  error?: string;
+}
+
+interface RegisterFilesMessage {
+  type: "registerFiles";
+  id: string;
+  files: Array<{ path: string; name: string; size: number }>;
+  from?: string;
+}
+
+interface StartIndexingMessage {
+  type: "startIndexing";
+  id: string;
+  filePaths?: string[];
+  from?: string;
+}
+
+interface StopIndexingMessage {
+  type: "stopIndexing";
+  id: string;
+  from?: string;
+}
+
+interface IndexSingleFileMessage {
+  type: "indexSingleFile";
+  id: string;
+  file: { path: string; name: string; size: number };
+  from?: string;
+}
+
+interface SearchLogsMessage {
+  type: "searchLogs";
+  id: string;
+  query: string;
+  from?: string;
+}
+
+interface GetFileStatusesMessage {
+  type: "getFileStatuses";
+  id: string;
+  from?: string;
+}
+
+// Union type for all message types
+type IndexingWorkerMessage =
+  | RegisterFilesMessage
+  | StartIndexingMessage
+  | StopIndexingMessage
+  | IndexSingleFileMessage
+  | SearchLogsMessage
+  | GetFileStatusesMessage;
+
 // Global state
-let pendingZipRequests = new Map<string, {
-  resolve: (value: any) => void;
+const pendingZipRequests = new Map<string, {
+  resolve: (value: ZipFileResponse) => void;
   reject: (error: Error) => void;
   timeoutId: NodeJS.Timeout;
   chunks: Uint8Array[];
@@ -64,10 +128,43 @@ let globalEntryIdCounter = 0; // Global counter to ensure unique IDs across all 
 const searchIndex = new LogSearchIndex();
 
 // Registered files map
-let registeredFiles = new Map<string, { path: string; name: string; size: number }>();
+const registeredFiles = new Map<string, { path: string; name: string; size: number }>();
+
+// Define response types
+interface BaseResponse {
+  type: string;
+  id: string;
+  success: boolean;
+  error?: string;
+}
+
+interface RegisterFilesResponse extends BaseResponse {
+  type: "registerFilesResponse";
+  result?: { filesRegistered: number };
+}
+
+interface SearchResponse extends BaseResponse {
+  type: "searchResponse";
+  result?: SearchResult[];
+}
+
+interface FileStatusesResponse extends BaseResponse {
+  type: "fileStatuses";
+  result?: FileIndexStatus[];
+}
+
+interface GenericResponse extends BaseResponse {
+  type: "response";
+}
+
+type WorkerResponse =
+  | RegisterFilesResponse
+  | SearchResponse
+  | FileStatusesResponse
+  | GenericResponse;
 
 // Helper to send responses with or without routing
-function sendResponse(message: any, response: any) {
+function sendResponse(message: { from?: string }, response: WorkerResponse) {
   if (message.from) {
     // Routed response
     self.postMessage({ ...response, to: message.from, from: "indexingWorker" });
@@ -77,7 +174,7 @@ function sendResponse(message: any, response: any) {
   }
 }
 
-function sendMessageToZipWorker(message: any): Promise<any> {
+function sendMessageToZipWorker(message: { type: string; path?: string; id?: string }): Promise<ZipFileResponse> {
   return new Promise((resolve, reject) => {
     const id = message.id || `zip_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -121,7 +218,9 @@ function handleRoutedMessage(message: RoutedMessage) {
 
     if (message.type === "readFileChunk") {
       // Accumulate byte chunks
-      request.chunks.push(message.bytes);
+      if (message.bytes) {
+        request.chunks.push(message.bytes);
+      }
 
       if (message.done) {
         // All chunks received, concatenate bytes
@@ -140,7 +239,7 @@ function handleRoutedMessage(message: RoutedMessage) {
           type: "readFileComplete",
           id: message.id,
           success: true,
-          result: { bytes: totalBytes }
+          result: { text: new TextDecoder().decode(totalBytes) }
         });
       }
     }
@@ -148,31 +247,39 @@ function handleRoutedMessage(message: RoutedMessage) {
   }
 
   // Handle indexing commands by message type regardless of source
+  // Type guard function to safely cast routed messages
+  function isIndexingWorkerMessage(msg: RoutedMessage): msg is RoutedMessage & IndexingWorkerMessage {
+    return ['getFileStatuses', 'registerFiles', 'startIndexing', 'indexSingleFile', 'searchLogs', 'stopIndexing'].includes(msg.type);
+  }
+
+  if (!isIndexingWorkerMessage(message)) {
+    console.error(`🔍 Indexing Worker: Unknown command: ${message.type}`);
+    return;
+  }
+
   switch (message.type) {
     case "getFileStatuses":
-      getFileStatuses(message);
+      getFileStatuses(message as GetFileStatusesMessage);
       break;
     case "registerFiles":
-      registerFiles(message);
+      registerFiles(message as RegisterFilesMessage);
       break;
     case "startIndexing":
-      startIndexing(message);
+      startIndexing(message as StartIndexingMessage);
       break;
     case "indexSingleFile":
-      indexSingleFile(message);
+      indexSingleFile(message as IndexSingleFileMessage);
       break;
     case "searchLogs":
-      performSearch(message);
+      performSearch(message as SearchLogsMessage);
       break;
     case "stopIndexing":
-      stopIndexing(message);
+      stopIndexing(message as StopIndexingMessage);
       break;
-    default:
-      console.error(`🔍 Indexing Worker: Unknown command: ${message.type}`);
   }
 }
 
-async function registerFiles(message: any) {
+async function registerFiles(message: RegisterFilesMessage) {
   const { id, files } = message;
 
   try {
@@ -207,7 +314,7 @@ async function registerFiles(message: any) {
   }
 }
 
-async function startIndexing(message: any) {
+async function startIndexing(message: StartIndexingMessage) {
   const { id, filePaths } = message;
 
   try {
@@ -318,7 +425,7 @@ async function startIndexing(message: any) {
           continue;
         }
 
-        if (fileResponse.result?.bytes) {
+        if (fileResponse.result?.text) {
           // Mark file as indexing in search index
           searchIndex.markFileAsIndexing(logFile.path);
 
@@ -330,8 +437,8 @@ async function startIndexing(message: any) {
             fileStatuses: fileStatusesStart,
           });
 
-          // Decode bytes to text for log parsing
-          const text = new TextDecoder("utf-8").decode(fileResponse.result.bytes);
+          // Use text directly from the response
+          const text = fileResponse.result.text;
 
           // Parse the log file
           const parseResult = parser.parseLogFile(
@@ -393,7 +500,6 @@ async function startIndexing(message: any) {
         totalEntries,
         ruleDescription: what,
       } as IndexingCompleteResponse);
-    } else {
     }
   } catch (error) {
     console.error("🔍 Indexing Worker: Error during startIndexing:", error);
@@ -409,7 +515,7 @@ async function startIndexing(message: any) {
   }
 }
 
-function stopIndexing(message: any) {
+function stopIndexing(message: StopIndexingMessage) {
   const { id } = message;
 
   if (currentIndexingId === id) {
@@ -424,7 +530,7 @@ function stopIndexing(message: any) {
   });
 }
 
-async function indexSingleFile(message: any) {
+async function indexSingleFile(message: IndexSingleFileMessage) {
   const { id, file } = message;
 
   try {
@@ -469,9 +575,9 @@ async function indexSingleFile(message: any) {
       return;
     }
 
-    if (fileResponse.result?.bytes) {
-      // Decode bytes to text for log parsing
-      const text = new TextDecoder("utf-8").decode(fileResponse.result.bytes);
+    if (fileResponse.result?.text) {
+      // Use text directly from the response
+      const text = fileResponse.result.text;
 
       // Parse the log file
       const parser = new LogParser();
@@ -553,7 +659,7 @@ async function indexSingleFile(message: any) {
   }
 }
 
-async function performSearch(message: any) {
+async function performSearch(message: SearchLogsMessage) {
   const { id, query } = message;
 
 
@@ -593,7 +699,7 @@ async function performSearch(message: any) {
   }
 }
 
-async function getFileStatuses(message: any) {
+async function getFileStatuses(message: GetFileStatusesMessage) {
   const { id } = message;
 
   try {

@@ -12,17 +12,6 @@ interface FileViewerProps {
   tab: ViewerTab & { kind: "file" };
 }
 
-// Debounce helper
-function debounce<T extends (...args: any[]) => any>(
-  func: T,
-  wait: number,
-): (...args: Parameters<T>) => void {
-  let timeout: NodeJS.Timeout | null = null;
-  return (...args: Parameters<T>) => {
-    if (timeout) clearTimeout(timeout);
-    timeout = setTimeout(() => func(...args), wait);
-  };
-}
 
 function EnhancedFileViewer({ tab }: FileViewerProps) {
   const { dispatch, state } = useApp();
@@ -181,7 +170,9 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
     // Reset if empty
     if (!query) {
       // Clear hidden areas
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ((editorRef.current as any).setHiddenAreas) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (editorRef.current as any).setHiddenAreas([]);
       }
       decorationIds.current = editorRef.current.deltaDecorations(
@@ -194,6 +185,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
 
     // Use our boolean expression filter to test each line
     const visible = new Set<number>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const matchingLines: Array<{ lineNumber: number; range: any }> = [];
     const maxLine = model.getLineCount();
 
@@ -226,6 +218,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
     visible.add(1);
 
     // Build hidden ranges for setHiddenAreas
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const hiddenRanges: any[] = [];
     let runStart: number | null = null;
 
@@ -246,7 +239,9 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
     }
 
     // Use setHiddenRanges to hide non-matching lines
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if ((editorRef.current as any).setHiddenAreas) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (editorRef.current as any).setHiddenAreas(hiddenRanges);
     }
 
@@ -302,11 +297,144 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
 
   // Debounced filter application
   const debouncedApplyFilter = useRef(
-    debounce((query: string, context: number) => {
-      applyFilter(query, context);
-      updateTabTitle(query);
-    }, 150),
+    (() => {
+      let timeout: NodeJS.Timeout | null = null;
+      return (query: string, context: number) => {
+        if (timeout) clearTimeout(timeout);
+        timeout = setTimeout(() => {
+          applyFilter(query, context);
+          updateTabTitle(query);
+        }, 150);
+      };
+    })(),
   ).current;
+
+  // Navigation function that can be called directly
+  const navigateToLine = useCallback((lineNumber: number) => {
+    if (!editorRef.current || !monacoRef.current || lineNumber <= 0) {
+      // Store pending line number for retry when editor/content is ready
+      pendingLineNumber.current = lineNumber;
+      return false;
+    }
+
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    const model = editor.getModel();
+
+    if (!model) {
+      // Store pending line number for retry when model is ready
+      pendingLineNumber.current = lineNumber;
+      return false;
+    }
+
+    const currentLineCount = model.getLineCount();
+    if (lineNumber > currentLineCount) {
+      // Line not loaded yet, store for retry
+      pendingLineNumber.current = lineNumber;
+      console.log(
+        "📄 FileViewer: Line",
+        lineNumber,
+        "not yet loaded (current max:",
+        currentLineCount,
+        "), will retry",
+      );
+      return false;
+    }
+
+    const targetLine = Math.min(lineNumber, currentLineCount);
+    const isExactLine = targetLine === lineNumber; // Are we navigating to the exact requested line?
+
+    // Jump to the line
+    editor.setPosition({ lineNumber: targetLine, column: 1 });
+    editor.revealLineInCenter(targetLine);
+
+    // Only add visual effects if we're at the exact target line
+    if (isExactLine) {
+      // Highlight the target line briefly
+      const range = new monaco.Range(
+        targetLine,
+        1,
+        targetLine,
+        model.getLineMaxColumn(targetLine) || 1,
+      );
+      const decorationIds = editor.deltaDecorations(
+        [],
+        [
+          {
+            range,
+            options: {
+              className: "line-highlight-flash",
+              isWholeLine: true,
+            },
+          },
+        ],
+      );
+
+      // Animate the line number - try multiple selectors to find the right element
+      setTimeout(() => {
+        const editorDom = editor.getDomNode();
+        if (!editorDom) return;
+
+        // Try different selectors for Monaco's line number elements
+        const selectors = [
+          `.margin .line-numbers [data-line-number="${targetLine}"]`,
+          `.margin .line-numbers .cldr:nth-child(${targetLine})`,
+          `.margin .line-numbers div:nth-child(${targetLine})`,
+          `.margin .margin-view-overlays div:nth-child(${targetLine})`,
+          `.margin-view-overlays .current-line`,
+          `.line-numbers .active-line-number`,
+        ];
+
+        let lineNumberElement = null;
+        for (const selector of selectors) {
+          lineNumberElement = editorDom.querySelector(selector);
+          if (lineNumberElement) break;
+        }
+
+        // If we can't find the specific line number, try to find all line number elements
+        if (!lineNumberElement) {
+          const allLineNumbers = editorDom.querySelectorAll(
+            ".margin .line-numbers div",
+          );
+          if (allLineNumbers && allLineNumbers[targetLine - 1]) {
+            lineNumberElement = allLineNumbers[targetLine - 1];
+          }
+        }
+
+        if (lineNumberElement && lineNumberElement instanceof HTMLElement) {
+          lineNumberElement.style.animation = "lineNumberPop 0.5s ease-out";
+          lineNumberElement.style.transformOrigin = "center";
+          setTimeout(() => {
+            lineNumberElement.style.animation = "";
+            lineNumberElement.style.transformOrigin = "";
+          }, 500);
+        }
+      }, 200); // Delay to ensure DOM is ready
+
+      // Remove highlight after 3 seconds
+      setTimeout(() => {
+        if (editorRef.current) {
+          editorRef.current.deltaDecorations(decorationIds, []);
+        }
+      }, 3000);
+
+      // Clear pending navigation since we succeeded with the exact line
+      pendingLineNumber.current = null;
+      console.log(
+        "📄 FileViewer: Successfully navigated to exact line",
+        lineNumber,
+      );
+    } else {
+      console.log(
+        "📄 FileViewer: Navigated to partial line",
+        targetLine,
+        "waiting for line",
+        lineNumber,
+      );
+    }
+
+    return isExactLine;
+  }, []);
 
   // Load file content
   const loadFile = useCallback(async () => {
@@ -450,7 +578,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
       abortRef.current = null;
       loadInitiatedRef.current = false; // Reset on error for potential retry
     }
-  }, [tab.fileId, state.filesIndex, state.workerManager]);
+  }, [tab.fileId, state.filesIndex, state.workerManager, navigateToLine]);
 
   useEffect(() => {
     if (!content && !loading && state.workerManager && !loadInitiatedRef.current) {
@@ -531,135 +659,8 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
         initialFilterRef.current = null; // Clear after use
       }
     },
-    [tab.lineNumber],
-  ); // Include lineNumber in dependencies
-
-  // Navigation function that can be called directly
-  const navigateToLine = useCallback((lineNumber: number) => {
-    if (!editorRef.current || !monacoRef.current || lineNumber <= 0) {
-      // Store pending line number for retry when editor/content is ready
-      pendingLineNumber.current = lineNumber;
-      return false;
-    }
-
-    const editor = editorRef.current;
-    const monaco = monacoRef.current;
-    const model = editor.getModel();
-
-    if (!model) {
-      // Store pending line number for retry when model is ready
-      pendingLineNumber.current = lineNumber;
-      return false;
-    }
-
-    const currentLineCount = model.getLineCount();
-    if (lineNumber > currentLineCount) {
-      // Line not loaded yet, store for retry
-      pendingLineNumber.current = lineNumber;
-      console.log(
-        "📄 FileViewer: Line",
-        lineNumber,
-        "not yet loaded (current max:",
-        currentLineCount,
-        "), will retry",
-      );
-      return false;
-    }
-
-    const targetLine = Math.min(lineNumber, currentLineCount);
-    const isExactLine = targetLine === lineNumber; // Are we navigating to the exact requested line?
-
-    // Jump to the line
-    editor.setPosition({ lineNumber: targetLine, column: 1 });
-    editor.revealLineInCenter(targetLine);
-
-    // Only add visual effects if we're at the exact target line
-    if (isExactLine) {
-      // Highlight the target line briefly
-      const range = new monaco.Range(
-        targetLine,
-        1,
-        targetLine,
-        model.getLineMaxColumn(targetLine) || 1,
-      );
-      const decorationIds = editor.deltaDecorations(
-        [],
-        [
-          {
-            range,
-            options: {
-              className: "line-highlight-flash",
-              isWholeLine: true,
-            },
-          },
-        ],
-      );
-
-      // Animate the line number - try multiple selectors to find the right element
-      setTimeout(() => {
-        const editorDom = editor.getDomNode();
-        if (!editorDom) return;
-
-        // Try different selectors for Monaco's line number elements
-        const selectors = [
-          `.margin .line-numbers [data-line-number="${targetLine}"]`,
-          `.margin .line-numbers .cldr:nth-child(${targetLine})`,
-          `.margin .line-numbers div:nth-child(${targetLine})`,
-          `.margin .margin-view-overlays div:nth-child(${targetLine})`,
-          `.margin-view-overlays .current-line`,
-          `.line-numbers .active-line-number`,
-        ];
-
-        let lineNumberElement = null;
-        for (const selector of selectors) {
-          lineNumberElement = editorDom.querySelector(selector);
-          if (lineNumberElement) break;
-        }
-
-        // If we can't find the specific line number, try to find all line number elements
-        if (!lineNumberElement) {
-          const allLineNumbers = editorDom.querySelectorAll(
-            ".margin .line-numbers div",
-          );
-          if (allLineNumbers && allLineNumbers[targetLine - 1]) {
-            lineNumberElement = allLineNumbers[targetLine - 1];
-          }
-        }
-
-        if (lineNumberElement && lineNumberElement instanceof HTMLElement) {
-          lineNumberElement.style.animation = "lineNumberPop 0.5s ease-out";
-          lineNumberElement.style.transformOrigin = "center";
-          setTimeout(() => {
-            lineNumberElement.style.animation = "";
-            lineNumberElement.style.transformOrigin = "";
-          }, 500);
-        }
-      }, 200); // Delay to ensure DOM is ready
-
-      // Remove highlight after 3 seconds
-      setTimeout(() => {
-        if (editorRef.current) {
-          editorRef.current.deltaDecorations(decorationIds, []);
-        }
-      }, 3000);
-
-      // Clear pending navigation since we succeeded with the exact line
-      pendingLineNumber.current = null;
-      console.log(
-        "📄 FileViewer: Successfully navigated to exact line",
-        lineNumber,
-      );
-    } else {
-      console.log(
-        "📄 FileViewer: Navigated to partial line",
-        targetLine,
-        "waiting for line",
-        lineNumber,
-      );
-    }
-
-    return isExactLine;
-  }, []);
+    [tab.lineNumber, navigateToLine],
+  ); // Include lineNumber and navigateToLine in dependencies
 
   // Handle line navigation when lineNumber changes
   useEffect(() => {
@@ -676,7 +677,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
         navigateToLine(tab.lineNumber!); // Non-null assertion since we checked above
       }, 100);
     }
-  }, []); // Only run once when the component mounts
+  }, [tab.lineNumber, navigateToLine]); // Include dependencies
 
   // Note: We don't need to update content when using defaultValue + keepCurrentModel
   // because the model is stable and content updates would clear hidden areas

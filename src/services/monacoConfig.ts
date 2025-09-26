@@ -63,14 +63,14 @@ async function updateSchemaCache() {
 
       // Group columns by table name
       for (const row of allSchemas) {
-        const tableName = row.full_table_name;
+        const tableName = row.full_table_name as string;
         if (tables.includes(tableName)) {
           if (!columns.has(tableName)) {
             columns.set(tableName, []);
           }
           columns.get(tableName)!.push({
-            name: row.column_name,
-            type: row.data_type,
+            name: row.column_name as string,
+            type: row.data_type as string,
           });
         }
       }

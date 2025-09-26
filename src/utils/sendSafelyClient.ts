@@ -33,7 +33,15 @@ export interface PackageInfo {
   // Add other package properties as needed
 }
 
-export interface SendSafelyResponse<T = any> {
+export interface DownloadUrlsResponse {
+  downloadUrls?: Array<{ part: number; url: string }>;
+  urls?: Array<{ part: number; url: string }>;
+  data?: {
+    downloadUrls?: Array<{ part: number; url: string }>;
+  };
+}
+
+export interface SendSafelyResponse<T = unknown> {
   response: string;
   message?: string;
   data?: T;
@@ -93,10 +101,10 @@ export class SendSafelyClient {
   /**
    * Make an authenticated request to the SendSafely API
    */
-  public async makeRequest<T = any>(
+  public async makeRequest<T = unknown>(
     method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     urlPath: string,
-    body?: any
+    body?: Record<string, unknown>
   ): Promise<T> {
     const timestamp = this.generateTimestamp();
     const requestBody = body ? JSON.stringify(body) : '';
@@ -204,7 +212,7 @@ export class SendSafelyClient {
       const checksum = await this.generateChecksum(keyCode, packageCode);
 
       // Always include both startSegment and endSegment
-      const body: any = { checksum, startSegment };
+      const body: Record<string, unknown> = { checksum, startSegment };
       if (endSegment !== undefined) {
         body.endSegment = endSegment;
       } else {
@@ -212,7 +220,7 @@ export class SendSafelyClient {
         body.endSegment = startSegment + 24; // SendSafely typically returns up to 25 segments per request
       }
 
-      const response = await this.makeRequest<any>(
+      const response = await this.makeRequest<DownloadUrlsResponse>(
         'POST',
         `/api/v2.0/package/${encodeURIComponent(packageId)}/file/${encodeURIComponent(fileId)}/download-urls/`,
         body
@@ -251,9 +259,10 @@ export class SendSafelyClient {
       console.log('Package response:', response);
 
       // Check if the response has the package data directly or in a data field
-      if ((response as any).packageId && (response as any).files) {
+      const responseAny = response as unknown as Record<string, unknown>;
+      if (responseAny.packageId && responseAny.files) {
         // Package info is directly in the response
-        return response as any as PackageInfo;
+        return responseAny as unknown as PackageInfo;
       } else if (response.data) {
         // Package info is in the data field
         return response.data;

@@ -12,8 +12,30 @@ import type {
 import type { ParsedLogEntry } from "./logParser";
 import { LogParser } from "./logParser";
 import type { ParsedQuery } from "./queryParser";
+import type { DocumentData } from "flexsearch";
 
-interface IndexedLogEntry {
+// FlexSearch result types
+type FlexSearchResultId = string | number;
+
+interface FlexSearchFieldResult {
+  field: string;
+  result: FlexSearchResultId[];
+}
+
+interface FlexSearchSimpleResult {
+  result: FlexSearchResultId[];
+}
+
+type FlexSearchResults = FlexSearchFieldResult[] | FlexSearchSimpleResult[] | FlexSearchResultId[];
+
+// FlexSearch Document instance for our indexed log entries
+interface FlexSearchDocument {
+  add(document: IndexedLogEntry): this;
+  search(query: string, options?: { limit?: number }): FlexSearchResults;
+  clear(): this;
+}
+
+interface IndexedLogEntry extends DocumentData {
   id: number;
   level: string;
   timestamp: string;
@@ -25,11 +47,10 @@ interface IndexedLogEntry {
   sourceFile: string;
   startLine: number;
   endLine: number;
-  [key: string]: any; // Allow any additional properties for FlexSearch
 }
 
 export class LogSearchIndex {
-  private flexIndex: any; // Use any for now to avoid complex typing issues
+  private flexIndex: FlexSearchDocument;
   private entries = new Map<number, ParsedLogEntry>();
   private logParser = new LogParser();
   private isReady = false;
@@ -313,7 +334,7 @@ export class LogSearchIndex {
   /**
    * Extract entry IDs from FlexSearch results
    */
-  private extractIdsFromFlexSearchResults(results: any): number[] {
+  private extractIdsFromFlexSearchResults(results: FlexSearchResults): number[] {
     const ids: number[] = [];
 
     if (Array.isArray(results)) {
@@ -322,28 +343,27 @@ export class LogSearchIndex {
           ids.push(parseInt(result));
         } else if (typeof result === "number") {
           ids.push(result);
-        } else if (result && result.id) {
+        } else if (result && Array.isArray((result as FlexSearchSimpleResult).result)) {
+          const simpleResult = result as FlexSearchSimpleResult;
           ids.push(
-            typeof result.id === "string" ? parseInt(result.id) : result.id,
-          );
-        } else if (result && Array.isArray(result.result)) {
-          ids.push(
-            ...result.result.map((id: any) =>
+            ...simpleResult.result.map((id: FlexSearchResultId) =>
               typeof id === "string" ? parseInt(id) : id,
             ),
           );
-        } else if (result && result.field && Array.isArray(result.result)) {
+        } else if (result && (result as FlexSearchFieldResult).field && Array.isArray((result as FlexSearchFieldResult).result)) {
           // FlexSearch document results have this structure
+          const fieldResult = result as FlexSearchFieldResult;
           ids.push(
-            ...result.result.map((id: any) =>
+            ...fieldResult.result.map((id: FlexSearchResultId) =>
               typeof id === "string" ? parseInt(id) : id,
             ),
           );
         }
       }
-    } else if (results && Array.isArray(results.result)) {
+    } else if (results && Array.isArray((results as FlexSearchSimpleResult).result)) {
+      const simpleResults = results as FlexSearchSimpleResult;
       ids.push(
-        ...results.result.map((id: any) =>
+        ...simpleResults.result.map((id: FlexSearchResultId) =>
           typeof id === "string" ? parseInt(id) : id,
         ),
       );
@@ -518,18 +538,29 @@ export class LogSearchIndex {
    * Process FlexSearch results and convert to SearchResult format
    */
   private processFlexSearchResults(
-    searchResults: any[],
+    searchResults: FlexSearchResults,
     filters?: SearchQuery["filters"],
   ): SearchResult[] {
     const results: SearchResult[] = [];
 
-    for (const result of searchResults) {
-      if (Array.isArray(result.result)) {
-        for (const id of result.result) {
-          const numericId = typeof id === "string" ? parseInt(id) : id;
+    if (Array.isArray(searchResults)) {
+      for (const result of searchResults) {
+        if (typeof result === "string" || typeof result === "number") {
+          // Direct ID result
+          const numericId = typeof result === "string" ? parseInt(result) : result;
           const entry = this.entries.get(numericId);
           if (entry && this.applyFilters(entry, filters)) {
             results.push(this.entryToSearchResult(entry));
+          }
+        } else if ((result as FlexSearchFieldResult).result && Array.isArray((result as FlexSearchFieldResult).result)) {
+          // Field-based result
+          const fieldResult = result as FlexSearchFieldResult;
+          for (const id of fieldResult.result) {
+            const numericId = typeof id === "string" ? parseInt(id) : id;
+            const entry = this.entries.get(numericId);
+            if (entry && this.applyFilters(entry, filters)) {
+              results.push(this.entryToSearchResult(entry));
+            }
           }
         }
       }

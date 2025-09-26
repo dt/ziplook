@@ -1,7 +1,8 @@
 import { useState, useContext, useEffect } from "react";
 import { AppContext } from "../../state/AppContext";
-import type { SearchResult, ViewerTab } from "../../state/types";
+import type { SearchResult, ViewerTab, FileIndexStatus } from "../../state/types";
 import { QueryParser } from "../../services/queryParser";
+
 
 // List of file extensions that can be indexed
 const INDEXABLE_EXTENSIONS = [".txt", ".log", ".json"];
@@ -47,7 +48,7 @@ function SearchView() {
   );
 
   // Get real file statuses from global state (updated by worker callbacks)
-  const realFileStatuses = state.fileStatuses || [];
+  const realFileStatuses: FileIndexStatus[] = state.fileStatuses || [];
 
   // Track previous indexed count to detect changes
   const [previousIndexedCount, setPreviousIndexedCount] = useState(0);
@@ -55,7 +56,7 @@ function SearchView() {
   // Re-run search when new files are indexed
   useEffect(() => {
     const currentIndexedCount = realFileStatuses.filter(
-      (fs: any) => fs.status === "indexed",
+      (fs) => fs.status === "indexed",
     ).length;
 
     // Only re-search if we have a meaningful change
@@ -93,7 +94,7 @@ function SearchView() {
       // Update the previous count for next comparison
       setPreviousIndexedCount(currentIndexedCount);
     }
-  }, [realFileStatuses, lastSearchQuery, isSearching, previousIndexedCount]);
+  }, [realFileStatuses, lastSearchQuery, isSearching, previousIndexedCount, state.workerManager]);
 
   // Get file lists ONLY from what the indexing worker has told us about
   const getFileLists = () => {
@@ -101,10 +102,10 @@ function SearchView() {
     const fileStatuses = Array.isArray(realFileStatuses) ? realFileStatuses : [];
 
     // Categorize files based ONLY on worker status
-    const indexed = fileStatuses.filter((f: any) => f.status === "indexed");
-    const indexing = fileStatuses.filter((f: any) => f.status === "indexing");
-    const errors = fileStatuses.filter((f: any) => f.status === "error");
-    const unindexed = fileStatuses.filter((f: any) => f.status === "unindexed");
+    const indexed = fileStatuses.filter((f) => f.status === "indexed");
+    const indexing = fileStatuses.filter((f) => f.status === "indexing");
+    const errors = fileStatuses.filter((f) => f.status === "error");
+    const unindexed = fileStatuses.filter((f) => f.status === "unindexed");
 
     return { indexed, indexing, unindexed, errors };
   };
@@ -205,7 +206,7 @@ function SearchView() {
     }
   };
 
-  const handleIndexFile = async (file: any) => {
+  const handleIndexFile = async (file: FileIndexStatus) => {
     if (!state.workerManager) return;
 
 
@@ -784,7 +785,7 @@ function SearchView() {
     }
   };
 
-  const renderFileList = (files: any[], showAddButton = false) => {
+  const renderFileList = (files: FileIndexStatus[], showAddButton = false) => {
     if (files.length === 0) {
       return (
         <div
@@ -811,7 +812,7 @@ function SearchView() {
         groups[dir].push(file);
         return groups;
       },
-      {} as Record<string, any[]>,
+      {} as Record<string, FileIndexStatus[]>,
     );
 
     return (
@@ -829,7 +830,7 @@ function SearchView() {
             >
               {dir === "/" ? "Root" : dir}
             </div>
-            {(dirFiles as any[]).map((file: any) => (
+            {dirFiles.map((file) => (
               <div
                 key={file.path}
                 style={{

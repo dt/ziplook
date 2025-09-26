@@ -11,7 +11,7 @@ export {
   type ProtoDescriptor,
 } from "./protoDecoder";
 
-export function detectAndTransform(value: any): any {
+export function detectAndTransform(value: unknown): unknown {
   if (typeof value === "string") {
     if (value.startsWith("{") && value.endsWith("}")) {
       try {
@@ -25,7 +25,7 @@ export function detectAndTransform(value: any): any {
   return value;
 }
 
-export function formatValue(value: any): string {
+export function formatValue(value: unknown): string {
   if (value === null || value === undefined) {
     return "";
   }

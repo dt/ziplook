@@ -1,6 +1,66 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useApp } from "../state/AppContext";
-import { createSendSafelyClient, parseSendSafelyUrl, type PackageInfo } from "../utils/sendSafelyClient";
+import { createSendSafelyClient, parseSendSafelyUrl, type PackageInfo, type PackageFile } from "../utils/sendSafelyClient";
+import type { ZipEntryMeta } from "../state/types";
+
+// Import types that match WorkerManager expectations
+interface TableData {
+  name: string;
+  path: string;
+  size: number;
+  nodeId?: number;
+  originalName?: string;
+  isError?: boolean;
+  loaded?: boolean;
+  loading?: boolean;
+  sourceFile?: string;
+}
+
+interface FileStatus {
+  path: string;
+  status: 'pending' | 'indexing' | 'completed' | 'error';
+  progress?: number;
+  error?: string;
+}
+
+interface ParsedSendSafelyUrl {
+  packageCode: string;
+  keyCode: string;
+  baseUrl: string;
+}
+
+interface ValidationStatus {
+  isValid: boolean;
+  message: string;
+  email?: string;
+}
+
+interface SendSafelyModalProps {
+  hasValidCredentials: () => boolean;
+  sendSafelyModalUrl: string;
+  setSendSafelyModalUrl: (url: string) => void;
+  attemptPackageLoad: (url: string) => void;
+  apiKey: string;
+  setApiKey: (key: string) => void;
+  apiSecret: string;
+  setApiSecret: (secret: string) => void;
+  isValidating: boolean;
+  validationStatus: ValidationStatus | null;
+  setValidationStatus: (status: ValidationStatus | null) => void;
+  packageLoading: boolean;
+  packageError: string | null;
+  packageInfo: PackageInfo | null;
+  setPackageInfo: (info: PackageInfo | null) => void;
+  setPackageError: (error: string | null) => void;
+  setPackageLoading: (loading: boolean) => void;
+  parsedUrl: ParsedSendSafelyUrl | null;
+  validateCredentials: (host: string, key: string, secret: string) => void;
+  saveCredentials: (key: string, secret: string) => void;
+  loadSendSafelyFile: (file: PackageFile) => void;
+  setLoading: (loading: boolean) => void;
+  setLoadingMessage: (message: string) => void;
+  waitForWorkers: () => Promise<import("../state/types").IWorkerManager>;
+}
 
 function SendSafelyModalContent({
   hasValidCredentials,
@@ -26,7 +86,7 @@ function SendSafelyModalContent({
   loadSendSafelyFile,
   setLoading,
   setLoadingMessage
-}: any) {
+}: SendSafelyModalProps) {
   const [showOtherFiles, setShowOtherFiles] = useState(false);
   const [forceStep1, setForceStep1] = useState(false);
   const [showValidateButton, setShowValidateButton] = useState(true);
@@ -51,7 +111,7 @@ function SendSafelyModalContent({
       }, 500);
       return () => clearTimeout(timeoutId);
     }
-  }, [apiKey, apiSecret]);
+  }, [apiKey, apiSecret, isValidating, validationStatus, validateCredentials, setValidationStatus]);
 
   // Watch for validation status changes to update button states
   React.useEffect(() => {
@@ -487,10 +547,10 @@ function SendSafelyModalContent({
 
           {(() => {
 
-            const zipFiles = packageInfo.files.filter((file: any) => file.fileName.toLowerCase().endsWith('.zip'));
-            const otherFiles = packageInfo.files.filter((file: any) => !file.fileName.toLowerCase().endsWith('.zip'));
+            const zipFiles = packageInfo.files.filter((file: PackageFile) => file.fileName.toLowerCase().endsWith('.zip'));
+            const otherFiles = packageInfo.files.filter((file: PackageFile) => !file.fileName.toLowerCase().endsWith('.zip'));
 
-            const renderFileItem = (file: any) => {
+            const renderFileItem = (file: PackageFile) => {
               const isZipFile = file.fileName.toLowerCase().endsWith('.zip');
 
               return (
@@ -770,10 +830,10 @@ function DropZone() {
     }
   };
 
-  const hasValidCredentials = () => {
+  const hasValidCredentials = useCallback(() => {
     const { key, secret } = getSavedCredentials();
     return key.length === 22 && secret.length === 22;
-  };
+  }, []);
 
   const executeDebugApiCall = async () => {
     if (!debugEndpoint.trim()) {
@@ -810,7 +870,7 @@ function DropZone() {
       // Debug API call
 
       // Use the client's makeRequest method (we need to make it accessible)
-      const response = await (client as any).makeRequest(method, debugEndpoint, body);
+      const response = await client.makeRequest(method, debugEndpoint, body);
 
       setDebugResult(JSON.stringify(response, null, 2));
       // Debug API response received
@@ -824,7 +884,7 @@ function DropZone() {
     }
   };
 
-  const loadSendSafelyFile = async (file: any) => {
+  const loadSendSafelyFile = async (file: PackageFile) => {
     if (!file.fileName.toLowerCase().endsWith('.zip')) {
       throw new Error("Please select a .zip file");
     }
@@ -887,10 +947,10 @@ function DropZone() {
         console.log(`🎯 Stack processing complete: ${_stackFilesCount} files`);
         dispatch({ type: "SET_STACKGAZER_READY", ready: true });
       },
-      onFileList: (entries: any[], _totalFiles: number) => {
+      onFileList: (entries: ZipEntryMeta[]) => {
         // Received file list
 
-        (window as any).__zipReader = workerManager;
+        (window as unknown as { __zipReader: unknown }).__zipReader = workerManager;
 
         dispatch({
           type: "SET_ZIP",
@@ -901,8 +961,8 @@ function DropZone() {
 
         // Extract stack files from the file list
         const stackFiles = entries
-          .filter((entry: any) => !entry.isDir && entry.path.includes('stacks.txt'))
-          .map((entry: any) => ({
+          .filter((entry: ZipEntryMeta) => !entry.isDir && entry.path.includes('stacks.txt'))
+          .map((entry: ZipEntryMeta) => ({
             path: entry.path,
             size: entry.size,
             compressedSize: entry.compressedSize
@@ -917,13 +977,13 @@ function DropZone() {
 
         dispatch({ type: "SET_TABLES_LOADING", loading: true });
       },
-      onTableAdded: (table: any) => {
+      onTableAdded: (table: TableData) => {
         dispatch({
           type: "REGISTER_TABLE",
           table: {
             name: table.name,
-            sourceFile: table.sourceFile,
-            loaded: table.loaded,
+            sourceFile: table.sourceFile || table.path,
+            loaded: table.loaded || false,
             size: table.size,
             nodeId: table.nodeId,
             originalName: table.originalName,
@@ -950,10 +1010,17 @@ function DropZone() {
           setError(`Indexing failed: ${error}`);
         }
       },
-      onFileStatusUpdate: (fileStatuses: any[]) => {
+      onFileStatusUpdate: (fileStatuses: FileStatus[]) => {
+        // Convert FileStatus to FileIndexStatus by adding missing fields
+        const convertedStatuses = fileStatuses.map(status => ({
+          ...status,
+          name: status.path.split('/').pop() || status.path,
+          size: 0, // Size not available from FileStatus
+          status: status.status as "unindexed" | "indexing" | "indexed" | "error"
+        }));
         dispatch({
           type: "SET_FILE_STATUSES",
-          fileStatuses
+          fileStatuses: convertedStatuses
         });
       }
     });
@@ -966,7 +1033,11 @@ function DropZone() {
       apiSecret: secret,
       keyCode: parsed.keyCode,
       fileName: file.fileName,
-      packageInfo
+      packageInfo: {
+        packageId: packageInfo.packageId,
+        keyCode: parsed.keyCode,
+        serverSecret: secret // Use the API secret as server secret
+      }
     });
 
     // Close the modal after starting the load
@@ -1051,7 +1122,7 @@ function DropZone() {
   };
 
 
-  const attemptPackageLoad = async (url: string) => {
+  const attemptPackageLoad = useCallback(async (url: string) => {
     const parsed = parseSendSafelyUrl(url);
     if (!parsed) {
       return; // URL doesn't have packageCode and keycode
@@ -1082,7 +1153,7 @@ function DropZone() {
     } finally {
       setPackageLoading(false);
     }
-  };
+  }, [hasValidCredentials, packageLoading, setPackageLoading, setPackageError, setPackageInfo]);
 
 
   const handleCanonicalLinkSubmit = () => {
@@ -1115,10 +1186,10 @@ function DropZone() {
         attemptPackageLoad(sendSafelyModalUrl);
       }
     }
-  }, [showSendSafelyModal, sendSafelyModalUrl]);
+  }, [showSendSafelyModal, sendSafelyModalUrl, hasValidCredentials, packageInfo, packageLoading, packageError, attemptPackageLoad]);
 
 
-  const handleFile = async (file: File) => {
+  const handleFile = useCallback(async (file: File) => {
     if (!file.name.endsWith(".zip")) {
       setError("Please select a .zip file");
       return;
@@ -1191,11 +1262,11 @@ function DropZone() {
           console.log(`🎯 Stack processing complete: ${_stackFilesCount} files`);
           dispatch({ type: "SET_STACKGAZER_READY", ready: true });
         },
-        onFileList: (entries: any[], _totalFiles: number) => {
+        onFileList: (entries: ZipEntryMeta[]) => {
           // Received file list
 
-          // Store workerManager globally for later file reading
-          (window as any).__zipReader = workerManager;
+          // Set window.__zipReader for backward compatibility with FileViewer
+          (window as unknown as { __zipReader: unknown }).__zipReader = workerManager;
 
           dispatch({
             type: "SET_ZIP",
@@ -1206,8 +1277,8 @@ function DropZone() {
 
           // Extract stack files from the file list
           const stackFiles = entries
-            .filter((entry: any) => !entry.isDir && entry.path.includes('stacks.txt'))
-            .map((entry: any) => ({
+            .filter((entry: ZipEntryMeta) => !entry.isDir && entry.path.includes('stacks.txt'))
+            .map((entry: ZipEntryMeta) => ({
               path: entry.path,
               size: entry.size,
               compressedSize: entry.compressedSize
@@ -1223,14 +1294,14 @@ function DropZone() {
           // Set tables loading state - controller will start loading them
           dispatch({ type: "SET_TABLES_LOADING", loading: true });
         },
-        onTableAdded: (table: any) => {
+        onTableAdded: (table: TableData) => {
           // Controller already prepared the table, just register it
           dispatch({
             type: "REGISTER_TABLE",
             table: {
               name: table.name,
-              sourceFile: table.sourceFile,
-              loaded: table.loaded,
+              sourceFile: table.sourceFile || table.path,
+              loaded: table.loaded || false,
               size: table.size,
               nodeId: table.nodeId,
               originalName: table.originalName,
@@ -1261,11 +1332,17 @@ function DropZone() {
             setError(`Indexing failed: ${error}`);
           }
         },
-        onFileStatusUpdate: (fileStatuses: any[]) => {
-          // Store file statuses in global state for SearchView to access
+        onFileStatusUpdate: (fileStatuses: FileStatus[]) => {
+          // Convert FileStatus to FileIndexStatus by adding missing fields
+          const convertedStatuses = fileStatuses.map(status => ({
+            ...status,
+            name: status.path.split('/').pop() || status.path,
+            size: 0, // Size not available from FileStatus
+            status: status.status as "unindexed" | "indexing" | "indexed" | "error"
+          }));
           dispatch({
             type: "SET_FILE_STATUSES",
-            fileStatuses
+            fileStatuses: convertedStatuses
           });
         }
       });
@@ -1281,7 +1358,7 @@ function DropZone() {
       );
       setLoading(false);
     }
-  };
+  }, [setError, setLoading, setLoadingMessage, state.workerManager, state.workersReady, waitForWorkers, dispatch]);
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -1311,7 +1388,7 @@ function DropZone() {
     if (files.length > 0) {
       handleFile(files[0]);
     }
-  }, []);
+  }, [handleFile]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -1345,7 +1422,7 @@ function DropZone() {
       );
       setLoading(false);
     }
-  }, []);
+  }, [handleFile]);
 
   return (
     <div

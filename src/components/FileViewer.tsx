@@ -21,13 +21,7 @@ const FileContent = memo(({ content }: { content: string }) => {
 FileContent.displayName = "FileContent";
 
 function FileViewer({ tab }: FileViewerProps) {
-  // Use enhanced viewer if enabled
-  if (USE_ENHANCED_VIEWER) {
-    return <EnhancedFileViewer tab={tab} />;
-  }
-
-  console.log(`FileViewer RENDER for ${tab.id}`);
-
+  // Move all hooks to the top to avoid conditional hook calls
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [content, setContent] = useState<string>("");
@@ -35,22 +29,6 @@ function FileViewer({ tab }: FileViewerProps) {
   const [isStreaming, setIsStreaming] = useState(false);
   const abortRef = useRef<(() => void) | null>(null);
   const loadInitiatedRef = useRef(false);
-
-  useEffect(() => {
-    // Load once on mount - prevent double loading during React StrictMode double mount
-    if (!content && !loading && !loadInitiatedRef.current) {
-      console.log(`Loading file from zip: ${tab.id}`);
-      loadInitiatedRef.current = true;
-      loadFile();
-    }
-
-    // Cleanup on unmount
-    return () => {
-      if (abortRef.current) {
-        abortRef.current();
-      }
-    };
-  }, []); // Empty deps - only run once on mount
 
   const loadFile = useCallback(async () => {
     setLoading(true);
@@ -60,6 +38,7 @@ function FileViewer({ tab }: FileViewerProps) {
     setIsStreaming(true);
 
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const reader = (window as any).__zipReader;
       if (!reader) {
         throw new Error("No zip file loaded");
@@ -116,7 +95,39 @@ function FileViewer({ tab }: FileViewerProps) {
       abortRef.current = null;
       loadInitiatedRef.current = false; // Reset on error for potential retry
     }
-  }, [tab.fileId || tab.id]);
+  }, [tab.fileId, tab.id]);
+
+  useEffect(() => {
+    // Load once on mount - prevent double loading during React StrictMode double mount
+    if (!content && !loading && !loadInitiatedRef.current) {
+      console.log(`Loading file from zip: ${tab.id}`);
+      loadInitiatedRef.current = true;
+      loadFile();
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (abortRef.current) {
+        abortRef.current();
+      }
+    };
+  }, [content, loading, loadFile, tab.id]);
+
+  // Use enhanced viewer if enabled
+  if (USE_ENHANCED_VIEWER) {
+    return <EnhancedFileViewer tab={tab} />;
+  }
+
+  console.log(`FileViewer RENDER for ${tab.id}`);
+
+  // Helper function for formatting file sizes
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  };
 
   // Show loading state only when no content yet
   if (loading && !content) {
@@ -185,12 +196,4 @@ function FileViewer({ tab }: FileViewerProps) {
   );
 }
 
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
-}
-
-export default memo(FileViewer);
+export default FileViewer;

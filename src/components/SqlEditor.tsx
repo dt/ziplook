@@ -18,7 +18,7 @@ interface SqlEditorProps {
 function SqlEditor({ tab }: SqlEditorProps) {
   const { dispatch, state } = useApp();
   const [query, setQuery] = useState(tab.query || "");
-  const [results, setResults] = useState<any[] | null>(null);
+  const [results, setResults] = useState<Record<string, unknown>[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [expandedCell, setExpandedCell] = useState<{
@@ -49,7 +49,7 @@ function SqlEditor({ tab }: SqlEditorProps) {
   const [editorHeight, setEditorHeight] = useState("52px"); // 2 lines + padding initially
 
   const renderCellValue = (
-    value: any,
+    value: unknown,
     rowIndex: number,
     colIndex: number,
     columnName?: string,
