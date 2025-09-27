@@ -417,7 +417,7 @@ function sendResponse(
   }
 }
 
-const LARGE_FILE_THRESHOLD = 2 * 1024 * 1024; // 20MB
+const LARGE_FILE_THRESHOLD = 4 * 1024 * 1024;
 
 function sendMessageToZipWorker(message: {
   type: string;
