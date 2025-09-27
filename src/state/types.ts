@@ -166,7 +166,7 @@ export interface SendSafelyConfig {
   apiKey: string;
   apiSecret: string;
   keyCode: string;
-  fileName: string;
+  fileId: string;
   packageInfo: SendSafelyPackageInfo;
 }
 

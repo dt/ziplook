@@ -102,15 +102,16 @@ function SendSafelyModalContent({
 
   // On input change: reset button states and optionally auto-validate
   React.useEffect(() => {
+    // Reset validation state when fields change
     setShowSaveButton(false);
     setValidationStatus(null);
     setShowValidateButton(true);
 
-    // Auto-validate if fields look good and we don't already have a validation result
+    // Auto-validate if fields look good
     const HARDCODED_HOST = "https://cockroachlabs.sendsafely.com";
     const fieldsLookGood = apiKey.length === 22 && apiSecret.length === 22;
 
-    if (fieldsLookGood && !isValidating && !validationStatus) {
+    if (fieldsLookGood && !isValidating) {
       const timeoutId = setTimeout(() => {
         validateCredentials(HARDCODED_HOST, apiKey, apiSecret);
       }, 500);
@@ -119,10 +120,6 @@ function SendSafelyModalContent({
   }, [
     apiKey,
     apiSecret,
-    isValidating,
-    validationStatus,
-    validateCredentials,
-    setValidationStatus,
   ]);
 
   // Watch for validation status changes to update button states
@@ -1217,7 +1214,7 @@ function DropZone() {
       apiKey: key,
       apiSecret: secret,
       keyCode: parsed.keyCode,
-      fileName: file.fileName,
+      fileId: file.fileId,
       packageInfo: {
         ...packageInfo,
         keyCode: parsed.keyCode,

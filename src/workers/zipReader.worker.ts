@@ -724,7 +724,7 @@ type SendSafelyInit = {
   apiKey: string;
   apiSecret: string;
   keyCode: string;
-  fileName: string;
+  fileId: string;
   packageInfo: SendSafelyPackageInfo;
 };
 
@@ -791,7 +791,7 @@ class SendSafelyProvider implements BytesProvider {
     this.apiKey = init.apiKey;
     this.apiSecret = init.apiSecret;
     this.keyCode = init.keyCode;
-    this.fileName = init.fileName;
+    this.fileId = init.fileId;
 
     // Extract package info from the provided response
     const pkgInfo = init.packageInfo;
@@ -807,10 +807,9 @@ class SendSafelyProvider implements BytesProvider {
       fileSize: number;
       parts: number;
     }>;
-    const f = files.find((x) => x.fileName === this.fileName) ?? files[0];
-    if (!f) throw new Error(`File not found in package: ${this.fileName}`);
-
-    this.fileId = f.fileId;
+    const f = files.find((x) => x.fileId === this.fileId) ?? files[0];
+    if (!f) throw new Error(`File not found in package: ${this.fileId}`);
+    this.fileName = f.fileName;
     this.fileSize = f.fileSize;
     this.parts = f.parts;
 
