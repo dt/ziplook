@@ -8,7 +8,6 @@ export {
   ProtoDecoder,
   protoDecoder,
   type DecodedProto,
-  type ProtoDescriptor,
 } from "./protoDecoder";
 
 export function detectAndTransform(value: unknown): unknown {

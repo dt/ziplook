@@ -6,13 +6,12 @@
 import * as duckdb from "@duckdb/duckdb-wasm";
 import { preprocessCSV, shouldPreprocess } from "../crdb/csvPreprocessor";
 import { getTableTypeHints } from "../crdb/columnTypeRegistry";
-import { ProtoDecoder } from "../crdb/protoDecoder";
-import * as protobuf from "protobufjs";
-import crdbDescriptors from "../crdb.json";
-import duckdb_wasm from "@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm?url";
-import mvp_worker from "@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url";
-import duckdb_wasm_eh from "@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url";
-import eh_worker from "@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url";
+import { protoDecoder } from "../crdb/protoDecoder";
+
+import mvpWasmUrl from "@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm?url";
+import mvpWorkerUrl from "@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url";
+import ehWasmUrl from "@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url";
+import ehWorkerUrl from "@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url";
 
 // Message format for centralized routing
 interface RoutedMessage {
@@ -170,9 +169,6 @@ const loadedTables = new Set<string>();
 let currentLoadingId: string | null = null;
 let shouldStop = false;
 
-// Worker-specific proto decoder
-let workerProtoDecoder: ProtoDecoder | null = null;
-
 // Process very large files incrementally by loading directly into DuckDB
 async function loadLargeFileIncrementally(
   data: Uint8Array,
@@ -244,7 +240,7 @@ async function loadLargeFileIncrementally(
             nameForPreprocessing,
             contentForProcessing,
           );
-          if (needsPreprocessing && workerProtoDecoder) {
+          if (needsPreprocessing) {
             console.log(`🔧 Preprocessing chunk ${chunkNumber + 1}...`);
             try {
               processedContent = preprocessCSV(contentForProcessing, {
@@ -252,7 +248,7 @@ async function loadLargeFileIncrementally(
                 delimiter,
                 decodeKeys: true,
                 decodeProtos: true,
-                protoDecoder: workerProtoDecoder,
+                protoDecoder: protoDecoder,
               });
             } catch (err) {
               console.warn(
@@ -328,14 +324,14 @@ async function loadLargeFileIncrementally(
       nameForPreprocessing,
       remainder,
     );
-    if (needsPreprocessing && workerProtoDecoder) {
+    if (needsPreprocessing) {
       try {
         processedContent = preprocessCSV(remainder, {
           tableName: nameForPreprocessing,
           delimiter,
           decodeKeys: true,
           decodeProtos: true,
-          protoDecoder: workerProtoDecoder,
+          protoDecoder: protoDecoder,
         });
       } catch (err) {
         console.warn(`⚠️ Preprocessing failed for final chunk:`, err);
@@ -524,7 +520,7 @@ function handleRoutedMessage(message: RoutedMessage) {
         }
 
         // For large files, include raw bytes in the response
-        const result: any = { text: totalText };
+        const result: { text: string; rawBytes?: Uint8Array } = { text: totalText };
         if (totalText === "LARGE_FILE_PLACEHOLDER") {
           result.rawBytes = combined;
         }
@@ -568,23 +564,18 @@ async function initializeDatabase(message: InitializeDatabaseMessage) {
   }
 
   try {
-    // Configure DuckDB with workers
-    const MANUAL_BUNDLES: duckdb.DuckDBBundles = {
-      mvp: {
-        mainModule: duckdb_wasm,
-        mainWorker: mvp_worker,
-      },
-      eh: {
-        mainModule: duckdb_wasm_eh,
-        mainWorker: eh_worker,
-      },
+    // Use DuckDB's Vite recipe with proper ?url imports
+    const bundles: duckdb.DuckDBBundles = {
+      mvp: { mainModule: mvpWasmUrl, mainWorker: mvpWorkerUrl },
+      eh: { mainModule: ehWasmUrl, mainWorker: ehWorkerUrl },
     };
 
     // Select bundle based on browser support
-    const bundle = await duckdb.selectBundle(MANUAL_BUNDLES);
+    const bundle = await duckdb.selectBundle(bundles);
 
-    // Instantiate worker
-    const worker = new Worker(bundle.mainWorker!);
+    // Create worker with type: 'module' as recommended by DuckDB docs
+    const worker = new Worker(bundle.mainWorker!, { type: 'module' });
+
     // Use a silent logger to avoid spammy console output
     const logger = new duckdb.VoidLogger();
 
@@ -620,25 +611,6 @@ async function initializeDatabase(message: InitializeDatabaseMessage) {
     } catch (err) {
       console.warn("Failed to preload JSON extension:", err);
       // Continue anyway - extension will load on demand
-    }
-
-    // Initialize worker-specific proto decoder with bundled descriptors
-    try {
-      workerProtoDecoder = new ProtoDecoder();
-      // Create protobuf root directly from bundled JSON
-      const root = protobuf.Root.fromJSON(
-        crdbDescriptors as Record<string, unknown>,
-      );
-      // Access private properties through bracket notation for initialization
-      (workerProtoDecoder as unknown as Record<string, unknown>).root = root;
-      (workerProtoDecoder as unknown as Record<string, unknown>).loaded = true;
-      console.log("✓ Proto decoder initialized successfully in worker");
-    } catch (protoError) {
-      console.warn(
-        "⚠️ Failed to initialize proto decoder in worker:",
-        protoError,
-      );
-      workerProtoDecoder = null; // Preprocessing will skip proto decoding
     }
 
     initialized = true;
@@ -790,7 +762,7 @@ async function loadSingleTable(table: TableInfo) {
     if (text === "LARGE_FILE_PLACEHOLDER") {
       console.log(`🔄 Loading large table ${tableName} incrementally...`);
       // Get the raw bytes from the response
-      const rawBytes = (fileResponse.result as any)?.rawBytes;
+      const rawBytes = (fileResponse.result as { rawBytes?: Uint8Array })?.rawBytes;
       if (!rawBytes) {
         throw new Error("Raw bytes not available for large file processing");
       }
@@ -888,8 +860,8 @@ async function loadTableFromText(
           tableName: nameForPreprocessing, // Use original name for column mapping
           delimiter,
           decodeKeys: true,
-          decodeProtos: workerProtoDecoder ? true : false, // Only enable if we have a decoder
-          protoDecoder: workerProtoDecoder || undefined, // Use worker-specific decoder
+          decodeProtos: protoDecoder ? true : false, // Only enable if we have a decoder
+          protoDecoder: protoDecoder || undefined, // Use worker-specific decoder
         });
         usePreprocessed = true;
       } catch (err) {

@@ -1,10 +1,14 @@
-import * as protobuf from "protobufjs";
 import { prettyKey } from "./prettyKey";
 
-export interface ProtoDescriptor {
-  name: string;
-  root: protobuf.Root;
-}
+// Import generated protobuf types
+import { ZoneConfig } from "./pb/config/zonepb/zone";
+import { SpanConfig } from "./pb/roachpb/span_config";
+import { Descriptor } from "./pb/sql/catalog/descpb/structured";
+import { Payload, Progress } from "./pb/jobs/jobspb/jobs";
+import type { JsonValue } from "@protobuf-ts/runtime";
+
+// TODO: Add other types as we generate them
+// import { Lease } from "./pb/roachpb/data";
 
 export interface DecodedProto {
   raw: Uint8Array;
@@ -13,35 +17,33 @@ export interface DecodedProto {
   error?: string;
 }
 
+// Type map for static decoders - mapping from CRDB type names to generated decoders
+const DECODERS = {
+  "cockroach.config.zonepb.ZoneConfig": ZoneConfig,
+  "cockroach.roachpb.SpanConfig": SpanConfig,
+  "cockroach.sql.sqlbase.Descriptor": Descriptor,
+  "cockroach.sql.jobs.jobspb.Payload": Payload,
+  "cockroach.sql.jobs.jobspb.Progress": Progress,
+  // TODO: Add remaining types as we generate them:
+   // "cockroach.roachpb.Lease": Lease,
+   // "cockroach.kv.kvserver.storagepb.RangeLogEvent": RangeLogEvent,
+   // "cockroach.roachpb.ReplicationStatsReport": ReplicationStatsReport,
+} as const;
+
+// Helper function to convert protobuf message to JSON without defaults
+// This handles the union type issue by using generics
+function messageToJsonWithoutDefaults<T>(
+  decoder: { toJson(message: T, options: { emitDefaultValues: boolean }): JsonValue },
+  message: T
+): unknown {
+  try {
+    return decoder.toJson(message, { emitDefaultValues: false });
+  } catch {
+    return message;
+  }
+}
+
 export class ProtoDecoder {
-  private root: protobuf.Root | null = null;
-  private loaded = false;
-
-  constructor() {
-    // No fallback initialization - only real descriptors
-  }
-
-  // Removed - no fallback types allowed
-
-  // Removed - not needed with real descriptors
-
-  async loadCRDBDescriptors(): Promise<void> {
-    if (this.loaded) return;
-
-    try {
-      // Import the JSON directly - no more fetching from public directory
-      const crdbDescriptors = await import("../crdb.json");
-      // Cast to any to handle TypeScript type incompatibility
-      this.root = protobuf.Root.fromJSON(
-        crdbDescriptors.default as Record<string, unknown>,
-      );
-      this.loaded = true;
-    } catch (error) {
-      console.error("Failed to load CRDB descriptors:", error);
-      throw error;
-    }
-  }
-
   parseProtoValue(hexValue: string, typeName?: string): DecodedProto | null {
     try {
       // Remove the \\x prefix if present
@@ -74,31 +76,22 @@ export class ProtoDecoder {
       };
     }
 
-    if (!this.loaded || !this.root) {
+    const decoder = DECODERS[typeName as keyof typeof DECODERS];
+    if (!decoder) {
       return {
         raw: data,
         decoded: null,
-        error: "Proto descriptors not loaded",
+        error: `No decoder available for type: ${typeName}`,
       };
     }
 
     try {
-      const type = this.root.lookupType(typeName);
+      // Use the generated decoder with protobuf-ts API
+      const message = decoder.fromBinary(data);
 
-      const message = type.decode(data);
-
-      // Use toObject with proper options for CRDB compatibility
-      const decoded = type.toObject(message, {
-        longs: String,
-        bytes: String,
-        defaults: false,
-        arrays: true,
-        objects: true,
-        oneofs: true,
-      });
-
-      // Transform the decoded message to handle special fields
-      const transformed = this.transformMessage(decoded);
+      // Convert to JSON without default values, then transform
+      const jsonWithoutDefaults = messageToJsonWithoutDefaults(decoder, message);
+      const transformed = this.transformMessage(jsonWithoutDefaults);
 
       return {
         raw: data,
@@ -123,7 +116,6 @@ export class ProtoDecoder {
 
     if (typeof obj === "object" && obj !== null) {
       // Special handling for Descriptor protos with union field
-      // CRDB outputs these as {"database": {...}} or {"table": {...}}
       if ("union" in obj && typeof obj === "object") {
         const objRecord = obj as Record<string, unknown>;
         if (
@@ -133,7 +125,6 @@ export class ProtoDecoder {
         ) {
           const unionType = objRecord.union;
           const content = this.transformMessage(objRecord[unionType]);
-          // Return in CRDB format with union type as top-level key
           return {
             [unionType]: content,
           };
@@ -157,6 +148,10 @@ export class ProtoDecoder {
   }
 
   private transformValue(key: string, value: unknown): unknown {
+    // Handle BigInt values - convert to string to make them JSON serializable
+    if (typeof value === "bigint") {
+      return value.toString();
+    }
     // Handle base64 encoded bytes fields
     if (typeof value === "string") {
       // Handle key fields - try to replace with pretty key representation
@@ -223,6 +218,49 @@ export class ProtoDecoder {
       }
     }
 
+    // Handle byte arrays from protobuf (like cluster IDs)
+    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+      // Type assertion for object with string keys
+      const objValue = value as Record<string, unknown>;
+      // Check if this looks like a byte array object (has numeric keys 0, 1, 2...)
+      const keys = Object.keys(objValue);
+      const isAllNumericKeys = keys.every(k => /^\d+$/.test(k));
+
+      if (isAllNumericKeys && keys.length > 0) {
+        // Convert byte array object to Uint8Array
+        const maxIndex = Math.max(...keys.map(Number));
+        if (maxIndex === keys.length - 1) { // Consecutive indices starting from 0
+          const bytes = new Uint8Array(keys.length);
+          for (let i = 0; i < keys.length; i++) {
+            bytes[i] = objValue[i.toString()] as number;
+          }
+
+          // Handle cluster_id conversion to UUID
+          if (key.includes("id") && bytes.length === 16) {
+            const hex = Array.from(bytes)
+              .map((b) => b.toString(16).padStart(2, "0"))
+              .join("");
+            const uuid = [
+              hex.substring(0, 8),
+              hex.substring(8, 12),
+              hex.substring(12, 16),
+              hex.substring(16, 20),
+              hex.substring(20, 32),
+            ].join("-");
+            return uuid;
+          }
+
+          // For other byte arrays, convert to hex string
+          if (key.toLowerCase().includes("key") || bytes.length > 8) {
+            const hexStr = Array.from(bytes)
+              .map((b) => b.toString(16).padStart(2, "0"))
+              .join("");
+            return hexStr;
+          }
+        }
+      }
+    }
+
     // Handle roachpb.Span objects with startKey and endKey
     if (typeof value === "object" && value !== null) {
       // Check if this looks like a Span (has startKey and/or endKey)
@@ -260,49 +298,8 @@ export class ProtoDecoder {
   }
 
   getAvailableTypes(): string[] {
-    if (!this.loaded || !this.root) {
-      return [];
-    }
-
-    const types: string[] = [];
-
-    function collectTypes(obj: unknown, prefix = ""): void {
-      if (obj && typeof obj === "object" && obj !== null && "nested" in obj) {
-        const nestedObj = obj as Record<string, unknown>;
-        if (nestedObj.nested && typeof nestedObj.nested === "object") {
-          for (const [key, value] of Object.entries(nestedObj.nested)) {
-            const fullName = prefix ? `${prefix}.${key}` : key;
-            if (
-              value &&
-              typeof value === "object" &&
-              value !== null &&
-              "fields" in value
-            ) {
-              types.push(fullName);
-            }
-            if (
-              value &&
-              typeof value === "object" &&
-              value !== null &&
-              "nested" in value
-            ) {
-              collectTypes(value, fullName);
-            }
-          }
-        }
-      }
-    }
-
-    collectTypes(this.root.toJSON());
-    return types.sort();
+    return Object.keys(DECODERS);
   }
 }
 
 export const protoDecoder = new ProtoDecoder();
-
-// Initialize CRDB descriptors on module load (browser environment only)
-if (typeof window !== "undefined") {
-  protoDecoder.loadCRDBDescriptors().catch((err) => {
-    console.warn("Failed to load CRDB descriptors on init:", err);
-  });
-}

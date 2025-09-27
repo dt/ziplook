@@ -15,11 +15,6 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      // Replace @protobufjs/inquire with our browser-safe version
-      "@protobufjs/inquire": resolve(
-        __dirname,
-        "src/utils/inquire-replacement.js",
-      ),
       // exact-match so only the bare 'openpgp' specifier maps to the ESM file
       openpgp$: resolve(__dirname, "node_modules/openpgp/dist/openpgp.min.mjs"),
     },
@@ -27,7 +22,6 @@ export default defineConfig({
   optimizeDeps: {
     // ⚠️ keep React optimizable; only exclude openpgp
     exclude: ["openpgp"],
-    include: ["protobufjs"],
   },
   worker: {
     format: "es",
@@ -49,18 +43,26 @@ export default defineConfig({
     // Ensure proper asset handling for GitHub Pages
     assetsDir: "assets",
     rollupOptions: {
+      treeshake: {
+        moduleSideEffects: (id) => {
+          // Mark protobuf files as side-effect free for better tree shaking
+          return !id.includes("src/crdb/pb/");
+        },
+      },
       output: {
         // Ensure consistent file naming for caching
         entryFileNames: "assets/[name]-[hash].js",
         chunkFileNames: "assets/[name]-[hash].js",
         assetFileNames: "assets/[name]-[hash].[ext]",
-        manualChunks: {
+        manualChunks(id) {
           // Split Monaco Editor into separate chunk
-          monaco: ["@monaco-editor/react", "monaco-editor"],
-          // Split protobuf libraries
-          protobuf: ["protobufjs"],
+          if (id.includes("@monaco-editor/react") || id.includes("monaco-editor")) {
+            return "monaco";
+          }
           // Split React vendor dependencies
-          vendor: ["react", "react-dom"],
+          if (id.includes("react") || id.includes("react-dom")) {
+            return "vendor";
+          }
         },
       },
     },

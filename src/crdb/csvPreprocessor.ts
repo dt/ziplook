@@ -253,9 +253,9 @@ export function preprocessCSV(
 
           // If we have an explicit proto mapping, decode it
           if (protoType && protoType !== "dynamic:job_info") {
+            const currentColumnName = headers[colIndex];
             try {
               const bytes = hexToBytes(value);
-
               const decoded = decoder.decode(bytes, protoType);
 
               // Don't use fallback for job_info - if the specific proto fails, leave as hex
@@ -264,8 +264,11 @@ export function preprocessCSV(
               if (decoded.decoded && !decoded.error) {
                 // Return as compact JSON string
                 return JSON.stringify(decoded.decoded);
+              } else {
+                console.warn(`❌ Proto decode failed for ${currentColumnName}:`, decoded.error);
               }
-            } catch {
+            } catch (err) {
+              console.warn(`❌ Proto decode exception for ${currentColumnName}:`, err);
               // Don't let protobuf errors stop processing of subsequent rows
             }
           }
@@ -330,7 +333,7 @@ export function preprocessCSV(
 // Check if preprocessing would be beneficial for this table
 export function shouldPreprocess(tableName: string, content: string): boolean {
   const normalizedName = tableName.toLowerCase();
-
+  
   // Check for known CRDB system tables with proto/hex data
   const knownTables = [
     "span_config", // matches span_configurations, span_configs, etc.
