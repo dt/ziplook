@@ -28,8 +28,9 @@ export interface PackageFile {
 export interface PackageInfo {
   packageId: string;
   packageCode: string;
-  packageSender?: string;
+  packageSender: string;
   files: PackageFile[];
+  serverSecret: string;
   // Add other package properties as needed
 }
 

@@ -3,7 +3,7 @@
  * These handle the transformation logic that can be tested independently
  */
 
-import { parseDelimited, reconstructCSV, findColumnIndices, transformColumns, type CSVParseResult } from "./csvParser";
+import { parseDelimited, reconstructCSV, findColumnIndices, transformColumns } from "./csvParser";
 import { transformKey, isKeyColumn, processObjectForKeys, createFallbackJson, hexToBytes, type PrettyKeyResult } from "./keyProcessing";
 
 export interface ProtoDecoder {
@@ -98,9 +98,9 @@ export function findProtoColumns(
  */
 export function transformValue(
   value: string,
-  columnIndex: number,
+  _columnIndex: number,
   rowData: string[],
-  headers: string[],
+  _headers: string[],
   options: {
     isKeyColumn: boolean;
     protoType?: string | null;
@@ -245,7 +245,7 @@ export function preprocessCSV(
   // Create transformation map
   const transformations = new Map<number, (value: string, rowIndex: number) => string>();
 
-  headers.forEach((header, colIndex) => {
+  headers.forEach((_header, colIndex) => {
     const isKey = keyColumnIndices.includes(colIndex);
     const protoType = protoColumns.get(colIndex);
 

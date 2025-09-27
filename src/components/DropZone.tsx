@@ -1219,9 +1219,8 @@ function DropZone() {
       keyCode: parsed.keyCode,
       fileName: file.fileName,
       packageInfo: {
-        packageId: packageInfo.packageId,
+        ...packageInfo,
         keyCode: parsed.keyCode,
-        serverSecret: secret, // Use the API secret as server secret
       },
     });
 
