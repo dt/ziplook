@@ -51,18 +51,20 @@ export function generateQueryTitle(
 
   if (!fromMatch) {
     // No FROM clause, just clean up the query
-    const title = normalizedQuery.replace(/^\s*select\s+/i, '');
-    return title.length > 20 ? title.substring(0, 20) + '...' : title;
+    const title = normalizedQuery.replace(/^\s*select\s+/i, "");
+    return title.length > 20 ? title.substring(0, 20) + "..." : title;
   }
 
   const fromIndex = fromMatch.index!;
   let selectPart = normalizedQuery.substring(0, fromIndex).trim();
-  const fromPart = normalizedQuery.substring(fromIndex + fromMatch[0].length).trim();
+  const fromPart = normalizedQuery
+    .substring(fromIndex + fromMatch[0].length)
+    .trim();
 
   // Process SELECT part
-  selectPart = selectPart.replace(/^\s*select\s+/i, '');
+  selectPart = selectPart.replace(/^\s*select\s+/i, "");
   if (selectPart.length > 20) {
-    selectPart = selectPart.substring(0, 20) + '...';
+    selectPart = selectPart.substring(0, 20) + "...";
   }
 
   // Process FROM part
@@ -70,7 +72,7 @@ export function generateQueryTitle(
     // Split FROM part on WHERE
     const whereMatch = fromPart.match(/\bwhere\b/i);
     let tablesPart = fromPart;
-    let wherePart = '';
+    let wherePart = "";
 
     if (whereMatch) {
       const whereIndex = whereMatch.index!;
@@ -84,10 +86,10 @@ export function generateQueryTitle(
       let tableName = tableMatch[1];
 
       // Remove schema prefixes
-      tableName = tableName.replace(/^(system\.|crdb_internal\.)/i, '');
+      tableName = tableName.replace(/^(system\.|crdb_internal\.)/i, "");
 
       if (tableName.length > 20) {
-        tableName = tableName.substring(0, 20) + '...';
+        tableName = tableName.substring(0, 20) + "...";
       }
 
       let result = `${selectPart} FROM ${tableName}`;
@@ -95,7 +97,7 @@ export function generateQueryTitle(
       // Add WHERE part if present
       if (wherePart) {
         if (wherePart.length > 15) {
-          wherePart = wherePart.substring(0, 15) + '...';
+          wherePart = wherePart.substring(0, 15) + "...";
         }
         result += ` WHERE ${wherePart}`;
       }
@@ -105,5 +107,5 @@ export function generateQueryTitle(
   }
 
   // Fallback to just the SELECT part if FROM parsing fails
-  return selectPart || 'Query';
+  return selectPart || "Query";
 }

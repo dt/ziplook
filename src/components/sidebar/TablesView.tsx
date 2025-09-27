@@ -195,26 +195,26 @@ function TablesView() {
   useEffect(() => {
     if (!filter) return; // Don't expand when no filter
 
-    setCollapsedSections(prev => {
+    setCollapsedSections((prev) => {
       const next = new Set(prev);
       let hasChanges = false;
 
       // Expand custom queries section if there are matches
-      if (customQueryTabs.length > 0 && next.has('custom-queries')) {
-        next.delete('custom-queries');
+      if (customQueryTabs.length > 0 && next.has("custom-queries")) {
+        next.delete("custom-queries");
         hasChanges = true;
       }
 
       // Expand cluster tables section if there are matches
-      if (clusterTables.length > 0 && next.has('cluster-tables')) {
-        next.delete('cluster-tables');
+      if (clusterTables.length > 0 && next.has("cluster-tables")) {
+        next.delete("cluster-tables");
         hasChanges = true;
       }
 
       // Expand node tables section and individual nodes if there are matches
       if (sortedNodeGroups.length > 0) {
-        if (next.has('node-tables')) {
-          next.delete('node-tables');
+        if (next.has("node-tables")) {
+          next.delete("node-tables");
           hasChanges = true;
         }
         // Also expand individual node sections that have matches

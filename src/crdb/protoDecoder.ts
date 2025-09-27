@@ -32,7 +32,9 @@ export class ProtoDecoder {
       // Import the JSON directly - no more fetching from public directory
       const crdbDescriptors = await import("../crdb.json");
       // Cast to any to handle TypeScript type incompatibility
-      this.root = protobuf.Root.fromJSON(crdbDescriptors.default as Record<string, unknown>);
+      this.root = protobuf.Root.fromJSON(
+        crdbDescriptors.default as Record<string, unknown>,
+      );
       this.loaded = true;
     } catch (error) {
       console.error("Failed to load CRDB descriptors:", error);
@@ -124,7 +126,11 @@ export class ProtoDecoder {
       // CRDB outputs these as {"database": {...}} or {"table": {...}}
       if ("union" in obj && typeof obj === "object") {
         const objRecord = obj as Record<string, unknown>;
-        if (objRecord.union && typeof objRecord.union === "string" && objRecord.union in objRecord) {
+        if (
+          objRecord.union &&
+          typeof objRecord.union === "string" &&
+          objRecord.union in objRecord
+        ) {
           const unionType = objRecord.union;
           const content = this.transformMessage(objRecord[unionType]);
           // Return in CRDB format with union type as top-level key
@@ -261,15 +267,25 @@ export class ProtoDecoder {
     const types: string[] = [];
 
     function collectTypes(obj: unknown, prefix = ""): void {
-      if (obj && typeof obj === 'object' && obj !== null && 'nested' in obj) {
+      if (obj && typeof obj === "object" && obj !== null && "nested" in obj) {
         const nestedObj = obj as Record<string, unknown>;
-        if (nestedObj.nested && typeof nestedObj.nested === 'object') {
+        if (nestedObj.nested && typeof nestedObj.nested === "object") {
           for (const [key, value] of Object.entries(nestedObj.nested)) {
             const fullName = prefix ? `${prefix}.${key}` : key;
-            if (value && typeof value === 'object' && value !== null && 'fields' in value) {
+            if (
+              value &&
+              typeof value === "object" &&
+              value !== null &&
+              "fields" in value
+            ) {
               types.push(fullName);
             }
-            if (value && typeof value === 'object' && value !== null && 'nested' in value) {
+            if (
+              value &&
+              typeof value === "object" &&
+              value !== null &&
+              "nested" in value
+            ) {
               collectTypes(value, fullName);
             }
           }

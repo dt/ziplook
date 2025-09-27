@@ -1,8 +1,11 @@
 import { useState, useContext, useEffect } from "react";
 import { AppContext } from "../../state/AppContext";
-import type { SearchResult, ViewerTab, FileIndexStatus } from "../../state/types";
+import type {
+  SearchResult,
+  ViewerTab,
+  FileIndexStatus,
+} from "../../state/types";
 import { QueryParser } from "../../services/queryParser";
-
 
 // List of file extensions that can be indexed
 const INDEXABLE_EXTENSIONS = [".txt", ".log", ".json"];
@@ -94,12 +97,20 @@ function SearchView() {
       // Update the previous count for next comparison
       setPreviousIndexedCount(currentIndexedCount);
     }
-  }, [realFileStatuses, lastSearchQuery, isSearching, previousIndexedCount, state.workerManager]);
+  }, [
+    realFileStatuses,
+    lastSearchQuery,
+    isSearching,
+    previousIndexedCount,
+    state.workerManager,
+  ]);
 
   // Get file lists ONLY from what the indexing worker has told us about
   const getFileLists = () => {
     // Only show files that the indexing worker has explicitly told us about
-    const fileStatuses = Array.isArray(realFileStatuses) ? realFileStatuses : [];
+    const fileStatuses = Array.isArray(realFileStatuses)
+      ? realFileStatuses
+      : [];
 
     // Categorize files based ONLY on worker status
     const indexed = fileStatuses.filter((f) => f.status === "indexed");
@@ -138,12 +149,10 @@ function SearchView() {
   const handleSearch = async () => {
     if (!query.trim() || !state.workerManager || indexed.length === 0) return;
 
-
     setIsSearching(true);
     setHasSearched(true);
 
     try {
-
       // Use worker-based search
       const searchResults = await state.workerManager.searchLogs(query);
       setResults(searchResults);
@@ -208,7 +217,6 @@ function SearchView() {
 
   const handleIndexFile = async (file: FileIndexStatus) => {
     if (!state.workerManager) return;
-
 
     try {
       // Set status to indexing to show progress UI
@@ -722,7 +730,11 @@ function SearchView() {
                 color: "var(--text-success)",
               }}
             >
-              Search ready - {indexed.length} files{state.indexingRuleDescription ? ` (${state.indexingRuleDescription})` : ""} indexed
+              {indexed.length} files
+              {state.indexingRuleDescription
+                ? ` (${state.indexingRuleDescription})`
+                : ""}{" "}
+              indexed
             </div>
           );
         }
@@ -779,7 +791,11 @@ function SearchView() {
               color: "var(--text-success)",
             }}
           >
-            Search ready - {indexed.length} files{state.indexingRuleDescription ? ` (${state.indexingRuleDescription})` : ""} indexed
+            {indexed.length} files
+            {state.indexingRuleDescription
+              ? ` (${state.indexingRuleDescription})`
+              : ""}{" "}
+            indexed
           </div>
         );
     }

@@ -26,3 +26,4 @@ test-results
 
 # Build artifacts
 playwright-report/
+.claude

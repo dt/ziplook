@@ -59,7 +59,7 @@ export function parseTimestamp(value: unknown): Date | null {
 }
 
 export function formatDuration(ms: unknown): string {
-  if (!ms || typeof ms !== 'number' || isNaN(ms)) return "0ms";
+  if (!ms || typeof ms !== "number" || isNaN(ms)) return "0ms";
 
   const absMs = Math.abs(ms);
   const sign = ms < 0 ? "-" : "";
@@ -72,7 +72,7 @@ export function formatDuration(ms: unknown): string {
 }
 
 export function formatBytes(bytes: unknown): string {
-  if (!bytes || typeof bytes !== 'number' || isNaN(bytes)) return "0 B";
+  if (!bytes || typeof bytes !== "number" || isNaN(bytes)) return "0 B";
 
   const absBytes = Math.abs(bytes);
   const sign = bytes < 0 ? "-" : "";

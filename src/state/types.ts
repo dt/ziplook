@@ -57,7 +57,8 @@ export interface TableMeta {
   originalName?: string; // Original table name without node prefix
   isError?: boolean; // True for .err.txt files
   loadError?: string; // Error message if loading failed
-  chunkProgress?: { // For large file incremental loading
+  chunkProgress?: {
+    // For large file incremental loading
     current: number;
     total: number;
     percentage: number;
@@ -149,7 +150,7 @@ export interface TableData {
 
 export interface FileStatus {
   path: string;
-  status: 'pending' | 'indexing' | 'completed' | 'error';
+  status: "pending" | "indexing" | "completed" | "error";
   progress?: number;
   error?: string;
 }
@@ -179,16 +180,23 @@ export interface IWorkerManager {
 
   // Database operations
   executeQuery(sql: string): Promise<Record<string, unknown>[]>;
-  getTableSchema(tableName: string): Promise<Array<{ column_name: string; data_type: string }>>;
+  getTableSchema(
+    tableName: string,
+  ): Promise<Array<{ column_name: string; data_type: string }>>;
   getLoadedTables(): Promise<string[]>;
-  getDuckDBFunctions(): Promise<Array<{ name: string; type: string; description?: string }>>;
+  getDuckDBFunctions(): Promise<
+    Array<{ name: string; type: string; description?: string }>
+  >;
   getDuckDBKeywords(): Promise<string[]>;
   loadSingleTable(table: TableData): Promise<void>;
 
   // File operations
   readFileStream(
     path: string,
-    onChunk: (chunk: string, progress: { loaded: number; total: number; done: boolean }) => void,
+    onChunk: (
+      chunk: string,
+      progress: { loaded: number; total: number; done: boolean },
+    ) => void,
   ): Promise<void>;
   cancelStream(): void;
 
@@ -197,7 +205,11 @@ export interface IWorkerManager {
   getFileStatuses(): Promise<FileStatus[]>;
   loadStackFiles(): Promise<void>;
   startIndexing(filePaths: string[]): Promise<void>;
-  indexSingleFile(file: { path: string; name: string; size: number }): Promise<void>;
+  indexSingleFile(file: {
+    path: string;
+    name: string;
+    size: number;
+  }): Promise<void>;
 
   // Callback management
   updateCallbacks(options: IWorkerManagerCallbacks): void;
@@ -262,7 +274,7 @@ export interface AppState {
   tables: Record<string, TableMeta>;
   tablesLoading?: boolean; // Global state for table loading
   stackData?: Record<string, string>; // Stack trace files: path -> content
-  stackFiles?: Array<{path: string; size: number; compressedSize: number}>; // Available stack files metadata
+  stackFiles?: Array<{ path: string; size: number; compressedSize: number }>; // Available stack files metadata
   stackgazerReady?: boolean; // Whether all stack files have been loaded and sent to iframe
   searchIndex?: SearchIndex; // Log search index state
   workerManager?: IWorkerManager; // Worker manager instance

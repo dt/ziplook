@@ -26,8 +26,12 @@
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 /* Discovery State */
@@ -135,7 +139,11 @@
 
 .load-stacks-btn {
   width: 100%;
-  background: linear-gradient(135deg, var(--button-primary, #3b82f6) 0%, var(--button-primary-hover, #2563eb) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--button-primary, #3b82f6) 0%,
+    var(--button-primary-hover, #2563eb) 100%
+  );
   color: var(--button-primary-text, white);
   border: none;
   padding: 14px 16px;
@@ -149,7 +157,11 @@
 }
 
 .load-stacks-btn:hover {
-  background: linear-gradient(135deg, var(--button-primary-hover, #2563eb) 0%, var(--button-primary-active, #1d4ed8) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--button-primary-hover, #2563eb) 0%,
+    var(--button-primary-active, #1d4ed8) 100%
+  );
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
   transform: translateY(-1px);
 }

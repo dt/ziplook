@@ -52,7 +52,11 @@ function StackgazerView() {
   // Note: Removed global loading state - loading is now handled in the button area only
 
   // Show loaded state if stackgazer is ready
-  if (state.stackgazerReady && state.stackData && Object.keys(state.stackData).length > 0) {
+  if (
+    state.stackgazerReady &&
+    state.stackData &&
+    Object.keys(state.stackData).length > 0
+  ) {
     const stackFiles = Object.keys(state.stackData);
     return (
       <div className="stackgazer-sidebar">
@@ -66,7 +70,7 @@ function StackgazerView() {
               <div key={index} className="loaded-file-item">
                 <div className="file-icon">📄</div>
                 <div className="file-name">
-                  {filePath.split('/').pop() || filePath}
+                  {filePath.split("/").pop() || filePath}
                 </div>
               </div>
             ))}
@@ -78,14 +82,19 @@ function StackgazerView() {
 
   // Show discovery state if stack files are discovered but not loaded
   if (state.stackFiles && state.stackFiles.length > 0) {
-    const totalSize = state.stackFiles.reduce((sum, file) => sum + file.size, 0);
+    const totalSize = state.stackFiles.reduce(
+      (sum, file) => sum + file.size,
+      0,
+    );
 
     return (
       <div className="stackgazer-sidebar">
         <div className="discovery-state">
           <div className="state-header">
             <h4>Stack Files Found</h4>
-            <div className="file-count">{state.stackFiles.length} files discovered</div>
+            <div className="file-count">
+              {state.stackFiles.length} files discovered
+            </div>
           </div>
 
           <div className="summary-info">
@@ -104,12 +113,8 @@ function StackgazerView() {
                 <div key={index} className="discovered-file-item">
                   <div className="file-icon">📄</div>
                   <div className="file-details">
-                    <div className="file-name">
-                      {file.path}
-                    </div>
-                    <div className="file-size">
-                      {formatFileSize(file.size)}
-                    </div>
+                    <div className="file-name">{file.path}</div>
+                    <div className="file-size">{formatFileSize(file.size)}</div>
                   </div>
                   <div className="file-status-indicator">
                     {isFileLoaded ? (
@@ -130,10 +135,7 @@ function StackgazerView() {
                 <span>Loading {state.stackFiles.length} files...</span>
               </div>
             ) : (
-              <button
-                className="load-stacks-btn"
-                onClick={handleLoadStacks}
-              >
+              <button className="load-stacks-btn" onClick={handleLoadStacks}>
                 Load and Launch Stack Browser
               </button>
             )}

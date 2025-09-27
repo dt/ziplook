@@ -122,9 +122,6 @@ interface DatabaseInitializedResponse {
   error?: string;
 }
 
-
-
-
 interface TableSchemaResponse {
   type: "tableSchema";
   id: string;
@@ -132,7 +129,6 @@ interface TableSchemaResponse {
   schema?: Array<{ column_name: string; data_type: string }>;
   error?: string;
 }
-
 
 interface DuckDBFunctionsResponse {
   type: "duckDBFunctions";
@@ -183,7 +179,7 @@ async function loadLargeFileIncrementally(
   decoder: TextDecoder,
   tableName: string,
   delimiter: string,
-  nameForPreprocessing: string
+  nameForPreprocessing: string,
 ): Promise<number> {
   if (!conn || !db) {
     throw new Error("DuckDB not initialized");
@@ -192,7 +188,7 @@ async function loadLargeFileIncrementally(
   const chunkSize = 50 * 1024 * 1024; // 50MB chunks
   const totalSize = data.length;
   let offset = 0;
-  let remainder = '';
+  let remainder = "";
   let totalRows = 0;
   let chunkNumber = 0;
   let headers: string[] = [];
@@ -215,20 +211,20 @@ async function loadLargeFileIncrementally(
     const fullText = remainder + chunkText;
 
     // Split by lines and process complete lines
-    const lines = fullText.split('\n');
+    const lines = fullText.split("\n");
 
     // Keep the last potentially incomplete line as remainder for next chunk
-    remainder = end < totalSize ? lines.pop() || '' : '';
+    remainder = end < totalSize ? lines.pop() || "" : "";
 
     if (lines.length > 0) {
       // Reconstruct this chunk's content with complete lines
-      const chunkContent = lines.join('\n');
+      const chunkContent = lines.join("\n");
 
       if (chunkContent.trim()) {
         // Extract headers from first chunk
         if (chunkNumber === 0) {
           headers = lines[0].split(delimiter);
-          console.log(`📋 Headers: ${headers.join(', ')}`);
+          console.log(`📋 Headers: ${headers.join(", ")}`);
         }
 
         // Determine which lines are data (skip header on first chunk)
@@ -236,12 +232,18 @@ async function loadLargeFileIncrementally(
 
         if (dataLines.length > 0) {
           // Create content with headers for processing
-          const contentForProcessing = [headers.join(delimiter), ...dataLines].join('\n');
+          const contentForProcessing = [
+            headers.join(delimiter),
+            ...dataLines,
+          ].join("\n");
 
           let processedContent = contentForProcessing;
 
           // Apply preprocessing if needed
-          const needsPreprocessing = shouldPreprocess(nameForPreprocessing, contentForProcessing);
+          const needsPreprocessing = shouldPreprocess(
+            nameForPreprocessing,
+            contentForProcessing,
+          );
           if (needsPreprocessing && workerProtoDecoder) {
             console.log(`🔧 Preprocessing chunk ${chunkNumber + 1}...`);
             try {
@@ -253,7 +255,10 @@ async function loadLargeFileIncrementally(
                 protoDecoder: workerProtoDecoder,
               });
             } catch (err) {
-              console.warn(`⚠️ Preprocessing failed for chunk ${chunkNumber + 1}:`, err);
+              console.warn(
+                `⚠️ Preprocessing failed for chunk ${chunkNumber + 1}:`,
+                err,
+              );
             }
           }
 
@@ -273,7 +278,9 @@ async function loadLargeFileIncrementally(
               )
             `;
             await conn.query(sql);
-            console.log(`📊 Created table from first chunk (${dataLines.length} data rows)`);
+            console.log(
+              `📊 Created table from first chunk (${dataLines.length} data rows)`,
+            );
           } else {
             // Subsequent chunks - insert data
             const sql = `
@@ -285,7 +292,9 @@ async function loadLargeFileIncrementally(
               )
             `;
             await conn.query(sql);
-            console.log(`📊 Inserted ${dataLines.length} rows from chunk ${chunkNumber + 1}`);
+            console.log(
+              `📊 Inserted ${dataLines.length} rows from chunk ${chunkNumber + 1}`,
+            );
           }
 
           chunkNumber++;
@@ -298,7 +307,7 @@ async function loadLargeFileIncrementally(
             chunkProgress: {
               current: chunkNumber,
               total: totalChunks,
-              percentage: Math.round((chunkNumber / totalChunks) * 100)
+              percentage: Math.round((chunkNumber / totalChunks) * 100),
             },
             nodeId: undefined, // We don't have nodeId in this context
             originalName: nameForPreprocessing,
@@ -315,7 +324,10 @@ async function loadLargeFileIncrementally(
   if (remainder.trim()) {
     let processedContent = remainder;
 
-    const needsPreprocessing = shouldPreprocess(nameForPreprocessing, remainder);
+    const needsPreprocessing = shouldPreprocess(
+      nameForPreprocessing,
+      remainder,
+    );
     if (needsPreprocessing && workerProtoDecoder) {
       try {
         processedContent = preprocessCSV(remainder, {
@@ -367,7 +379,7 @@ async function loadLargeFileIncrementally(
         chunkProgress: {
           current: chunkNumber,
           total: totalChunks,
-          percentage: 100 // Final chunk completes the loading
+          percentage: 100, // Final chunk completes the loading
         },
         nodeId: undefined,
         originalName: nameForPreprocessing,
@@ -377,7 +389,9 @@ async function loadLargeFileIncrementally(
   }
 
   // Get final row count
-  const countResult = await conn.query(`SELECT COUNT(*) as count FROM ${quotedTableName}`);
+  const countResult = await conn.query(
+    `SELECT COUNT(*) as count FROM ${quotedTableName}`,
+  );
   totalRows = countResult.toArray()[0].count;
 
   console.log(`✅ Successfully loaded large table with ${totalRows} rows`);
@@ -394,8 +408,11 @@ interface ResponseMessage {
 }
 
 // Helper to send responses with or without routing
-function sendResponse(message: RoutedMessage | DBWorkerMessage, response: ResponseMessage) {
-  if ('from' in message && message.from) {
+function sendResponse(
+  message: RoutedMessage | DBWorkerMessage,
+  response: ResponseMessage,
+) {
+  if ("from" in message && message.from) {
     // Routed response
     self.postMessage({ ...response, to: message.from, from: "dbWorker" });
   } else {
@@ -406,9 +423,15 @@ function sendResponse(message: RoutedMessage | DBWorkerMessage, response: Respon
 
 const LARGE_FILE_THRESHOLD = 2 * 1024 * 1024; // 20MB
 
-function sendMessageToZipWorker(message: { type: string; path?: string; id?: string }): Promise<ReadFileCompleteResponse> {
+function sendMessageToZipWorker(message: {
+  type: string;
+  path?: string;
+  id?: string;
+}): Promise<ReadFileCompleteResponse> {
   return new Promise((resolve, reject) => {
-    const id = message.id || `zip_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const id =
+      message.id ||
+      `zip_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     // Set timeout
     const timeoutId = setTimeout(() => {
@@ -424,7 +447,7 @@ function sendMessageToZipWorker(message: { type: string; path?: string; id?: str
       to: "zipWorker",
       from: "dbWorker",
       ...message,
-      id
+      id,
     } as RoutedMessage);
   });
 }
@@ -448,7 +471,7 @@ function handleRoutedMessage(message: RoutedMessage) {
       const bytes = message.bytes;
       if (bytes instanceof Uint8Array) {
         request.chunks.push(bytes);
-      } else if (typeof bytes === 'string') {
+      } else if (typeof bytes === "string") {
         // Convert string to Uint8Array for consistency
         const encoder = new TextEncoder();
         request.chunks.push(encoder.encode(bytes));
@@ -461,7 +484,10 @@ function handleRoutedMessage(message: RoutedMessage) {
         clearTimeout(request.timeoutId);
         pendingZipRequests.delete(message.id);
         // Calculate total length and concatenate all chunks
-        const totalLength = request.chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+        const totalLength = request.chunks.reduce(
+          (sum, chunk) => sum + chunk.length,
+          0,
+        );
 
         const combined = new Uint8Array(totalLength);
         let offset = 0;
@@ -474,16 +500,24 @@ function handleRoutedMessage(message: RoutedMessage) {
         const decoder = new TextDecoder();
 
         // For very large files, skip creating huge strings and load incrementally
-        if (totalLength > 200 * 1024 * 1024) { // 200MB threshold
-          console.log(`📄 Large file detected (${(totalLength / (1024 * 1024)).toFixed(1)}MB), will handle incrementally`);
+        if (totalLength > 200 * 1024 * 1024) {
+          // 200MB threshold
+          console.log(
+            `📄 Large file detected (${(totalLength / (1024 * 1024)).toFixed(1)}MB), will handle incrementally`,
+          );
           totalText = "LARGE_FILE_PLACEHOLDER"; // Signal to use incremental loading
         } else {
           // Decode the complete data as text for smaller files
           try {
             totalText = decoder.decode(combined);
           } catch (error) {
-            if (error instanceof RangeError && error.message.includes('Invalid string length')) {
-              throw new Error(`File is too large to process (${(totalLength / (1024 * 1024 * 1024)).toFixed(2)}GB). JavaScript string limitations exceeded.`);
+            if (
+              error instanceof RangeError &&
+              error.message.includes("Invalid string length")
+            ) {
+              throw new Error(
+                `File is too large to process (${(totalLength / (1024 * 1024 * 1024)).toFixed(2)}GB). JavaScript string limitations exceeded.`,
+              );
             }
             throw error;
           }
@@ -499,7 +533,7 @@ function handleRoutedMessage(message: RoutedMessage) {
           type: "readFileComplete",
           id: message.id,
           success: true,
-          result
+          result,
         });
       }
     }
@@ -514,14 +548,12 @@ function handleRoutedMessage(message: RoutedMessage) {
         id: message.id,
         success: message.success ?? false,
         result: message.result,
-        error: message.error
+        error: message.error,
       });
     }
     return;
   }
-
-  }
-
+}
 
 async function initializeDatabase(message: InitializeDatabaseMessage) {
   const { id } = message;
@@ -576,8 +608,8 @@ async function initializeDatabase(message: InitializeDatabaseMessage) {
       await conn.query(`
         SET custom_extension_repository = '${
           import.meta.env.DEV
-            ? new URL('/duckdb-extensions', location.origin).href
-            : new URL('../duckdb-extensions', import.meta.url).href
+            ? new URL("/duckdb-extensions", location.origin).href
+            : new URL("../duckdb-extensions", import.meta.url).href
         }';
         SET autoinstall_extension_repository = 'custom';
         -- optional hardening
@@ -594,7 +626,9 @@ async function initializeDatabase(message: InitializeDatabaseMessage) {
     try {
       workerProtoDecoder = new ProtoDecoder();
       // Create protobuf root directly from bundled JSON
-      const root = protobuf.Root.fromJSON(crdbDescriptors as Record<string, unknown>);
+      const root = protobuf.Root.fromJSON(
+        crdbDescriptors as Record<string, unknown>,
+      );
       // Access private properties through bracket notation for initialization
       (workerProtoDecoder as unknown as Record<string, unknown>).root = root;
       (workerProtoDecoder as unknown as Record<string, unknown>).loaded = true;
@@ -644,8 +678,11 @@ async function startTableLoading(message: StartTableLoadingMessage) {
         continue;
       }
 
-      if (table.size > LARGE_FILE_THRESHOLD || (tables.length > 300 && table.path.includes('/nodes/'))) {
-         self.postMessage({
+      if (
+        table.size > LARGE_FILE_THRESHOLD ||
+        (tables.length > 300 && table.path.includes("/nodes/"))
+      ) {
+        self.postMessage({
           type: "tableLoadProgress",
           tableName: table.name,
           status: "deferred",
@@ -764,7 +801,7 @@ async function loadSingleTable(table: TableInfo) {
         new TextDecoder(),
         tableName,
         "\t",
-        originalName || tableName
+        originalName || tableName,
       );
 
       // Send completion event for incremental loading
@@ -915,7 +952,10 @@ async function loadTableFromText(
 
       await conn.query(sql);
     } catch (parseError: unknown) {
-      const error = parseError instanceof Error ? parseError : new Error(String(parseError));
+      const error =
+        parseError instanceof Error
+          ? parseError
+          : new Error(String(parseError));
       // If preprocessing caused issues or CSV sniffing failed, try with original content
       if (
         usePreprocessed &&
@@ -976,7 +1016,10 @@ async function loadTableFromText(
         try {
           await conn.query(fallbackSql);
         } catch (fallbackError: unknown) {
-          const fallbackErr = fallbackError instanceof Error ? fallbackError : new Error(String(fallbackError));
+          const fallbackErr =
+            fallbackError instanceof Error
+              ? fallbackError
+              : new Error(String(fallbackError));
           console.error(
             `Even fallback failed for ${tableName}:`,
             fallbackErr.message,
@@ -1023,7 +1066,9 @@ function rewriteQuery(sql: string): string {
   return rewritten;
 }
 
-async function executeQuery(message: ExecuteQueryMessage | (RoutedMessage & ExecuteQueryMessage)) {
+async function executeQuery(
+  message: ExecuteQueryMessage | (RoutedMessage & ExecuteQueryMessage),
+) {
   const { id, sql } = message;
 
   if (!conn) {
@@ -1049,8 +1094,12 @@ async function executeQuery(message: ExecuteQueryMessage | (RoutedMessage & Exec
         const value = firstRow[columnName];
         // Check if this looks like a timestamp (large number in milliseconds range)
         if (
-          (typeof value === "number" && value > 1000000000000 && value < 2000000000000) ||
-          (typeof value === "bigint" && value > 1000000000000n && value < 2000000000000n)
+          (typeof value === "number" &&
+            value > 1000000000000 &&
+            value < 2000000000000) ||
+          (typeof value === "bigint" &&
+            value > 1000000000000n &&
+            value < 2000000000000n)
         ) {
           // This is likely a timestamp in milliseconds, convert all rows
           data.forEach((row) => {
@@ -1123,7 +1172,9 @@ async function getTableSchema(message: GetTableSchemaMessage) {
   }
 }
 
-async function getLoadedTables(message: GetLoadedTablesMessage | (RoutedMessage & GetLoadedTablesMessage)) {
+async function getLoadedTables(
+  message: GetLoadedTablesMessage | (RoutedMessage & GetLoadedTablesMessage),
+) {
   const { id } = message;
 
   if (!conn) {
@@ -1192,7 +1243,7 @@ async function getDuckDBFunctions(message: GetDuckDBFunctionsMessage) {
       for (const [key, value] of Object.entries(row)) {
         try {
           // Handle BigInt values explicitly
-          if (typeof value === 'bigint') {
+          if (typeof value === "bigint") {
             sanitizedRow[key] = value.toString();
           } else {
             JSON.stringify(value);
@@ -1341,8 +1392,9 @@ async function processFileList(message: ProcessFileListMessage) {
     const tablesToLoad = message.fileList.filter(
       (entry) =>
         !entry.isDir &&
-        (entry.path.includes("/system.") || entry.path.includes("/crdb_internal.")) &&
-        entry.path.endsWith(".txt")
+        (entry.path.includes("/system.") ||
+          entry.path.includes("/crdb_internal.")) &&
+        entry.path.endsWith(".txt"),
     );
     // Found potential table files
 
@@ -1376,13 +1428,13 @@ async function processFileList(message: ProcessFileListMessage) {
 
       const preparedTable = {
         name: tableName,
-        sourceFile: entry.path,  // UI expects sourceFile, not path
+        sourceFile: entry.path, // UI expects sourceFile, not path
         path: entry.path,
         size: entry.size,
         nodeId,
         originalName,
         isError: isErrorFile,
-        loaded: false,  // Initially not loaded
+        loaded: false, // Initially not loaded
         loading: false, // Initially not loading
       };
 
@@ -1391,7 +1443,7 @@ async function processFileList(message: ProcessFileListMessage) {
       // Notify controller about each table we want to load
       self.postMessage({
         type: "tableDiscovered",
-        table: preparedTable
+        table: preparedTable,
       });
     }
 
@@ -1408,12 +1460,14 @@ async function processFileList(message: ProcessFileListMessage) {
         const pollInterval = 100; // 100ms
         const startTime = Date.now();
 
-        while (!initialized && (Date.now() - startTime) < maxWaitTime) {
-          await new Promise(resolve => setTimeout(resolve, pollInterval));
+        while (!initialized && Date.now() - startTime < maxWaitTime) {
+          await new Promise((resolve) => setTimeout(resolve, pollInterval));
         }
 
         if (!initialized) {
-          throw new Error("Database initialization timeout while waiting to load tables");
+          throw new Error(
+            "Database initialization timeout while waiting to load tables",
+          );
         }
 
         // Database is now initialized, proceeding with table loading
@@ -1425,7 +1479,7 @@ async function processFileList(message: ProcessFileListMessage) {
       const fakeMessage = {
         type: "startTableLoading" as const,
         id: message.id,
-        tables: preparedTables
+        tables: preparedTables,
       };
 
       startTableLoading(fakeMessage);
@@ -1435,7 +1489,7 @@ async function processFileList(message: ProcessFileListMessage) {
         type: "tableLoadingComplete",
         success: true,
         tablesLoaded: 0,
-        error: null
+        error: null,
       });
     }
 
@@ -1444,16 +1498,15 @@ async function processFileList(message: ProcessFileListMessage) {
       type: "response",
       id: message.id,
       success: true,
-      result: { tablesFound: preparedTables.length }
+      result: { tablesFound: preparedTables.length },
     });
-
   } catch (error) {
     console.error("❌ DB Worker: Failed to process file list:", error);
     self.postMessage({
       type: "response",
       id: message.id,
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error"
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 }
@@ -1463,7 +1516,11 @@ self.onmessage = (event: MessageEvent<DBWorkerMessage | RoutedMessage>) => {
   const message = event.data;
 
   // Handle routed zip worker responses first
-  if ('from' in message && message.from === "zipWorker" && (message.type === "readFileChunk" || message.type === "readFileComplete")) {
+  if (
+    "from" in message &&
+    message.from === "zipWorker" &&
+    (message.type === "readFileChunk" || message.type === "readFileComplete")
+  ) {
     handleRoutedMessage(message as RoutedMessage);
     return;
   }
@@ -1480,13 +1537,19 @@ self.onmessage = (event: MessageEvent<DBWorkerMessage | RoutedMessage>) => {
       loadSingleTableFromMessage(message as LoadSingleTableMessage);
       break;
     case "executeQuery":
-      executeQuery(message as ExecuteQueryMessage | (RoutedMessage & ExecuteQueryMessage));
+      executeQuery(
+        message as ExecuteQueryMessage | (RoutedMessage & ExecuteQueryMessage),
+      );
       break;
     case "getTableSchema":
       getTableSchema(message as GetTableSchemaMessage);
       break;
     case "getLoadedTables":
-      getLoadedTables(message as GetLoadedTablesMessage | (RoutedMessage & GetLoadedTablesMessage));
+      getLoadedTables(
+        message as
+          | GetLoadedTablesMessage
+          | (RoutedMessage & GetLoadedTablesMessage),
+      );
       break;
     case "getDuckDBFunctions":
       getDuckDBFunctions(message as GetDuckDBFunctionsMessage);

@@ -3,10 +3,7 @@ interface IconRailProps {
   onViewChange: (view: "files" | "tables" | "search" | "stackgazer") => void;
 }
 
-function IconRail({
-  activeView,
-  onViewChange,
-}: IconRailProps) {
+function IconRail({ activeView, onViewChange }: IconRailProps) {
   return (
     <div className="icon-rail relative">
       <button
@@ -131,7 +128,6 @@ function IconRail({
           />
         </svg>
       </button>
-
     </div>
   );
 }

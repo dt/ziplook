@@ -1,11 +1,13 @@
 # Local State Persistence Plan for ZipLook
 
 ## Overview
+
 Implement localStorage-based state persistence for ZipLook that restores user's UI state (tabs, scroll positions, filters, etc.) when the same zip file is loaded again. State is keyed by a unique fingerprint of the zip file.
 
 ## Architecture
 
 ### 1. Zip File Fingerprinting
+
 - **Primary**: Hash content of `crdb_internal.cluster_queries.txt` file (unique per CockroachDB cluster)
 - **Fallback**: Hash of zip filename + size + first 5 file names (for non-CRDB zips)
 - **Implementation**: In zip worker during load, send fingerprint back with zip data
@@ -16,12 +18,12 @@ Implement localStorage-based state persistence for ZipLook that restores user's 
 interface ZipSpecificState {
   zipHash: string;
   lastAccessed: number; // Date.now() timestamp
-  createdAt: number;    // When first created
+  createdAt: number; // When first created
   state: {
     // Tab state
     openTabs: Array<{
       id: string;
-      kind: 'file' | 'sql' | 'error' | 'search';
+      kind: "file" | "sql" | "error" | "search";
       title: string;
       // For file tabs
       fileId?: string;
@@ -36,7 +38,7 @@ interface ZipSpecificState {
     activeTabId?: string;
 
     // UI state (excluding stackgazer - it's independent)
-    activeView: 'files' | 'tables' | 'search';
+    activeView: "files" | "tables" | "search";
     sidebarVisible: boolean;
     sidebarWidth: number;
 
@@ -58,12 +60,13 @@ interface ZipBrowserStorage {
   zipStates: Record<string, ZipSpecificState>; // zipHash -> state
   globalSettings: {
     defaultSidebarWidth: number;
-    defaultActiveView: 'files' | 'tables' | 'search';
+    defaultActiveView: "files" | "tables" | "search";
   };
 }
 ```
 
 ### 3. Cleanup Strategy
+
 - **Expiration**: Remove states older than 30 days (based on `lastAccessed`)
 - **LRU Limit**: Keep only 50 most recent zip states
 - **Cleanup timing**: On app startup and when saving new states
@@ -73,13 +76,14 @@ interface ZipBrowserStorage {
 ### Phase 1: Core Infrastructure
 
 #### 1.1 Create Fingerprinting Utility (`src/utils/zipFingerprint.ts`)
+
 ```typescript
 export async function calculateZipFingerprint(
-  entries: ZipEntryMeta[]
+  entries: ZipEntryMeta[],
 ): Promise<string> {
   // Try to find crdb_internal.cluster_queries.txt
-  const clusterQueriesFile = entries.find(e =>
-    e.path.endsWith('crdb_internal.cluster_queries.txt')
+  const clusterQueriesFile = entries.find((e) =>
+    e.path.endsWith("crdb_internal.cluster_queries.txt"),
   );
 
   if (clusterQueriesFile) {
@@ -90,10 +94,13 @@ export async function calculateZipFingerprint(
 
   // Fallback: hash zip metadata
   const fallbackData = [
-    entries[0]?.name || '',
+    entries[0]?.name || "",
     entries.length.toString(),
-    entries.slice(0, 5).map(e => e.name).join('|')
-  ].join('::');
+    entries
+      .slice(0, 5)
+      .map((e) => e.name)
+      .join("|"),
+  ].join("::");
 
   return hashString(fallbackData);
 }
@@ -103,7 +110,7 @@ function hashString(str: string): string {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
+    hash = (hash << 5) - hash + char;
     hash = hash & hash; // Convert to 32-bit integer
   }
   return Math.abs(hash).toString(36);
@@ -111,8 +118,9 @@ function hashString(str: string): string {
 ```
 
 #### 1.2 Create State Persistence Service (`src/services/statePersistence.ts`)
+
 ```typescript
-const STORAGE_KEY = 'ziplook-states';
+const STORAGE_KEY = "ziplook-states";
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_ZIP_STATES = 50;
 
@@ -133,7 +141,7 @@ export class StatePersistenceService {
         return JSON.parse(stored);
       }
     } catch (e) {
-      console.warn('Failed to parse stored state:', e);
+      console.warn("Failed to parse stored state:", e);
     }
 
     return {
@@ -141,8 +149,8 @@ export class StatePersistenceService {
       zipStates: {},
       globalSettings: {
         defaultSidebarWidth: 360,
-        defaultActiveView: 'tables'
-      }
+        defaultActiveView: "tables",
+      },
     };
   }
 
@@ -150,7 +158,7 @@ export class StatePersistenceService {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(storage));
     } catch (e) {
-      console.warn('Failed to save state to localStorage:', e);
+      console.warn("Failed to save state to localStorage:", e);
     }
   }
 
@@ -165,11 +173,11 @@ export class StatePersistenceService {
 
     return {
       ...storage,
-      zipStates: Object.fromEntries(validStates)
+      zipStates: Object.fromEntries(validStates),
     };
   }
 
-  saveZipState(zipHash: string, state: ZipSpecificState['state']): void {
+  saveZipState(zipHash: string, state: ZipSpecificState["state"]): void {
     const storage = this.getStorage();
     const now = Date.now();
 
@@ -177,14 +185,14 @@ export class StatePersistenceService {
       zipHash,
       lastAccessed: now,
       createdAt: storage.zipStates[zipHash]?.createdAt || now,
-      state
+      state,
     };
 
     const cleanedStorage = this.cleanupExpiredStates(storage);
     this.saveStorage(cleanedStorage);
   }
 
-  loadZipState(zipHash: string): ZipSpecificState['state'] | null {
+  loadZipState(zipHash: string): ZipSpecificState["state"] | null {
     const storage = this.getStorage();
     const zipState = storage.zipStates[zipHash];
 
@@ -201,7 +209,10 @@ export class StatePersistenceService {
   cleanupOnStartup(): void {
     const storage = this.getStorage();
     const cleaned = this.cleanupExpiredStates(storage);
-    if (Object.keys(cleaned.zipStates).length !== Object.keys(storage.zipStates).length) {
+    if (
+      Object.keys(cleaned.zipStates).length !==
+      Object.keys(storage.zipStates).length
+    ) {
       this.saveStorage(cleaned);
     }
   }
@@ -211,7 +222,9 @@ export class StatePersistenceService {
 ### Phase 2: Integration Points
 
 #### 2.1 Update AppState Types (`src/state/types.ts`)
+
 Add fingerprint to zip state:
+
 ```typescript
 export interface AppState {
   zip?: {
@@ -225,7 +238,9 @@ export interface AppState {
 ```
 
 #### 2.2 Update Zip Worker
+
 Modify zip worker to calculate and return fingerprint:
+
 ```typescript
 // In src/workers/zip.worker.ts or relevant worker
 async function loadZip(file: File) {
@@ -235,13 +250,13 @@ async function loadZip(file: File) {
   const fingerprint = await calculateZipFingerprint(zipEntries);
 
   postMessage({
-    type: 'ZIP_LOADED',
+    type: "ZIP_LOADED",
     data: {
       name: file.name,
       size: file.size,
       entries: zipEntries,
-      fingerprint: fingerprint
-    }
+      fingerprint: fingerprint,
+    },
   });
 }
 ```
@@ -249,6 +264,7 @@ async function loadZip(file: File) {
 #### 2.3 Update AppContext (`src/state/AppContext.tsx`)
 
 Add fingerprint handling:
+
 ```typescript
 case 'SET_ZIP': {
   return {
@@ -265,6 +281,7 @@ case 'SET_ZIP': {
 ```
 
 Add state restoration effect:
+
 ```typescript
 // Add after existing useEffects
 useEffect(() => {
@@ -276,13 +293,13 @@ useEffect(() => {
 
   if (savedState) {
     // Restore tabs
-    savedState.openTabs.forEach(tab => {
-      dispatch({ type: 'OPEN_TAB', tab: tab as ViewerTab });
+    savedState.openTabs.forEach((tab) => {
+      dispatch({ type: "OPEN_TAB", tab: tab as ViewerTab });
     });
 
     // Restore active tab
     if (savedState.activeTabId) {
-      dispatch({ type: 'SET_ACTIVE_TAB', id: savedState.activeTabId });
+      dispatch({ type: "SET_ACTIVE_TAB", id: savedState.activeTabId });
     }
 
     // Restore other UI state would be handled in App.tsx
@@ -291,6 +308,7 @@ useEffect(() => {
 ```
 
 Add debounced state saving:
+
 ```typescript
 useEffect(() => {
   if (!state.zip?.fingerprint) return;
@@ -299,32 +317,32 @@ useEffect(() => {
     const persistenceService = StatePersistenceService.getInstance();
 
     // Extract current state
-    const currentState: ZipSpecificState['state'] = {
-      openTabs: state.openTabs.map(tab => ({
+    const currentState: ZipSpecificState["state"] = {
+      openTabs: state.openTabs.map((tab) => ({
         id: tab.id,
         kind: tab.kind,
         title: tab.title,
-        ...(tab.kind === 'file' && {
+        ...(tab.kind === "file" && {
           fileId: (tab as any).fileId,
-          lineNumber: (tab as any).lineNumber
+          lineNumber: (tab as any).lineNumber,
         }),
-        ...(tab.kind === 'sql' && {
+        ...(tab.kind === "sql" && {
           query: (tab as any).query,
-          sourceTable: (tab as any).sourceTable
+          sourceTable: (tab as any).sourceTable,
         }),
-        ...(tab.kind === 'search' && {
-          searchQuery: (tab as any).query
-        })
+        ...(tab.kind === "search" && {
+          searchQuery: (tab as any).query,
+        }),
       })),
       activeTabId: state.activeTabId,
       // UI state will be passed from App.tsx
-      activeView: 'tables', // placeholder
+      activeView: "tables", // placeholder
       sidebarVisible: true, // placeholder
       sidebarWidth: 360, // placeholder
       fileFilters: {},
       searchFilters: {},
       tableScrollPositions: {},
-      expandedTables: []
+      expandedTables: [],
     };
 
     persistenceService.saveZipState(state.zip.fingerprint, currentState);
@@ -337,7 +355,9 @@ useEffect(() => {
 ```
 
 #### 2.4 Update App.tsx
+
 Add UI state restoration and saving:
+
 ```typescript
 // Add state for restoration
 const [isRestoringState, setIsRestoringState] = useState(false);
@@ -368,13 +388,15 @@ useEffect(() => {
 
   const debouncedSaveUI = debounce(() => {
     const persistenceService = StatePersistenceService.getInstance();
-    const currentState = persistenceService.loadZipState(state.zip.fingerprint) || {
+    const currentState = persistenceService.loadZipState(
+      state.zip.fingerprint,
+    ) || {
       openTabs: [],
       activeTabId: undefined,
       fileFilters: {},
       searchFilters: {},
       tableScrollPositions: {},
-      expandedTables: []
+      expandedTables: [],
     };
 
     // Update with current UI state
@@ -382,7 +404,7 @@ useEffect(() => {
       ...currentState,
       activeView,
       sidebarVisible,
-      sidebarWidth
+      sidebarWidth,
     };
 
     persistenceService.saveZipState(state.zip.fingerprint, updatedState);
@@ -391,22 +413,32 @@ useEffect(() => {
   debouncedSaveUI();
 
   return () => debouncedSaveUI.cancel();
-}, [activeView, sidebarVisible, sidebarWidth, state.zip?.fingerprint, isRestoringState]);
+}, [
+  activeView,
+  sidebarVisible,
+  sidebarWidth,
+  state.zip?.fingerprint,
+  isRestoringState,
+]);
 ```
 
 ### Phase 3: Additional Features
 
 #### 3.1 Add Cleanup on App Startup
+
 In `src/main.tsx`:
+
 ```typescript
 // Add before ReactDOM.render
 StatePersistenceService.getInstance().cleanupOnStartup();
 ```
 
 #### 3.2 Add File Scroll Position Tracking
+
 Update file viewers to save/restore scroll positions.
 
 #### 3.3 Add Search State Persistence
+
 Save and restore search queries and filters.
 
 ## Testing Strategy
@@ -427,11 +459,13 @@ Save and restore search queries and filters.
 ## Files to Create/Modify
 
 ### New Files:
+
 - `src/utils/zipFingerprint.ts`
 - `src/services/statePersistence.ts`
 - `local_state_plan.md` (this file)
 
 ### Files to Modify:
+
 - `src/state/types.ts` - Add fingerprint to AppState
 - `src/state/AppContext.tsx` - Add restoration and saving logic
 - `src/App.tsx` - Add UI state restoration and saving

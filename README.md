@@ -24,6 +24,7 @@ ZipLook loads CockroachDB debug zip files and provides SQL querying over system 
 5. Use the Stackgazer view for goroutine stacks
 
 ### SQL Querying
+
 - System and crdb_internal tables are loaded automatically
 - Binary proto fields are decoded to JSON
 - CockroachDB keys are pretty-printed
@@ -31,6 +32,7 @@ ZipLook loads CockroachDB debug zip files and provides SQL querying over system 
 - Execute with Ctrl+Enter or Cmd+Enter
 
 ### Log Search
+
 - `/` to focus search input
 - Combine filters: `level:ERROR database connection`
 - Regex patterns: `/error.*connection/i`
@@ -40,6 +42,7 @@ ZipLook loads CockroachDB debug zip files and provides SQL querying over system 
 - Exact phrases: `"exact phrase"`
 
 ### File Viewer
+
 - **Lazy Loading**: Files are decompressed and loaded on-demand for fast startup
 - **Syntax Highlighting**: Automatic language detection and highlighting, specialized log syntax highlighting
 - **Live Filtering**: Real-time filtering with boolean expressions:
@@ -50,10 +53,44 @@ ZipLook loads CockroachDB debug zip files and provides SQL querying over system 
 - **Multiple Tabs**: Open the same file in multiple tabs with different filters applied
 
 ### Keyboard Shortcuts
+
 - `Cmd+B`/`Ctrl+B`: Toggle sidebar
 - `Cmd+1-9`: Switch tabs
 - Arrow keys: Navigate search results
 - `/`: Focus search input
+
+## Browsing Remote ZIPs
+
+ZipLook supports browsing very large ZIP files hosted on remote storage without downloading the entire file. This is possible for storage systems that support selective reading at specific byte offsets (range requests).
+
+The process works by:
+
+1. Reading the ZIP file's footer to discover the central directory offset
+2. Reading the central directory to discover individual file offsets and metadata
+3. Downloading and decompressing individual files only when accessed
+
+This approach allows efficient exploration of multi-gigabyte ZIP files, downloading only the specific files you need to examine.
+
+### Supported Remote File Schemes
+
+#### SendSafely
+
+SendSafely packages can be browsed remotely without downloading the entire ZIP file.
+
+**Setup (One-time):**
+
+1. Generate app-specific API keys in your SendSafely account (Profile → API Keys)
+2. Provide the API Key ID and Secret to ZipLook, which saves them in local browser storage
+3. Paste a SendSafely package link with both `packageCode` and `keycode` parameters
+
+**How it works:**
+
+- The SendSafely API is consulted to discover file names and metadata within the package
+- When a ZIP file is selected, ZipLook uses the API to discover S3 URLs for individual "chunks" of the file
+- As the ZIP reader needs data at different offsets, chunks are downloaded and decrypted on-demand using the key from the original URL
+- **Chunk Size Calculation**: SendSafely files have a unique structure where the first chunk's plaintext size differs from subsequent chunks. ZipLook establishes the correct chunk size by reading and decrypting the second chunk, then uses that length for offset calculations along with the first chunk's unique length.
+
+This approach enables efficient browsing of large SendSafely-hosted debug ZIPs without requiring full download or special SendSafely client software.
 
 ## Contributing
 
@@ -62,6 +99,7 @@ ZipLook loads CockroachDB debug zip files and provides SQL querying over system 
 ZipLook uses a multi-worker architecture:
 
 #### Workers and Orchestration
+
 - **WorkerManager**: Central orchestrator that manages communication between three specialized workers
 - **ZipReader Worker**: Handles zip file reading, decompression, and file streaming using native DecompressionStream API
 - **DB Worker**: Manages DuckDB WASM instance, SQL execution, and table loading
@@ -70,6 +108,7 @@ ZipLook uses a multi-worker architecture:
 Workers communicate via MessageChannels for direct data transfer. The WorkerManager coordinates operations and provides a unified API.
 
 #### Data Processing Pipeline
+
 1. **Text Preprocessor**: Sits before DuckDB loading and transforms raw CSV/TSV data:
    - Decodes hex-encoded protobuf fields using loaded CRDB descriptors
    - Pretty-prints CockroachDB keys (e.g., `/Table/53/1/1`)
@@ -87,6 +126,7 @@ Workers communicate via MessageChannels for direct data transfer. The WorkerMana
    - Supports complex query parsing with multiple filter types
 
 #### Key Libraries
+
 - **DuckDB WASM**: SQL engine for local data analysis
 - **DecompressionStream API**: Native browser streaming zip decompression
 - **Monaco Editor**: SQL editor with autocomplete
@@ -95,6 +135,7 @@ Workers communicate via MessageChannels for direct data transfer. The WorkerMana
 - **React**: UI framework with context-based state management
 
 #### State Management
+
 - **AppContext**: Centralized state using React Context and useReducer
 - **Worker State**: Each worker maintains its own state, synchronized via WorkerManager
 
@@ -103,12 +144,14 @@ Workers communicate via MessageChannels for direct data transfer. The WorkerMana
 The application supports multiple deployment targets:
 
 #### Development
+
 ```bash
 npm install
 npm run dev
 ```
 
 #### Production Build
+
 ```bash
 npm run build          # Standard build
 npm run build:pages    # GitHub Pages (with base path)
@@ -116,7 +159,9 @@ npm run build:bundle   # Standalone bundle
 ```
 
 #### GitHub Pages
+
 Automatically deploys to GitHub Pages on pushes to main branch. Manual deployment:
+
 ```bash
 npm run build:pages
 ```
@@ -124,10 +169,12 @@ npm run build:pages
 ### How to Build
 
 #### Prerequisites
+
 - Node.js 18+
 - npm 9+
 
 #### Development Setup
+
 ```bash
 # Clone the repository
 git clone <repository-url>
@@ -141,6 +188,7 @@ npm run dev
 ```
 
 #### Testing
+
 ```bash
 npm run test                # Unit tests
 npm run test:coverage       # Coverage report
@@ -149,6 +197,7 @@ npm run test:e2e:ui        # E2E tests with UI
 ```
 
 #### Building for Production
+
 ```bash
 # Type checking
 npm run typecheck
@@ -164,6 +213,7 @@ npm run preview
 ```
 
 The build process includes:
+
 - TypeScript compilation
 - Vite bundling with optimizations
 - Worker inlining for standalone deployment

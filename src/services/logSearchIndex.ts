@@ -26,7 +26,10 @@ interface FlexSearchSimpleResult {
   result: FlexSearchResultId[];
 }
 
-type FlexSearchResults = FlexSearchFieldResult[] | FlexSearchSimpleResult[] | FlexSearchResultId[];
+type FlexSearchResults =
+  | FlexSearchFieldResult[]
+  | FlexSearchSimpleResult[]
+  | FlexSearchResultId[];
 
 // FlexSearch Document instance for our indexed log entries
 interface FlexSearchDocument {
@@ -334,7 +337,9 @@ export class LogSearchIndex {
   /**
    * Extract entry IDs from FlexSearch results
    */
-  private extractIdsFromFlexSearchResults(results: FlexSearchResults): number[] {
+  private extractIdsFromFlexSearchResults(
+    results: FlexSearchResults,
+  ): number[] {
     const ids: number[] = [];
 
     if (Array.isArray(results)) {
@@ -343,14 +348,21 @@ export class LogSearchIndex {
           ids.push(parseInt(result));
         } else if (typeof result === "number") {
           ids.push(result);
-        } else if (result && Array.isArray((result as FlexSearchSimpleResult).result)) {
+        } else if (
+          result &&
+          Array.isArray((result as FlexSearchSimpleResult).result)
+        ) {
           const simpleResult = result as FlexSearchSimpleResult;
           ids.push(
             ...simpleResult.result.map((id: FlexSearchResultId) =>
               typeof id === "string" ? parseInt(id) : id,
             ),
           );
-        } else if (result && (result as FlexSearchFieldResult).field && Array.isArray((result as FlexSearchFieldResult).result)) {
+        } else if (
+          result &&
+          (result as FlexSearchFieldResult).field &&
+          Array.isArray((result as FlexSearchFieldResult).result)
+        ) {
           // FlexSearch document results have this structure
           const fieldResult = result as FlexSearchFieldResult;
           ids.push(
@@ -360,7 +372,10 @@ export class LogSearchIndex {
           );
         }
       }
-    } else if (results && Array.isArray((results as FlexSearchSimpleResult).result)) {
+    } else if (
+      results &&
+      Array.isArray((results as FlexSearchSimpleResult).result)
+    ) {
       const simpleResults = results as FlexSearchSimpleResult;
       ids.push(
         ...simpleResults.result.map((id: FlexSearchResultId) =>
@@ -547,12 +562,16 @@ export class LogSearchIndex {
       for (const result of searchResults) {
         if (typeof result === "string" || typeof result === "number") {
           // Direct ID result
-          const numericId = typeof result === "string" ? parseInt(result) : result;
+          const numericId =
+            typeof result === "string" ? parseInt(result) : result;
           const entry = this.entries.get(numericId);
           if (entry && this.applyFilters(entry, filters)) {
             results.push(this.entryToSearchResult(entry));
           }
-        } else if ((result as FlexSearchFieldResult).result && Array.isArray((result as FlexSearchFieldResult).result)) {
+        } else if (
+          (result as FlexSearchFieldResult).result &&
+          Array.isArray((result as FlexSearchFieldResult).result)
+        ) {
           // Field-based result
           const fieldResult = result as FlexSearchFieldResult;
           for (const id of fieldResult.result) {

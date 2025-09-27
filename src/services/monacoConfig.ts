@@ -37,13 +37,12 @@ async function updateSchemaCache() {
 
     // Handle case where tables is undefined or not an array
     if (!Array.isArray(tables)) {
-      console.warn('Monaco: getLoadedTables returned invalid data:', tables);
+      console.warn("Monaco: getLoadedTables returned invalid data:", tables);
       return null;
     }
 
     // Get all table schemas in one query for efficiency
     try {
-
       const allSchemas = await workerManager!.executeQuery(`
         SELECT
           CASE
@@ -74,16 +73,14 @@ async function updateSchemaCache() {
           });
         }
       }
-
     } catch (err) {
-      console.warn('Failed to get table schemas in bulk:', err);
+      console.warn("Failed to get table schemas in bulk:", err);
       // Fallback: no schema information
     }
 
     // Get DuckDB functions and keywords
     const functions = await workerManager!.getDuckDBFunctions();
     const keywords = await workerManager!.getDuckDBKeywords();
-
 
     schemaCache = {
       tables,
@@ -720,14 +717,14 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
       // Cache is valid for 5 minutes to avoid constant refreshing during typing
       if (!schemaCache) {
         await updateSchemaCache();
-      } else if (Date.now() - schemaCache.lastUpdated > 300000) { // 5 minutes
+      } else if (Date.now() - schemaCache.lastUpdated > 300000) {
+        // 5 minutes
         await updateSchemaCache();
       }
 
       if (!schemaCache) {
         return { suggestions: [] };
       }
-
 
       const fullText = model.getValue();
       const offset = model.getOffsetAt(position);
@@ -768,8 +765,9 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
       const isAfterJoin = /\bjoin\s+[\w_]*$/i.test(lastChars);
       // More flexible WHERE detection: check if we're in a WHERE clause context
       // Look for WHERE keyword followed by any content, ending with incomplete identifier
-      const isAfterWhere = /\bwhere\b.*?[a-zA-Z0-9_]*$/i.test(lastChars) &&
-                          !/\b(?:group\s+by|order\s+by|having|limit)\b/i.test(lastChars);
+      const isAfterWhere =
+        /\bwhere\b.*?[a-zA-Z0-9_]*$/i.test(lastChars) &&
+        !/\b(?:group\s+by|order\s+by|having|limit)\b/i.test(lastChars);
       // Additional context: after AND/OR operators in WHERE clauses
       const isAfterAndOr = /\b(?:and|or)\s+[a-zA-Z0-9_]*$/i.test(lastChars);
       // Fixed: \w already includes underscore, but let's be explicit
@@ -816,7 +814,9 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
 
       // ===== B) Suggest tables after FROM/JOIN =====
       if (isAfterFrom || isAfterJoin) {
-        const tables = Array.isArray(schemaCache.tables) ? schemaCache.tables : [];
+        const tables = Array.isArray(schemaCache.tables)
+          ? schemaCache.tables
+          : [];
         for (const table of tables) {
           pushUnique({
             label: table,
@@ -848,7 +848,9 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
         // console.log('Adding functions. Current word:', word.word, 'Functions available:', schemaCache.functions.length);
 
         let functionsAdded = 0;
-        const functions = Array.isArray(schemaCache.functions) ? schemaCache.functions : [];
+        const functions = Array.isArray(schemaCache.functions)
+          ? schemaCache.functions
+          : [];
         for (const func of functions) {
           pushUnique({
             label: func.name,
@@ -993,7 +995,9 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
       // ===== D) After opening paren, suggest functions without parens =====
       if (isAfterParen) {
         // Use DuckDB-provided functions (without adding another paren)
-        const functions = Array.isArray(schemaCache.functions) ? schemaCache.functions : [];
+        const functions = Array.isArray(schemaCache.functions)
+          ? schemaCache.functions
+          : [];
         for (const func of functions) {
           pushUnique({
             label: func.name,
@@ -1012,7 +1016,9 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
 
       // ===== E) Keywords from DuckDB =====
       // Filter keywords based on context
-      const keywords = Array.isArray(schemaCache.keywords) ? schemaCache.keywords : [];
+      const keywords = Array.isArray(schemaCache.keywords)
+        ? schemaCache.keywords
+        : [];
       const contextualKeywords = keywords.filter((kw) => {
         // Don't suggest keywords that don't make sense in context
         if (

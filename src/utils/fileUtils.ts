@@ -13,14 +13,13 @@ export interface BufferedFileResult {
  */
 export async function readFileBuffered(
   workerManager: WorkerManager,
-  path: string
+  path: string,
 ): Promise<BufferedFileResult> {
   return new Promise((resolve, reject) => {
-    let fullText = '';
+    let fullText = "";
 
-    workerManager.readFileStream(
-      path,
-      (chunk: string, progress) => {
+    workerManager
+      .readFileStream(path, (chunk: string, progress) => {
         fullText += chunk;
 
         if (progress.done) {
@@ -28,8 +27,8 @@ export async function readFileBuffered(
           const bytes = new TextEncoder().encode(fullText);
           resolve({ text: fullText, bytes });
         }
-      }
-    ).catch(reject);
+      })
+      .catch(reject);
   });
 }
 
@@ -43,7 +42,7 @@ export async function readFileBuffered(
  */
 export async function readFileBufferedBytes(
   workerManager: WorkerManager,
-  path: string
+  path: string,
 ): Promise<Uint8Array> {
   // For now, convert from the text back to bytes
   // TODO: Add a raw bytes streaming mode to WorkerManager if needed

@@ -74,7 +74,8 @@ async function initializeController(): Promise<void> {
     // Create zip worker using Vite's worker system
     try {
       // Attempting to create zip worker
-      const ZipReaderWorker = (await import('./zipReader.worker.ts?worker')).default;
+      const ZipReaderWorker = (await import("./zipReader.worker.ts?worker"))
+        .default;
       zipWorker = new ZipReaderWorker();
       // Zip worker created successfully
 
@@ -87,7 +88,7 @@ async function initializeController(): Promise<void> {
             filename: event.filename,
             lineno: event.lineno,
             colno: event.colno,
-            error: event.error
+            error: event.error,
           });
         }
       };
@@ -97,17 +98,20 @@ async function initializeController(): Promise<void> {
       };
     } catch (creationError: unknown) {
       console.error("❌ Failed to create zip worker:", creationError);
-      const error = creationError instanceof Error ? creationError : new Error(String(creationError));
+      const error =
+        creationError instanceof Error
+          ? creationError
+          : new Error(String(creationError));
       console.error("❌ Creation error details:", {
         message: error.message,
         stack: error.stack,
-        name: error.name
+        name: error.name,
       });
     }
 
     // Create DB worker using Vite's worker system
     try {
-      const DbWorker = (await import('./db.worker.ts?worker')).default;
+      const DbWorker = (await import("./db.worker.ts?worker")).default;
       dbWorker = new DbWorker();
       dbWorker.onmessage = (event) => handleWorkerMessage("dbWorker", event);
       dbWorker.onerror = (error) => console.error("❌ DB worker error:", error);
@@ -117,10 +121,13 @@ async function initializeController(): Promise<void> {
 
     // Create indexing worker using Vite's worker system
     try {
-      const IndexingWorker = (await import('./indexing.worker.ts?worker')).default;
+      const IndexingWorker = (await import("./indexing.worker.ts?worker"))
+        .default;
       indexingWorker = new IndexingWorker();
-      indexingWorker.onmessage = (event) => handleWorkerMessage("indexingWorker", event);
-      indexingWorker.onerror = (error) => console.error("❌ Indexing worker error:", error);
+      indexingWorker.onmessage = (event) =>
+        handleWorkerMessage("indexingWorker", event);
+      indexingWorker.onerror = (error) =>
+        console.error("❌ Indexing worker error:", error);
     } catch (error) {
       console.error("❌ Failed to create indexing worker:", error);
     }
@@ -136,12 +143,11 @@ async function initializeController(): Promise<void> {
     initialized = true;
     // All workers initialized
     notify({ type: "status", message: "Workers ready" });
-
   } catch (error) {
     console.error("❌ Controller: Failed to initialize:", error);
     notify({
       type: "error",
-      message: `Failed to initialize: ${error instanceof Error ? error.message : "Unknown error"}`
+      message: `Failed to initialize: ${error instanceof Error ? error.message : "Unknown error"}`,
     });
     throw error;
   }
@@ -170,12 +176,12 @@ async function initializeDatabase(): Promise<void> {
       reject: (error: Error) => {
         clearTimeout(timeout);
         reject(error);
-      }
+      },
     });
 
     dbWorker!.postMessage({
       type: "initializeDatabase",
-      id
+      id,
     });
   });
 }
@@ -187,43 +193,53 @@ async function loadZipFile(zipData: Uint8Array): Promise<void> {
     stackParsingCompleted = false;
 
     // Stage 1: Reading zip file
-    notify({ type: "loadingStage", stage: "reading-zip", message: "Loading zip file..." });
+    notify({
+      type: "loadingStage",
+      stage: "reading-zip",
+      message: "Loading zip file...",
+    });
 
     const zipEntries = await loadZipData(zipData);
 
     // Stage 2: Scanning files
-    notify({ type: "loadingStage", stage: "scanning-files", message: `Scanning ${zipEntries.length} files...` });
+    notify({
+      type: "loadingStage",
+      stage: "scanning-files",
+      message: `Scanning ${zipEntries.length} files...`,
+    });
 
     // Notify main thread about file list
     notify({
       type: "fileList",
       entries: zipEntries,
-      totalFiles: zipEntries.length
+      totalFiles: zipEntries.length,
     });
 
     // Store zip entries in worker scope for later stages
     self.zipEntries = zipEntries;
 
     // Stage 3: Table loading - let DB worker decide what to load
-    notify({ type: "loadingStage", stage: "table-loading", message: "Starting table loading..." });
-
+    notify({
+      type: "loadingStage",
+      stage: "table-loading",
+      message: "Starting table loading...",
+    });
 
     // Send the full file listing to DB worker - let it decide what to load
     if (dbWorker) {
       dbWorker.postMessage({
         type: "processFileList",
         id: generateId(),
-        fileList: zipEntries
+        fileList: zipEntries,
       });
     }
 
     // Zip file processing complete, table loading in progress
-
   } catch (error) {
     console.error("❌ Controller: Load failed:", error);
     notify({
       type: "error",
-      message: `Load failed: ${error instanceof Error ? error.message : "Unknown error"}`
+      message: `Load failed: ${error instanceof Error ? error.message : "Unknown error"}`,
     });
     throw error;
   }
@@ -243,48 +259,61 @@ interface SendSafelyConfig {
   };
 }
 
-async function loadZipFileFromSendSafely(sendSafelyConfig: SendSafelyConfig): Promise<void> {
+async function loadZipFileFromSendSafely(
+  sendSafelyConfig: SendSafelyConfig,
+): Promise<void> {
   try {
     // Reset pipeline state
     stackParsingCompleted = false;
 
     // Stage 1: Connecting to SendSafely
-    notify({ type: "loadingStage", stage: "reading-zip", message: "Connecting to SendSafely..." });
+    notify({
+      type: "loadingStage",
+      stage: "reading-zip",
+      message: "Connecting to SendSafely...",
+    });
 
     const zipEntries = await loadZipDataFromSendSafely(sendSafelyConfig);
 
     // Stage 2: Scanning files
-    notify({ type: "loadingStage", stage: "scanning-files", message: `Scanning ${zipEntries.length} files...` });
+    notify({
+      type: "loadingStage",
+      stage: "scanning-files",
+      message: `Scanning ${zipEntries.length} files...`,
+    });
 
     // Notify main thread about file list
     notify({
       type: "fileList",
       entries: zipEntries,
-      totalFiles: zipEntries.length
+      totalFiles: zipEntries.length,
     });
 
     // Store zip entries in worker scope for later stages
     self.zipEntries = zipEntries;
 
     // Stage 3: Table loading - let DB worker decide what to load
-    notify({ type: "loadingStage", stage: "table-loading", message: "Starting table loading..." });
+    notify({
+      type: "loadingStage",
+      stage: "table-loading",
+      message: "Starting table loading...",
+    });
 
     // Send the full file listing to DB worker - let it decide what to load
     if (dbWorker) {
       dbWorker.postMessage({
         type: "processFileList",
         id: generateId(),
-        fileList: zipEntries
+        fileList: zipEntries,
       });
     }
 
     // SendSafely zip file processing complete, table loading in progress
-
   } catch (error) {
     console.error("❌ Controller: SendSafely load failed:", error);
     notify({
       type: "error",
-      message: `SendSafely load failed: ${error instanceof Error ? error.message : "Unknown error"}`
+      message: `SendSafely load failed: ${error instanceof Error ? error.message : "Unknown error"}`,
     });
     throw error;
   }
@@ -297,111 +326,130 @@ async function loadZipData(zipData: Uint8Array): Promise<ZipEntryMeta[]> {
   // First initialize the zip worker
   await new Promise<void>((resolve, reject) => {
     const id = generateId();
-    const timeout = setTimeout(() => reject(new Error("Zip initialization timeout")), 30000);
+    const timeout = setTimeout(
+      () => reject(new Error("Zip initialization timeout")),
+      30000,
+    );
 
     pendingRequests.set(id, {
       resolve: (response: WorkerResponse) => {
         clearTimeout(timeout);
-        if (response.type === 'initializeComplete') {
+        if (response.type === "initializeComplete") {
           resolve();
-        } else if (response.type === 'error') {
+        } else if (response.type === "error") {
           reject(new Error(response.error || "Failed to initialize zip"));
         }
       },
       reject: (error: Error) => {
         clearTimeout(timeout);
         reject(error);
-      }
+      },
     });
 
     zipWorker!.postMessage({
       type: "initialize",
       id,
-      buffer: zipData.buffer.slice(zipData.byteOffset, zipData.byteOffset + zipData.byteLength)
+      buffer: zipData.buffer.slice(
+        zipData.byteOffset,
+        zipData.byteOffset + zipData.byteLength,
+      ),
     });
   });
 
   // Then get the entries
   return new Promise((resolve, reject) => {
     const id = generateId();
-    const timeout = setTimeout(() => reject(new Error("Get entries timeout")), 30000);
+    const timeout = setTimeout(
+      () => reject(new Error("Get entries timeout")),
+      30000,
+    );
 
     pendingRequests.set(id, {
       resolve: (response: WorkerResponse) => {
         clearTimeout(timeout);
-        if (response.type === 'getEntriesComplete') {
-          resolve(response.entries as ZipEntryMeta[] || []);
-        } else if (response.type === 'error') {
+        if (response.type === "getEntriesComplete") {
+          resolve((response.entries as ZipEntryMeta[]) || []);
+        } else if (response.type === "error") {
           reject(new Error(response.error || "Failed to get entries"));
         }
       },
       reject: (error: Error) => {
         clearTimeout(timeout);
         reject(error);
-      }
+      },
     });
 
     zipWorker!.postMessage({
       type: "getEntries",
-      id
+      id,
     });
   });
 }
 
 // Load zip data from SendSafely into zip worker
-async function loadZipDataFromSendSafely(sendSafelyConfig: SendSafelyConfig): Promise<ZipEntryMeta[]> {
+async function loadZipDataFromSendSafely(
+  sendSafelyConfig: SendSafelyConfig,
+): Promise<ZipEntryMeta[]> {
   if (!zipWorker) throw new Error("Zip worker not initialized");
 
   // First initialize the zip worker with SendSafely config
   await new Promise<void>((resolve, reject) => {
     const id = generateId();
-    const timeout = setTimeout(() => reject(new Error("SendSafely initialization timeout")), 30000);
+    const timeout = setTimeout(
+      () => reject(new Error("SendSafely initialization timeout")),
+      30000,
+    );
 
     pendingRequests.set(id, {
       resolve: (response: WorkerResponse) => {
         clearTimeout(timeout);
-        if (response.type === 'initializeComplete') {
+        if (response.type === "initializeComplete") {
           resolve();
-        } else if (response.type === 'error') {
-          reject(new Error(response.error || "Failed to initialize SendSafely zip"));
+        } else if (response.type === "error") {
+          reject(
+            new Error(response.error || "Failed to initialize SendSafely zip"),
+          );
         }
       },
       reject: (error: Error) => {
         clearTimeout(timeout);
         reject(error);
-      }
+      },
     });
 
     zipWorker!.postMessage({
       type: "initialize",
       id,
-      sendSafely: sendSafelyConfig
+      sendSafely: sendSafelyConfig,
     });
   });
 
   // Then get the entries
   return new Promise((resolve, reject) => {
     const id = generateId();
-    const timeout = setTimeout(() => reject(new Error("Get entries timeout")), 30000);
+    const timeout = setTimeout(
+      () => reject(new Error("Get entries timeout")),
+      30000,
+    );
 
     pendingRequests.set(id, {
       resolve: (response: WorkerResponse) => {
         clearTimeout(timeout);
-        if (response.type === 'getEntriesComplete') {
-          resolve(response.entries as ZipEntryMeta[] || []);
-        } else if (response.type === 'error') {
+        if (response.type === "getEntriesComplete") {
+          resolve((response.entries as ZipEntryMeta[]) || []);
+        } else if (response.type === "error") {
           reject(new Error(response.error || "Failed to get entries"));
         }
       },
       reject: (error: Error) => {
         clearTimeout(timeout);
         reject(error);
-      }
+      },
     });
 
     zipWorker!.postMessage({
       type: "getEntries",
-      id
+      id,
     });
   });
 }
@@ -416,7 +464,11 @@ async function startStackParsing(): Promise<void> {
   }
 
   try {
-    notify({ type: "loadingStage", stage: "stack-parsing", message: "Processing stack files..." });
+    notify({
+      type: "loadingStage",
+      stage: "stack-parsing",
+      message: "Processing stack files...",
+    });
 
     // Get the stored zip entries
     const storedEntries = self.zipEntries;
@@ -429,7 +481,6 @@ async function startStackParsing(): Promise<void> {
     // Just mark parsing as completed and continue with indexing
     stackParsingCompleted = true;
     startIndexing();
-
   } catch (error) {
     console.error("❌ Controller: Stack parsing failed:", error);
     stackParsingCompleted = true;
@@ -450,8 +501,9 @@ async function loadStackFiles() {
     }
 
     // Find all stacks.txt files
-    const stackFiles = storedEntries.filter((entry: ZipEntryMeta) =>
-      !entry.isDir && entry.path.includes('stacks.txt')
+    const stackFiles = storedEntries.filter(
+      (entry: ZipEntryMeta) =>
+        !entry.isDir && entry.path.includes("stacks.txt"),
     );
 
     if (stackFiles.length === 0) {
@@ -459,7 +511,11 @@ async function loadStackFiles() {
       return;
     }
 
-    notify({ type: "loadingStage", stage: "stack-loading", message: "Loading stack files..." });
+    notify({
+      type: "loadingStage",
+      stage: "stack-loading",
+      message: "Loading stack files...",
+    });
 
     // Process each stack file individually
     let processedCount = 0;
@@ -472,12 +528,15 @@ async function loadStackFiles() {
         notify({
           type: "sendStackFileToIframe",
           path: stackFile.path,
-          content: fileContent
+          content: fileContent,
         });
 
         processedCount++;
       } catch (error) {
-        console.error(`❌ Controller: Failed to read stack file ${stackFile.path}:`, error);
+        console.error(
+          `❌ Controller: Failed to read stack file ${stackFile.path}:`,
+          error,
+        );
       }
     }
 
@@ -485,12 +544,11 @@ async function loadStackFiles() {
     if (processedCount > 0) {
       notify({
         type: "stackProcessingComplete",
-        stackFilesCount: processedCount
+        stackFilesCount: processedCount,
       });
     }
 
     console.log(`🎯 Controller: Loaded ${processedCount} stack files`);
-
   } catch (error) {
     console.error("❌ Controller: Stack loading failed:", error);
   }
@@ -502,17 +560,23 @@ async function readStackFile(path: string): Promise<string> {
 
   return new Promise((resolve, reject) => {
     const id = generateId();
-    const timeout = setTimeout(() => reject(new Error("Stack file read timeout")), 30000);
+    const timeout = setTimeout(
+      () => reject(new Error("Stack file read timeout")),
+      30000,
+    );
     const chunks: Uint8Array[] = [];
 
     pendingRequests.set(id, {
       resolve: (response: WorkerResponse) => {
-        if (response.type === 'readFileChunk') {
+        if (response.type === "readFileChunk") {
           chunks.push(response.bytes as Uint8Array);
           if (response.done) {
             clearTimeout(timeout);
             // Combine all chunks and decode to text
-            const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+            const totalLength = chunks.reduce(
+              (sum, chunk) => sum + chunk.length,
+              0,
+            );
             const combined = new Uint8Array(totalLength);
             let offset = 0;
             for (const chunk of chunks) {
@@ -522,7 +586,7 @@ async function readStackFile(path: string): Promise<string> {
             const text = new TextDecoder().decode(combined);
             resolve(text);
           }
-        } else if (response.type === 'error') {
+        } else if (response.type === "error") {
           clearTimeout(timeout);
           reject(new Error(response.error || "Failed to read stack file"));
         }
@@ -530,21 +594,24 @@ async function readStackFile(path: string): Promise<string> {
       reject: (error: Error) => {
         clearTimeout(timeout);
         reject(error);
-      }
+      },
     });
 
     zipWorker!.postMessage({
       type: "readFileChunked",
       id,
-      path
+      path,
     });
   });
 }
 
 // Start indexing phase
 async function startIndexing(): Promise<void> {
-
-  notify({ type: "loadingStage", stage: "indexing", message: "Starting file indexing..." });
+  notify({
+    type: "loadingStage",
+    stage: "indexing",
+    message: "Starting file indexing...",
+  });
 
   // Get the stored zip entries
   const storedEntries = self.zipEntries;
@@ -552,7 +619,7 @@ async function startIndexing(): Promise<void> {
     notify({
       type: "loadingStage",
       stage: "complete",
-      message: "Processing complete"
+      message: "Processing complete",
     });
     return;
   }
@@ -567,8 +634,8 @@ async function startIndexing(): Promise<void> {
       files: storedEntries.map((entry: ZipEntryMeta) => ({
         path: entry.path,
         name: entry.name,
-        size: entry.size
-      }))
+        size: entry.size,
+      })),
     });
 
     // Then tell it to start indexing (it will decide what to index from registered files)
@@ -583,7 +650,7 @@ async function startIndexing(): Promise<void> {
 
 // Route messages between workers
 function routeMessage(message: Record<string, unknown>) {
-  if (message.to && typeof message.to === 'string' && workers.has(message.to)) {
+  if (message.to && typeof message.to === "string" && workers.has(message.to)) {
     const targetWorker = workers.get(message.to)!;
     targetWorker.postMessage(message);
   } else {
@@ -598,9 +665,13 @@ function handleWorkerMessage(fromWorker: string, event: MessageEvent) {
   if (message.to && message.from) {
     // Handle responses routed back to main thread
     if (message.to === "mainThread") {
-
       // Handle specific message types that need to be preserved as notifications
-      if (message.type === "indexingComplete" || message.type === "indexingProgress" || message.type === "indexingError" || message.type === "fileStatusUpdate") {
+      if (
+        message.type === "indexingComplete" ||
+        message.type === "indexingProgress" ||
+        message.type === "indexingError" ||
+        message.type === "fileStatusUpdate"
+      ) {
         // Forward as notification preserving all fields
         notify({
           type: message.type,
@@ -614,21 +685,22 @@ function handleWorkerMessage(fromWorker: string, event: MessageEvent) {
           fileName: message.fileName,
           filePath: message.filePath,
           entries: message.entries,
-          fileStatuses: message.fileStatuses
+          fileStatuses: message.fileStatuses,
         });
         return;
       }
 
       // For chunk messages, the entire message is the result
       // For other messages, extract the result field to avoid cloning issues
-      const result = message.type === "readFileChunk" ? message : message.result;
+      const result =
+        message.type === "readFileChunk" ? message : message.result;
 
       self.postMessage({
         type: "response",
         id: message.id,
         success: message.success !== false,
         result: result,
-        error: message.error
+        error: message.error,
       });
       return;
     }
@@ -667,7 +739,7 @@ function handleWorkerMessage(fromWorker: string, event: MessageEvent) {
       id: message.id,
       success: message.success !== false,
       result: message.result || message,
-      error: message.error
+      error: message.error,
     });
     return;
   }
@@ -686,21 +758,21 @@ function handleWorkerMessage(fromWorker: string, event: MessageEvent) {
       notify({
         type: "loadingStage",
         stage: "complete",
-        message: `Processing complete - ${message.totalEntries} files indexed`
+        message: `Processing complete - ${message.totalEntries} files indexed`,
       });
     } else {
       // Indexing failed (error logged separately)
       notify({
         type: "loadingStage",
         stage: "error",
-        message: `Indexing failed: ${message.error}`
+        message: `Indexing failed: ${message.error}`,
       });
     }
   }
 
   self.postMessage({
     ...message,
-    from: fromWorker
+    from: fromWorker,
   });
 }
 
@@ -718,16 +790,19 @@ self.onmessage = async (event: MessageEvent<Command>) => {
 
     if (command.type === "loadZip") {
       // Convert transferred ArrayBuffer back to Uint8Array
-      const zipData = command.zipData instanceof ArrayBuffer
-        ? new Uint8Array(command.zipData)
-        : command.zipData as Uint8Array;
+      const zipData =
+        command.zipData instanceof ArrayBuffer
+          ? new Uint8Array(command.zipData)
+          : (command.zipData as Uint8Array);
       await loadZipFile(zipData);
       self.postMessage({ type: "response", id: command.id, success: true });
       return;
     }
 
     if (command.type === "loadZipFromSendSafely") {
-      await loadZipFileFromSendSafely(command.sendSafelyConfig as SendSafelyConfig);
+      await loadZipFileFromSendSafely(
+        command.sendSafelyConfig as SendSafelyConfig,
+      );
       self.postMessage({ type: "response", id: command.id, success: true });
       return;
     }
@@ -745,15 +820,17 @@ self.onmessage = async (event: MessageEvent<Command>) => {
       targetWorker.postMessage({
         to: command.to,
         from: "mainThread",
-        ...command
+        ...command,
       });
     } else {
-      console.error(`🎯 Controller: Command missing 'to' field or unknown target: ${command.type}, to: ${command.to}`);
+      console.error(
+        `🎯 Controller: Command missing 'to' field or unknown target: ${command.type}, to: ${command.to}`,
+      );
       self.postMessage({
         type: "response",
         id: command.id,
         success: false,
-        error: `Command missing 'to' field or unknown target: ${command.to}`
+        error: `Command missing 'to' field or unknown target: ${command.to}`,
       });
     }
   } catch (error) {
@@ -762,7 +839,7 @@ self.onmessage = async (event: MessageEvent<Command>) => {
       type: "response",
       id: command.id,
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error"
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };

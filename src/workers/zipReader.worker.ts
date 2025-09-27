@@ -1,9 +1,9 @@
- 
- 
-
 // Test SendSafely import
-import { createSendSafelyClient, SendSafelyClient } from '../utils/sendSafelyClient.js';
-import * as openpgp from 'openpgp';
+import {
+  createSendSafelyClient,
+  SendSafelyClient,
+} from "../utils/sendSafelyClient.js";
+import * as openpgp from "openpgp";
 
 //
 // src/workers/zipReader.worker.ts
@@ -33,14 +33,14 @@ import * as openpgp from 'openpgp';
  * All offsets and lengths are in bytes.
  */
 interface BytesProvider {
-  readonly kind: 'buffer' | 'blob' | 'http-buffer' | 'custom';
+  readonly kind: "buffer" | "blob" | "http-buffer" | "custom";
   size(): number;
   read(start: number, length: number): Promise<Uint8Array>;
 }
 
 /** Backed by a Uint8Array already in memory. */
 class BufferProvider implements BytesProvider {
-  readonly kind = 'buffer' as const;
+  readonly kind = "buffer" as const;
   private buf: Uint8Array;
   constructor(buf: Uint8Array) {
     this.buf = buf;
@@ -57,7 +57,7 @@ class BufferProvider implements BytesProvider {
 
 /** Backed by a Blob/File; uses Blob#slice + arrayBuffer(). */
 class BlobProvider implements BytesProvider {
-  readonly kind = 'blob' as const;
+  readonly kind = "blob" as const;
   private blob: Blob;
   constructor(blob: Blob) {
     this.blob = blob;
@@ -75,7 +75,7 @@ class BlobProvider implements BytesProvider {
 
 /** Demo-only: fetch a URL once → memory buffer. */
 class HttpBufferProvider implements BytesProvider {
-  readonly kind = 'http-buffer' as const;
+  readonly kind = "http-buffer" as const;
   private buf: Uint8Array;
   constructor(buf: Uint8Array) {
     this.buf = buf;
@@ -93,7 +93,7 @@ class HttpBufferProvider implements BytesProvider {
 // -------------------- Public message types (stable) --------------------
 
 type InitFromSourceMsg = {
-  type: 'initialize';
+  type: "initialize";
   id: string;
   buffer?: ArrayBuffer;
   file?: File;
@@ -101,30 +101,40 @@ type InitFromSourceMsg = {
   sendSafely?: SendSafelyInit; // SendSafely source
 };
 
-type GetEntriesMsg = { type: 'getEntries'; id: string };
+type GetEntriesMsg = { type: "getEntries"; id: string };
 
 type ReadFileChunkedMsg = {
-  type: 'readFileChunked';
+  type: "readFileChunked";
   id: string;
-  path: string;         // entry path as returned by getEntries
-  chunkSize?: number;   // post-decompression chunk size (default ~256KB)
-  to?: string;          // for routing support
-  from?: string;        // for routing support
+  path: string; // entry path as returned by getEntries
+  chunkSize?: number; // post-decompression chunk size (default ~256KB)
+  to?: string; // for routing support
+  from?: string; // for routing support
 };
 
 // Responses
-type ErrorResp = { type: 'error'; id: string; error: string };
-type InitializeComplete = { type: 'initializeComplete'; id: string };
-type GetEntriesComplete = { type: 'getEntriesComplete'; id: string; entries: ZipEntryMeta[] };
-type ReadFileChunk = { type: 'readFileChunk'; id: string; path: string; bytes: Uint8Array; done: boolean };
+type ErrorResp = { type: "error"; id: string; error: string };
+type InitializeComplete = { type: "initializeComplete"; id: string };
+type GetEntriesComplete = {
+  type: "getEntriesComplete";
+  id: string;
+  entries: ZipEntryMeta[];
+};
+type ReadFileChunk = {
+  type: "readFileChunk";
+  id: string;
+  path: string;
+  bytes: Uint8Array;
+  done: boolean;
+};
 
 // -------------------- Entry types --------------------
 
 type ZipEntryMeta = {
-  id: string;            // stable id (we use the path)
+  id: string; // stable id (we use the path)
   name: string;
   path: string;
-  size: number;          // uncompressed
+  size: number; // uncompressed
   compressedSize: number;
   isDir: boolean;
 };
@@ -134,12 +144,12 @@ type ZipEntryInternal = {
   path: string;
   name: string;
   isDir: boolean;
-  method: number;        // 0=Stored, 8=Deflate
+  method: number; // 0=Stored, 8=Deflate
   flags: number;
   compressedSize: number;
   uncompressedSize: number;
   localHeaderOffset: number;
-  dataStart?: number;    // computed from local header on demand
+  dataStart?: number; // computed from local header on demand
 };
 
 // -------------------- Worker state --------------------
@@ -149,7 +159,7 @@ const state: {
   fileSize: number;
   entries: ZipEntryInternal[] | null;
   entriesByPath: Map<string, ZipEntryInternal>;
-  sourceKind: BytesProvider['kind'] | null;
+  sourceKind: BytesProvider["kind"] | null;
 } = {
   provider: null,
   fileSize: 0,
@@ -195,7 +205,7 @@ function parseZip64ExtraField(
   extraBytes: Uint8Array,
   hasUncompSizeSentinel = false,
   hasCompSizeSentinel = false,
-  hasLfhOffsetSentinel = false
+  hasLfhOffsetSentinel = false,
 ): {
   uncompressedSize?: number;
   compressedSize?: number;
@@ -210,7 +220,11 @@ function parseZip64ExtraField(
 
     if (id === 0x0001 && off + 4 + size <= extraBytes.length) {
       // ZIP64 extended information extra field
-      const result: { uncompressedSize?: number; compressedSize?: number; localHeaderOffset?: number; } = {};
+      const result: {
+        uncompressedSize?: number;
+        compressedSize?: number;
+        localHeaderOffset?: number;
+      } = {};
       let fieldOff = off + 4;
 
       // Fields are only present if the corresponding 32-bit field was a sentinel value
@@ -243,7 +257,7 @@ type CDLocator = { cdOffset: number; cdSize: number; totalEntries: number };
 function parseCentralDirectoryLocator(
   tail: Uint8Array,
   _fileSize: number,
-  tailStart: number
+  tailStart: number,
 ): CDLocator {
   const view = dv(tail);
   const eocd = findEOCD(tail);
@@ -297,7 +311,9 @@ function parseCentralDirectoryLocator(
     // Fallback to 32-bit if ZIP64 locator not found
     return { cdOffset, cdSize, totalEntries };
   }
-  throw new Error('EOCD not found; file may not be a ZIP or tail window too small');
+  throw new Error(
+    "EOCD not found; file may not be a ZIP or tail window too small",
+  );
 }
 
 function parseCentralDirectory(buf: Uint8Array): ZipEntryInternal[] {
@@ -320,7 +336,7 @@ function parseCentralDirectory(buf: Uint8Array): ZipEntryInternal[] {
 
     const nameBytes = buf.subarray(off + 46, off + 46 + nameLen);
     const path = new TextDecoder().decode(nameBytes);
-    const isDir = path.endsWith('/') || path.endsWith('\\');
+    const isDir = path.endsWith("/") || path.endsWith("\\");
 
     // Handle ZIP64 extended information if needed
     let actualLfhOffset = lfhOffset >>> 0;
@@ -328,34 +344,50 @@ function parseCentralDirectory(buf: Uint8Array): ZipEntryInternal[] {
     let actualUncompSize = uncompSize >>> 0;
 
     // If any values are ZIP64 sentinel values, parse the ZIP64 extra field
-    if (lfhOffset === 0xffffffff || compSize === 0xffffffff || uncompSize === 0xffffffff) {
-      const extraBytes = buf.subarray(off + 46 + nameLen, off + 46 + nameLen + extraLen);
+    if (
+      lfhOffset === 0xffffffff ||
+      compSize === 0xffffffff ||
+      uncompSize === 0xffffffff
+    ) {
+      const extraBytes = buf.subarray(
+        off + 46 + nameLen,
+        off + 46 + nameLen + extraLen,
+      );
 
       // Parse ZIP64 field with info about which fields were sentinel values
       const zip64Info = parseZip64ExtraField(
         extraBytes,
         uncompSize === 0xffffffff,
         compSize === 0xffffffff,
-        lfhOffset === 0xffffffff
+        lfhOffset === 0xffffffff,
       );
 
       if (zip64Info) {
-        if (lfhOffset === 0xffffffff && zip64Info.localHeaderOffset !== undefined) {
+        if (
+          lfhOffset === 0xffffffff &&
+          zip64Info.localHeaderOffset !== undefined
+        ) {
           actualLfhOffset = zip64Info.localHeaderOffset;
         }
         if (compSize === 0xffffffff && zip64Info.compressedSize !== undefined) {
           actualCompSize = zip64Info.compressedSize;
         }
-        if (uncompSize === 0xffffffff && zip64Info.uncompressedSize !== undefined) {
+        if (
+          uncompSize === 0xffffffff &&
+          zip64Info.uncompressedSize !== undefined
+        ) {
           actualUncompSize = zip64Info.uncompressedSize;
         }
       }
     }
 
-
     out.push({
       path,
-      name: path.replace(/[/\\]$/, '').split(/[/\\]/).pop() || path,
+      name:
+        path
+          .replace(/[/\\]$/, "")
+          .split(/[/\\]/)
+          .pop() || path,
       isDir,
       method,
       flags,
@@ -371,12 +403,14 @@ function parseCentralDirectory(buf: Uint8Array): ZipEntryInternal[] {
 
 function parseLocalHeaderForDataStart(
   lfh: Uint8Array,
-  lfhGlobalOffset: number
+  lfhGlobalOffset: number,
 ): { dataStart: number; method: number } {
   const view = dv(lfh);
   const sig = view.getUint32(0, true);
   if (sig !== SIG.LFH) {
-    throw new Error(`Invalid local file header: signature 0x${sig.toString(16)} at offset ${lfhGlobalOffset}`);
+    throw new Error(
+      `Invalid local file header: signature 0x${sig.toString(16)} at offset ${lfhGlobalOffset}`,
+    );
   }
   const method = view.getUint16(8, true);
   const nameLen = view.getUint16(26, true);
@@ -404,7 +438,7 @@ function okMessage<T extends object>(m: T) {
 
 function errMessage(id: string, error: unknown) {
   const msg = error instanceof Error ? error.message : String(error);
-  okMessage<ErrorResp>({ type: 'error', id, error: msg });
+  okMessage<ErrorResp>({ type: "error", id, error: msg });
 }
 
 // Wrap provider bytes into a ReadableStream by fetching in windows.
@@ -412,7 +446,7 @@ function makeRangeStream(
   provider: BytesProvider,
   start: number,
   length: number,
-  windowSize = 1024 * 1024 // 1MB reads
+  windowSize = 1024 * 1024, // 1MB reads
 ): ReadableStream<Uint8Array> {
   let sent = 0;
   return new ReadableStream<Uint8Array>({
@@ -440,7 +474,7 @@ function makeRangeStream(
 async function chunkAndEmit(
   buf: Uint8Array,
   outSize: number,
-  emit: (b: Uint8Array, done: boolean) => void
+  emit: (b: Uint8Array, done: boolean) => void,
 ) {
   let i = 0;
   while (i < buf.byteLength) {
@@ -453,13 +487,18 @@ async function chunkAndEmit(
 }
 
 // Compute and cache `dataStart` for an entry using the provider.
-async function computeDataStart(provider: BytesProvider, entry: ZipEntryInternal): Promise<number> {
+async function computeDataStart(
+  provider: BytesProvider,
+  entry: ZipEntryInternal,
+): Promise<number> {
   if (entry.dataStart != null) return entry.dataStart;
   // Read a small window around the LFH (64KB is more than enough)
 
-
   const lfhBuf = await provider.read(entry.localHeaderOffset, 64 * 1024);
-  const { dataStart } = parseLocalHeaderForDataStart(lfhBuf, entry.localHeaderOffset);
+  const { dataStart } = parseLocalHeaderForDataStart(
+    lfhBuf,
+    entry.localHeaderOffset,
+  );
   entry.dataStart = dataStart;
   return dataStart;
 }
@@ -478,15 +517,22 @@ async function loadFromProvider(id: string, provider: BytesProvider) {
   const tailStart = Math.max(0, state.fileSize - tailLen); // Ensure we don't go negative
 
   const tail = await provider.read(tailStart, tailLen);
-  const { cdOffset, cdSize } = parseCentralDirectoryLocator(tail, state.fileSize, tailStart);
+  const { cdOffset, cdSize } = parseCentralDirectoryLocator(
+    tail,
+    state.fileSize,
+    tailStart,
+  );
 
   // 2) Read central directory
   const central = await provider.read(cdOffset, cdSize);
-  const entries = parseCentralDirectory(central);
+  const allEntries = parseCentralDirectory(central);
 
-  if (entries.every(e => e.path.startsWith('renamed_'))) {
+  // Filter out __MACOSX paths (macOS metadata files)
+  const entries = allEntries.filter((e) => !e.path.startsWith("__MACOSX"));
+
+  if (entries.every((e) => e.path.startsWith("renamed_"))) {
     console.log(`ZipReader de-renaming demo zip entries..`);
-    entries.forEach(e => e.path = e.path.substring('renamed_'.length));
+    entries.forEach((e) => (e.path = e.path.substring("renamed_".length)));
   }
 
   // 4) Index entries
@@ -494,7 +540,7 @@ async function loadFromProvider(id: string, provider: BytesProvider) {
   state.entriesByPath.clear();
   for (const e of entries) state.entriesByPath.set(e.path, e);
 
-  okMessage<InitializeComplete>({ type: 'initializeComplete', id });
+  okMessage<InitializeComplete>({ type: "initializeComplete", id });
 }
 
 async function loadFromMessage(msg: InitFromSourceMsg) {
@@ -527,7 +573,7 @@ async function loadFromMessage(msg: InitFromSourceMsg) {
     return;
   }
 
-  throw new Error('No buffer, file, url, or sendSafely provided to initialize');
+  throw new Error("No buffer, file, url, or sendSafely provided to initialize");
 }
 
 // -------------------- Public ops --------------------
@@ -535,9 +581,13 @@ async function loadFromMessage(msg: InitFromSourceMsg) {
 async function onGetEntries(msg: GetEntriesMsg) {
   const { id } = msg;
   try {
-    if (!state.entries) throw new Error('Archive not initialized');
+    if (!state.entries) throw new Error("Archive not initialized");
     const metas = state.entries.map(toMeta);
-    okMessage<GetEntriesComplete>({ type: 'getEntriesComplete', id, entries: metas });
+    okMessage<GetEntriesComplete>({
+      type: "getEntriesComplete",
+      id,
+      entries: metas,
+    });
   } catch (e) {
     errMessage(id, e);
   }
@@ -548,26 +598,27 @@ async function onReadFileChunked(msg: ReadFileChunkedMsg) {
   const chunkOutSize = msg.chunkSize ?? 256 * 1024;
 
   // Check if this is a routed message (has 'from' field)
-  const isRouted = 'from' in msg && msg.from;
-  const routingInfo = isRouted ? { to: msg.from, from: 'zipWorker' } : {};
+  const isRouted = "from" in msg && msg.from;
+  const routingInfo = isRouted ? { to: msg.from, from: "zipWorker" } : {};
 
   const emit = (bytes: Uint8Array, done: boolean) => {
     okMessage<ReadFileChunk & { to?: string; from?: string }>({
-      type: 'readFileChunk',
+      type: "readFileChunk",
       id,
       path,
       bytes,
       done,
-      ...routingInfo
+      ...routingInfo,
     });
   };
 
   try {
-    if (!state.provider || !state.entries) throw new Error('Archive not initialized');
+    if (!state.provider || !state.entries)
+      throw new Error("Archive not initialized");
 
     const entry = state.entriesByPath.get(path);
     if (!entry) throw new Error(`Entry not found: ${path}`);
-    if (entry.isDir) throw new Error('Cannot read a directory');
+    if (entry.isDir) throw new Error("Cannot read a directory");
 
     const provider = state.provider;
     const dataStart = await computeDataStart(provider, entry);
@@ -589,11 +640,18 @@ async function onReadFileChunked(msg: ReadFileChunkedMsg) {
 
     if (entry.method === 8 /* Deflate */) {
       // Feature detection for DecompressionStream without global mutation
-      if (typeof DecompressionStream === 'undefined') {
-        throw new Error('DecompressionStream API not available in this environment');
+      if (typeof DecompressionStream === "undefined") {
+        throw new Error(
+          "DecompressionStream API not available in this environment",
+        );
       }
       const Decomp = DecompressionStream;
-      const plainStream = compStream.pipeThrough(new Decomp('deflate-raw') as ReadableWritablePair<Uint8Array, Uint8Array>);
+      const plainStream = compStream.pipeThrough(
+        new Decomp("deflate-raw") as ReadableWritablePair<
+          Uint8Array,
+          Uint8Array
+        >,
+      );
       const reader = plainStream.getReader();
       for (;;) {
         const { value, done } = await reader.read();
@@ -610,30 +668,32 @@ async function onReadFileChunked(msg: ReadFileChunkedMsg) {
   }
 }
 
-
 // -------------------- Dispatch --------------------
 
 type InMsg = InitFromSourceMsg | GetEntriesMsg | ReadFileChunkedMsg;
 
-self.addEventListener('message', (ev: MessageEvent<InMsg>) => {
+self.addEventListener("message", (ev: MessageEvent<InMsg>) => {
   const msg = ev.data;
   switch (msg.type) {
-    case 'initialize':
+    case "initialize":
       void loadFromMessage(msg);
       break;
-    case 'getEntries':
+    case "getEntries":
       void onGetEntries(msg);
       break;
-    case 'readFileChunked':
+    case "readFileChunked":
       void onReadFileChunked(msg);
       break;
     default: {
-      const id = (msg as Record<string, unknown>).id as string ?? 'unknown';
-      okMessage<ErrorResp>({ type: 'error', id, error: `Unknown message type: ${(msg as Record<string, unknown>).type}` });
+      const id = ((msg as Record<string, unknown>).id as string) ?? "unknown";
+      okMessage<ErrorResp>({
+        type: "error",
+        id,
+        error: `Unknown message type: ${(msg as Record<string, unknown>).type}`,
+      });
     }
   }
 });
-
 
 interface SendSafelyPackageInfo {
   packageId?: string;
@@ -668,7 +728,6 @@ type SendSafelyInit = {
   packageInfo: SendSafelyPackageInfo;
 };
 
-
 // Small LRU for decrypted parts
 class LRU<V> {
   private map = new Map<number, V>();
@@ -678,7 +737,10 @@ class LRU<V> {
   }
   get(k: number): V | undefined {
     const v = this.map.get(k);
-    if (v !== undefined) { this.map.delete(k); this.map.set(k, v); }
+    if (v !== undefined) {
+      this.map.delete(k);
+      this.map.set(k, v);
+    }
     return v;
   }
   set(k: number, v: V) {
@@ -694,7 +756,7 @@ class LRU<V> {
 }
 
 class SendSafelyProvider implements BytesProvider {
-  readonly kind = 'custom' as const;
+  readonly kind = "custom" as const;
 
   private host: string;
   private apiKey: string;
@@ -711,21 +773,21 @@ class SendSafelyProvider implements BytesProvider {
   private parts: number;
 
   // Discovered chunk characteristics (set during initialization)
-  private firstChunkSize: number = 0;      // plaintext size of first chunk
-  private middleChunkSize: number = 0;     // plaintext size of middle chunks
+  private firstChunkSize: number = 0; // plaintext size of first chunk
+  private middleChunkSize: number = 0; // plaintext size of middle chunks
   // @ts-expect-error - lastChunkSize kept for potential future use
-  private _lastChunkSize: number = 0;      // plaintext size of last chunk
-  private chunkSizesDiscovered = false;    // whether we've probed the chunks
+  private _lastChunkSize: number = 0; // plaintext size of last chunk
+  private chunkSizesDiscovered = false; // whether we've probed the chunks
 
   // caches
-  private urls = new Map<number, string>();   // partIdx -> presigned URL
+  private urls = new Map<number, string>(); // partIdx -> presigned URL
   private urlPageSize = 25;
-  private decLRU = new LRU<Uint8Array>(24);   // decrypted part cache (tune)
+  private decLRU = new LRU<Uint8Array>(24); // decrypted part cache (tune)
   private client: SendSafelyClient | null = null; // SendSafely client instance
 
   constructor(init: SendSafelyInit) {
     // Store credentials - client will be created on-demand
-    this.host = init.host.replace(/\/+$/, '');
+    this.host = init.host.replace(/\/+$/, "");
     this.apiKey = init.apiKey;
     this.apiSecret = init.apiSecret;
     this.keyCode = init.keyCode;
@@ -733,9 +795,11 @@ class SendSafelyProvider implements BytesProvider {
 
     // Extract package info from the provided response
     const pkgInfo = init.packageInfo;
-    this.packageId = pkgInfo.packageId ?? pkgInfo.package?.packageId ?? '';
-    this.packageCode = pkgInfo.packageCode ?? pkgInfo.package?.packageCode ?? '';
-    this.serverSecret = pkgInfo.serverSecret ?? pkgInfo.package?.serverSecret ?? '';
+    this.packageId = pkgInfo.packageId ?? pkgInfo.package?.packageId ?? "";
+    this.packageCode =
+      pkgInfo.packageCode ?? pkgInfo.package?.packageCode ?? "";
+    this.serverSecret =
+      pkgInfo.serverSecret ?? pkgInfo.package?.serverSecret ?? "";
 
     const files = (pkgInfo.files ?? pkgInfo.package?.files) as Array<{
       fileId: string;
@@ -743,7 +807,7 @@ class SendSafelyProvider implements BytesProvider {
       fileSize: number;
       parts: number;
     }>;
-    const f = files.find(x => x.fileName === this.fileName) ?? files[0];
+    const f = files.find((x) => x.fileName === this.fileName) ?? files[0];
     if (!f) throw new Error(`File not found in package: ${this.fileName}`);
 
     this.fileId = f.fileId;
@@ -751,7 +815,11 @@ class SendSafelyProvider implements BytesProvider {
     this.parts = f.parts;
 
     // Create SendSafely client instance
-    this.client = createSendSafelyClient(this.host, this.apiKey, this.apiSecret);
+    this.client = createSendSafelyClient(
+      this.host,
+      this.apiKey,
+      this.apiSecret,
+    );
   }
 
   size(): number {
@@ -786,7 +854,7 @@ class SendSafelyProvider implements BytesProvider {
       const decrypted = await this.getDecryptedPart(chunkIdx);
       chunkInfo.push({
         chunkIdx,
-        plaintextSize: decrypted.length
+        plaintextSize: decrypted.length,
       });
     }
 
@@ -798,28 +866,37 @@ class SendSafelyProvider implements BytesProvider {
       this._lastChunkSize = chunkInfo[0].plaintextSize;
     } else if (this.parts === 2) {
       // Two chunk file
-      this.firstChunkSize = chunkInfo.find(c => c.chunkIdx === 0)?.plaintextSize || 0;
-      this._lastChunkSize = chunkInfo.find(c => c.chunkIdx === 1)?.plaintextSize || 0;
+      this.firstChunkSize =
+        chunkInfo.find((c) => c.chunkIdx === 0)?.plaintextSize || 0;
+      this._lastChunkSize =
+        chunkInfo.find((c) => c.chunkIdx === 1)?.plaintextSize || 0;
       this.middleChunkSize = 0; // No middle chunks
     } else if (this.parts === 3) {
       // Three chunk file
-      this.firstChunkSize = chunkInfo.find(c => c.chunkIdx === 0)?.plaintextSize || 0;
-      this.middleChunkSize = chunkInfo.find(c => c.chunkIdx === 1)?.plaintextSize || 0;
-      this._lastChunkSize = chunkInfo.find(c => c.chunkIdx === 2)?.plaintextSize || 0;
+      this.firstChunkSize =
+        chunkInfo.find((c) => c.chunkIdx === 0)?.plaintextSize || 0;
+      this.middleChunkSize =
+        chunkInfo.find((c) => c.chunkIdx === 1)?.plaintextSize || 0;
+      this._lastChunkSize =
+        chunkInfo.find((c) => c.chunkIdx === 2)?.plaintextSize || 0;
     } else {
       // Four or more chunks - verify middle chunks are consistent
-      const firstInfo = chunkInfo.find(c => c.chunkIdx === 0);
-      const secondInfo = chunkInfo.find(c => c.chunkIdx === 1);
-      const penultimateInfo = chunkInfo.find(c => c.chunkIdx === this.parts - 2);
-      const lastInfo = chunkInfo.find(c => c.chunkIdx === this.parts - 1);
+      const firstInfo = chunkInfo.find((c) => c.chunkIdx === 0);
+      const secondInfo = chunkInfo.find((c) => c.chunkIdx === 1);
+      const penultimateInfo = chunkInfo.find(
+        (c) => c.chunkIdx === this.parts - 2,
+      );
+      const lastInfo = chunkInfo.find((c) => c.chunkIdx === this.parts - 1);
 
       if (!firstInfo || !secondInfo || !penultimateInfo || !lastInfo) {
-        throw new Error('Failed to probe required chunks');
+        throw new Error("Failed to probe required chunks");
       }
 
       // Verify second and penultimate chunks are the same size (middle chunk pattern)
       if (secondInfo.plaintextSize !== penultimateInfo.plaintextSize) {
-        throw new Error(`Middle chunks have different sizes: chunk 1=${secondInfo.plaintextSize}B, chunk ${this.parts-2}=${penultimateInfo.plaintextSize}B`);
+        throw new Error(
+          `Middle chunks have different sizes: chunk 1=${secondInfo.plaintextSize}B, chunk ${this.parts - 2}=${penultimateInfo.plaintextSize}B`,
+        );
       }
 
       this.firstChunkSize = firstInfo.plaintextSize;
@@ -834,9 +911,14 @@ class SendSafelyProvider implements BytesProvider {
    * Map a byte offset to the chunk that contains it
    * Returns chunk index and offset within that chunk
    */
-  private chunkForOffset(offset: number): { chunkIdx: number; offsetInChunk: number } {
+  private chunkForOffset(offset: number): {
+    chunkIdx: number;
+    offsetInChunk: number;
+  } {
     if (!this.chunkSizesDiscovered) {
-      throw new Error('Chunk sizes not discovered yet - call discoverChunkSizes() first');
+      throw new Error(
+        "Chunk sizes not discovered yet - call discoverChunkSizes() first",
+      );
     }
 
     if (offset < 0 || offset >= this.fileSize) {
@@ -883,7 +965,10 @@ class SendSafelyProvider implements BytesProvider {
       // We're in a middle chunk
       const middleChunkIdx = Math.floor(afterFirstChunk / this.middleChunkSize);
       const offsetInMiddleChunk = afterFirstChunk % this.middleChunkSize;
-      return { chunkIdx: 1 + middleChunkIdx, offsetInChunk: offsetInMiddleChunk };
+      return {
+        chunkIdx: 1 + middleChunkIdx,
+        offsetInChunk: offsetInMiddleChunk,
+      };
     } else {
       // We're in the last chunk
       const offsetInLastChunk = afterFirstChunk - totalMiddleSize;
@@ -907,7 +992,11 @@ class SendSafelyProvider implements BytesProvider {
 
     // Fetch and decrypt the required chunks
     const chunks: Uint8Array[] = [];
-    for (let chunkIdx = startChunk.chunkIdx; chunkIdx <= endChunk.chunkIdx; chunkIdx++) {
+    for (
+      let chunkIdx = startChunk.chunkIdx;
+      chunkIdx <= endChunk.chunkIdx;
+      chunkIdx++
+    ) {
       chunks.push(await this.getDecryptedPart(chunkIdx));
     }
 
@@ -974,15 +1063,19 @@ class SendSafelyProvider implements BytesProvider {
     }
 
     // targetPart is now 0-based, calculate page boundaries using 0-based math
-    const startPart0Based = Math.floor(targetPart / this.urlPageSize) * this.urlPageSize;
-    const endPart0Based = Math.min(this.parts - 1, startPart0Based + this.urlPageSize - 1);
+    const startPart0Based =
+      Math.floor(targetPart / this.urlPageSize) * this.urlPageSize;
+    const endPart0Based = Math.min(
+      this.parts - 1,
+      startPart0Based + this.urlPageSize - 1,
+    );
 
     // Convert to 1-based for API call
     const startPartApi = startPart0Based + 1;
     const endPartApi = endPart0Based + 1;
 
     if (!this.client) {
-      throw new Error('SendSafely client not initialized');
+      throw new Error("SendSafely client not initialized");
     }
     const downloadUrls = await this.client.getDownloadUrls(
       this.packageId,
@@ -990,7 +1083,7 @@ class SendSafelyProvider implements BytesProvider {
       this.keyCode,
       this.packageCode,
       startPartApi,
-      endPartApi
+      endPartApi,
     );
 
     // Process the download URLs returned by the client
@@ -1001,15 +1094,17 @@ class SendSafelyProvider implements BytesProvider {
     }
   }
 
-
-  private async decryptPgp(enc: Uint8Array, passphrase: string): Promise<Uint8Array> {
+  private async decryptPgp(
+    enc: Uint8Array,
+    passphrase: string,
+  ): Promise<Uint8Array> {
     try {
       const msg = await openpgp.readMessage({ binaryMessage: enc });
 
       const { data } = await openpgp.decrypt({
         message: msg,
         passwords: [passphrase],
-        format: 'binary'
+        format: "binary",
       });
 
       const result = new Uint8Array(data as Uint8Array);

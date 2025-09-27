@@ -12,7 +12,6 @@ interface FileViewerProps {
   tab: ViewerTab & { kind: "file" };
 }
 
-
 function EnhancedFileViewer({ tab }: FileViewerProps) {
   const { dispatch, state } = useApp();
 
@@ -465,11 +464,13 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
         // Offer to load first portion instead of failing completely
         const previewSize = 100 * 1024 * 1024; // 100MB
         const confirmed = window.confirm(
-          `File is ${(fileEntry.size / (1024 * 1024 * 1024)).toFixed(2)}GB and exceeds viewer size limit (500MB).\n\nWould you like to view the first ${previewSize / (1024 * 1024)}MB instead?`
+          `File is ${(fileEntry.size / (1024 * 1024 * 1024)).toFixed(2)}GB and exceeds viewer size limit (500MB).\n\nWould you like to view the first ${previewSize / (1024 * 1024)}MB instead?`,
         );
 
         if (!confirmed) {
-          setError(`File viewing cancelled. File is too large (${(fileEntry.size / (1024 * 1024 * 1024)).toFixed(2)}GB) to display completely.`);
+          setError(
+            `File viewing cancelled. File is too large (${(fileEntry.size / (1024 * 1024 * 1024)).toFixed(2)}GB) to display completely.`,
+          );
           setLoading(false);
           setIsStreaming(false);
           return;
@@ -477,7 +478,9 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
 
         // User wants to see preview - we'll limit the streaming
         // Set a flag to stop after preview size
-        setContent(`Loading first ${previewSize / (1024 * 1024)}MB of ${(fileEntry.size / (1024 * 1024 * 1024)).toFixed(2)}GB file...\n\n`);
+        setContent(
+          `Loading first ${previewSize / (1024 * 1024)}MB of ${(fileEntry.size / (1024 * 1024 * 1024)).toFixed(2)}GB file...\n\n`,
+        );
       }
 
       // First check by extension
@@ -507,9 +510,14 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
           progressInfo: { loaded: number; total: number; done: boolean },
         ) => {
           // In preview mode, stop accumulating after preview size limit
-          if (isPreviewMode && accumulatedContent.length >= previewSize && !previewLimitReached) {
+          if (
+            isPreviewMode &&
+            accumulatedContent.length >= previewSize &&
+            !previewLimitReached
+          ) {
             previewLimitReached = true;
-            accumulatedContent += "\n\n--- Preview limit reached (100MB) ---\nShowing first portion of file only.";
+            accumulatedContent +=
+              "\n\n--- Preview limit reached (100MB) ---\nShowing first portion of file only.";
             state.workerManager?.cancelStream(); // Stop the stream
             return;
           }
@@ -618,7 +626,12 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
   }, [tab.fileId, state.filesIndex, state.workerManager, navigateToLine]);
 
   useEffect(() => {
-    if (!content && !loading && state.workerManager && !loadInitiatedRef.current) {
+    if (
+      !content &&
+      !loading &&
+      state.workerManager &&
+      !loadInitiatedRef.current
+    ) {
       loadInitiatedRef.current = true;
       loadFile();
     }

@@ -12,10 +12,10 @@ function inquire(moduleName) {
 }
 
 // Export in both CommonJS and ES module formats for maximum compatibility
-if (typeof module !== 'undefined' && module.exports) {
+if (typeof module !== "undefined" && module.exports) {
   // CommonJS export
   module.exports = inquire;
-} else if (typeof exports !== 'undefined') {
+} else if (typeof exports !== "undefined") {
   // CommonJS exports fallback
   exports.default = inquire;
 }

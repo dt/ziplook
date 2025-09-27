@@ -53,7 +53,7 @@ export class SendSafelyClient {
 
   constructor(baseUrl: string, apiKey: string, apiSecret: string) {
     this.config = {
-      baseUrl: baseUrl.replace(/\/$/, ''), // Remove trailing slash
+      baseUrl: baseUrl.replace(/\/$/, ""), // Remove trailing slash
       apiKey,
       apiSecret,
     };
@@ -64,7 +64,7 @@ export class SendSafelyClient {
    */
   private generateTimestamp(): string {
     const time = new Date().toISOString();
-    return time.substring(0, 19) + '+0000';
+    return time.substring(0, 19) + "+0000";
   }
 
   /**
@@ -73,50 +73,55 @@ export class SendSafelyClient {
   private async generateSignature(
     urlPath: string,
     timestamp: string,
-    requestBody: string = ''
+    requestBody: string = "",
   ): Promise<string> {
-    const signatureData = this.config.apiKey + urlPath + timestamp + requestBody;
+    const signatureData =
+      this.config.apiKey + urlPath + timestamp + requestBody;
 
     const encoder = new TextEncoder();
     const keyData = encoder.encode(this.config.apiSecret);
     const messageData = encoder.encode(signatureData);
 
     const key = await crypto.subtle.importKey(
-      'raw',
+      "raw",
       keyData,
-      { name: 'HMAC', hash: 'SHA-256' },
+      { name: "HMAC", hash: "SHA-256" },
       false,
-      ['sign']
+      ["sign"],
     );
 
-    const signature = await crypto.subtle.sign('HMAC', key, messageData);
+    const signature = await crypto.subtle.sign("HMAC", key, messageData);
 
     // Convert signature to hex
     const signatureArray = new Uint8Array(signature);
     return Array.from(signatureArray)
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
   }
 
   /**
    * Make an authenticated request to the SendSafely API
    */
   public async makeRequest<T = unknown>(
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    method: "GET" | "POST" | "PUT" | "DELETE",
     urlPath: string,
-    body?: Record<string, unknown>
+    body?: Record<string, unknown>,
   ): Promise<T> {
     const timestamp = this.generateTimestamp();
-    const requestBody = body ? JSON.stringify(body) : '';
-    const signature = await this.generateSignature(urlPath, timestamp, requestBody);
+    const requestBody = body ? JSON.stringify(body) : "";
+    const signature = await this.generateSignature(
+      urlPath,
+      timestamp,
+      requestBody,
+    );
 
     const url = `${this.config.baseUrl}${urlPath}`;
 
     const headers: Record<string, string> = {
-      'ss-api-key': this.config.apiKey,
-      'ss-request-signature': signature,
-      'ss-request-timestamp': timestamp,
-      'Content-Type': 'application/json',
+      "ss-api-key": this.config.apiKey,
+      "ss-request-signature": signature,
+      "ss-request-timestamp": timestamp,
+      "Content-Type": "application/json",
     };
 
     const response = await fetch(url, {
@@ -133,9 +138,11 @@ export class SendSafelyClient {
     const responseData = await response.json();
 
     // Check for SendSafely-specific error responses that still return HTTP 200
-    if (responseData.response && responseData.response !== 'SUCCESS') {
+    if (responseData.response && responseData.response !== "SUCCESS") {
       // Show the actual API response
-      throw new Error(`API response: "${responseData.response}", message: "${responseData.message || 'No message provided'}"`);
+      throw new Error(
+        `API response: "${responseData.response}", message: "${responseData.message || "No message provided"}"`,
+      );
     }
 
     return responseData;
@@ -145,7 +152,10 @@ export class SendSafelyClient {
    * Verify API credentials by calling the user endpoint
    */
   async verifyCredentials(): Promise<UserInfo> {
-    const response = await this.makeRequest<SendSafelyResponse<UserInfo>>('GET', '/api/v2.0/user');
+    const response = await this.makeRequest<SendSafelyResponse<UserInfo>>(
+      "GET",
+      "/api/v2.0/user",
+    );
 
     // We must get a real email address - no fallbacks, no assumptions
     if (response.email) {
@@ -153,7 +163,7 @@ export class SendSafelyClient {
     } else if (response.data?.email) {
       return { email: response.data.email };
     } else {
-      throw new Error('Authentication failed: No email address in response');
+      throw new Error("Authentication failed: No email address in response");
     }
   }
 
@@ -167,30 +177,33 @@ export class SendSafelyClient {
   /**
    * Generate PBKDF2 checksum for SendSafely API authentication
    */
-  private async generateChecksum(password: string, salt: string): Promise<string> {
+  private async generateChecksum(
+    password: string,
+    salt: string,
+  ): Promise<string> {
     const encoder = new TextEncoder();
     const key = await crypto.subtle.importKey(
-      'raw',
+      "raw",
       encoder.encode(password),
-      { name: 'PBKDF2' },
+      { name: "PBKDF2" },
       false,
-      ['deriveBits']
+      ["deriveBits"],
     );
 
     const bits = await crypto.subtle.deriveBits(
       {
-        name: 'PBKDF2',
-        hash: 'SHA-256',
+        name: "PBKDF2",
+        hash: "SHA-256",
         salt: encoder.encode(salt),
-        iterations: 1024
+        iterations: 1024,
       },
       key,
-      256
+      256,
     );
 
     return Array.from(new Uint8Array(bits))
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
   }
 
   /**
@@ -206,7 +219,7 @@ export class SendSafelyClient {
     keyCode: string,
     packageCode: string,
     startSegment: number = 1, // SendSafely segments start at 1
-    endSegment?: number
+    endSegment?: number,
   ): Promise<Array<{ part: number; url: string }>> {
     try {
       const checksum = await this.generateChecksum(keyCode, packageCode);
@@ -221,9 +234,9 @@ export class SendSafelyClient {
       }
 
       const response = await this.makeRequest<DownloadUrlsResponse>(
-        'POST',
+        "POST",
         `/api/v2.0/package/${encodeURIComponent(packageId)}/file/${encodeURIComponent(fileId)}/download-urls/`,
-        body
+        body,
       );
 
       // Handle different response formats
@@ -232,10 +245,12 @@ export class SendSafelyClient {
       } else if (response.data?.downloadUrls) {
         return response.data.downloadUrls;
       } else {
-        throw new Error(`Unexpected download URLs response format: ${JSON.stringify(response)}`);
+        throw new Error(
+          `Unexpected download URLs response format: ${JSON.stringify(response)}`,
+        );
       }
     } catch (error) {
-      console.error('Failed to get download URLs:', error);
+      console.error("Failed to get download URLs:", error);
       throw error;
     }
   }
@@ -244,19 +259,21 @@ export class SendSafelyClient {
    * Get package information and file listing using packageCode and keyCode
    */
   async getPackageInfo(packageCode: string): Promise<PackageInfo> {
-    console.log(`Attempting to get package info for packageCode: ${packageCode}`);
+    console.log(
+      `Attempting to get package info for packageCode: ${packageCode}`,
+    );
 
     try {
       // Add 1 second delay to prevent modal blinking
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
       // Try using packageCode directly as packageId
       const response = await this.makeRequest<SendSafelyResponse<PackageInfo>>(
-        'GET',
-        `/api/v2.0/package/${packageCode}`
+        "GET",
+        `/api/v2.0/package/${packageCode}`,
       );
 
-      console.log('Package response:', response);
+      console.log("Package response:", response);
 
       // Check if the response has the package data directly or in a data field
       const responseAny = response as unknown as Record<string, unknown>;
@@ -268,10 +285,12 @@ export class SendSafelyClient {
         return response.data;
       } else {
         // Show what we actually got from the API
-        throw new Error(`Unexpected API response format: ${JSON.stringify(response)}`);
+        throw new Error(
+          `Unexpected API response format: ${JSON.stringify(response)}`,
+        );
       }
     } catch (error) {
-      console.error('Package info request failed:', error);
+      console.error("Package info request failed:", error);
       throw error;
     }
   }
@@ -280,10 +299,12 @@ export class SendSafelyClient {
 /**
  * Parse SendSafely URL to extract package/recipient info
  */
-export function parseSendSafelyUrl(url: string): { packageCode: string; keyCode: string; baseUrl: string } | null {
+export function parseSendSafelyUrl(
+  url: string,
+): { packageCode: string; keyCode: string; baseUrl: string } | null {
   try {
     // Return null for empty or invalid URLs
-    if (!url || typeof url !== 'string' || !url.trim()) {
+    if (!url || typeof url !== "string" || !url.trim()) {
       return null;
     }
 
@@ -301,13 +322,13 @@ export function parseSendSafelyUrl(url: string): { packageCode: string; keyCode:
     const baseUrl = `${urlObj.protocol}//${urlObj.host}`;
 
     // Get packageCode from query params
-    const packageCode = searchParams.get('packageCode');
+    const packageCode = searchParams.get("packageCode");
     if (packageCode) {
       return { packageCode, keyCode, baseUrl };
     }
     return null;
   } catch (error) {
-    console.log('Error parsing SendSafely URL:', error);
+    console.log("Error parsing SendSafely URL:", error);
     return null;
   }
 }
@@ -315,6 +336,10 @@ export function parseSendSafelyUrl(url: string): { packageCode: string; keyCode:
 /**
  * Convenience function to create a SendSafely client instance
  */
-export function createSendSafelyClient(baseUrl: string, apiKey: string, apiSecret: string): SendSafelyClient {
+export function createSendSafelyClient(
+  baseUrl: string,
+  apiKey: string,
+  apiSecret: string,
+): SendSafelyClient {
   return new SendSafelyClient(baseUrl, apiKey, apiSecret);
 }

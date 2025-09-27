@@ -42,7 +42,10 @@ function AppContent() {
     ) as HTMLIFrameElement;
     if (!preloadedIframe) return;
 
-    console.log(`🎯 Sending ${Object.keys(state.stackData).length} stack files to iframe:`, Object.keys(state.stackData));
+    console.log(
+      `🎯 Sending ${Object.keys(state.stackData).length} stack files to iframe:`,
+      Object.keys(state.stackData),
+    );
 
     // Wait a bit for iframe to be ready, then send data one file at a time
     setTimeout(() => {
@@ -70,14 +73,14 @@ function AppContent() {
   useEffect(() => {
     const handleStackMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
-      if (event.data?.type === 'sendStackData') {
+      if (event.data?.type === "sendStackData") {
         sendStackDataToIframe();
       }
     };
 
-    window.addEventListener('message', handleStackMessage);
+    window.addEventListener("message", handleStackMessage);
     return () => {
-      window.removeEventListener('message', handleStackMessage);
+      window.removeEventListener("message", handleStackMessage);
     };
   }, [sendStackDataToIframe]);
 
@@ -240,21 +243,17 @@ function AppContent() {
   ]);
 
   // Check if stackgazer iframe should be full-screen
-  const isStackgazerFullScreen = activeView === "stackgazer" && state.zip && state.stackgazerReady;
+  const isStackgazerFullScreen =
+    activeView === "stackgazer" && state.zip && state.stackgazerReady;
 
   return (
     <>
       <div
         className={`app-container ${
-          !sidebarVisible || isStackgazerFullScreen
-            ? "sidebar-collapsed"
-            : ""
+          !sidebarVisible || isStackgazerFullScreen ? "sidebar-collapsed" : ""
         }`}
       >
-        <IconRail
-          activeView={activeView}
-          onViewChange={handleViewChange}
-        />
+        <IconRail activeView={activeView} onViewChange={handleViewChange} />
         {!isStackgazerFullScreen && (
           <>
             <Sidebar
@@ -298,7 +297,6 @@ function AppContent() {
           />
         </div>
       </div>
-
     </>
   );
 }

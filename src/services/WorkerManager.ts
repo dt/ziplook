@@ -3,23 +3,41 @@
  * Controller drives all business logic, main thread just responds to notifications
  */
 
-import type { ZipEntryMeta, IWorkerManager, IWorkerManagerCallbacks, LogEntry, TableData, FileStatus, SendSafelyConfig, SearchResult } from "../state/types";
+import type {
+  ZipEntryMeta,
+  IWorkerManager,
+  IWorkerManagerCallbacks,
+  LogEntry,
+  TableData,
+  FileStatus,
+  SendSafelyConfig,
+  SearchResult,
+} from "../state/types";
 
 interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
-  onChunk?: (chunk: string, progress: { loaded: number; total: number; done: boolean }) => void;
+  onChunk?: (
+    chunk: string,
+    progress: { loaded: number; total: number; done: boolean },
+  ) => void;
 }
 
 interface StreamingPendingRequest {
   resolve: (value: void) => void;
   reject: (error: Error) => void;
-  onChunk: (chunk: string, progress: { loaded: number; total: number; done: boolean }) => void;
+  onChunk: (
+    chunk: string,
+    progress: { loaded: number; total: number; done: boolean },
+  ) => void;
 }
 
 export class WorkerManager implements IWorkerManager {
   private controllerWorker: Worker | null = null;
-  private pendingRequests = new Map<string, PendingRequest | StreamingPendingRequest>();
+  private pendingRequests = new Map<
+    string,
+    PendingRequest | StreamingPendingRequest
+  >();
   private requestCounter = 0;
   private options: IWorkerManagerCallbacks;
   private workerInitialized = false;
@@ -31,7 +49,9 @@ export class WorkerManager implements IWorkerManager {
 
   private async initializeWorker() {
     try {
-      const ControllerWorker = (await import('../workers/controller.worker.ts?worker')).default;
+      const ControllerWorker = (
+        await import("../workers/controller.worker.ts?worker")
+      ).default;
       this.controllerWorker = new ControllerWorker();
       this.controllerWorker.onmessage = this.handleMessage.bind(this);
       this.controllerWorker.onerror = (error) => {
@@ -45,7 +65,7 @@ export class WorkerManager implements IWorkerManager {
 
   private async waitForWorker(): Promise<Worker> {
     while (!this.workerInitialized || !this.controllerWorker) {
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
     return this.controllerWorker;
   }
@@ -62,7 +82,9 @@ export class WorkerManager implements IWorkerManager {
     return [];
   }
 
-  async loadZipDataFromSendSafely(sendSafelyConfig: SendSafelyConfig): Promise<ZipEntryMeta[]> {
+  async loadZipDataFromSendSafely(
+    sendSafelyConfig: SendSafelyConfig,
+  ): Promise<ZipEntryMeta[]> {
     // Use the new loadZipFromSendSafely command that runs the full pipeline
     await this.sendMessage({ type: "loadZipFromSendSafely", sendSafelyConfig });
     // Return empty array - main thread will get notifications with actual entries
@@ -85,7 +107,11 @@ export class WorkerManager implements IWorkerManager {
   }
 
   async startTableLoading(tables: Array<TableData>): Promise<void> {
-    await this.sendMessage({ type: "startTableLoading", to: "dbWorker", tables });
+    await this.sendMessage({
+      type: "startTableLoading",
+      to: "dbWorker",
+      tables,
+    });
   }
 
   async loadSingleTable(table: TableData): Promise<void> {
@@ -93,50 +119,98 @@ export class WorkerManager implements IWorkerManager {
   }
 
   async executeQuery(sql: string): Promise<Record<string, unknown>[]> {
-    const result = await this.sendMessage({ type: "executeQuery", to: "dbWorker", sql });
+    const result = await this.sendMessage({
+      type: "executeQuery",
+      to: "dbWorker",
+      sql,
+    });
     return result as Record<string, unknown>[];
   }
 
-  async getTableSchema(tableName: string): Promise<Array<{ column_name: string; data_type: string }>> {
-    return this.sendMessage({ type: "getTableSchema", to: "dbWorker", tableName }) as Promise<Array<{ column_name: string; data_type: string }>>;
+  async getTableSchema(
+    tableName: string,
+  ): Promise<Array<{ column_name: string; data_type: string }>> {
+    return this.sendMessage({
+      type: "getTableSchema",
+      to: "dbWorker",
+      tableName,
+    }) as Promise<Array<{ column_name: string; data_type: string }>>;
   }
 
   async getLoadedTables(): Promise<string[]> {
-    return this.sendMessage({ type: "getLoadedTables", to: "dbWorker" }) as Promise<string[]>;
+    return this.sendMessage({
+      type: "getLoadedTables",
+      to: "dbWorker",
+    }) as Promise<string[]>;
   }
 
-  async getDuckDBFunctions(): Promise<Array<{ name: string; type: string; description?: string }>> {
-    return this.sendMessage({ type: "getDuckDBFunctions", to: "dbWorker" }) as Promise<Array<{ name: string; type: string; description?: string }>>;
+  async getDuckDBFunctions(): Promise<
+    Array<{ name: string; type: string; description?: string }>
+  > {
+    return this.sendMessage({
+      type: "getDuckDBFunctions",
+      to: "dbWorker",
+    }) as Promise<Array<{ name: string; type: string; description?: string }>>;
   }
 
   async getDuckDBKeywords(): Promise<string[]> {
-    return this.sendMessage({ type: "getDuckDBKeywords", to: "dbWorker" }) as Promise<string[]>;
+    return this.sendMessage({
+      type: "getDuckDBKeywords",
+      to: "dbWorker",
+    }) as Promise<string[]>;
   }
 
-  async registerFiles(files: Array<{ path: string; name: string; size: number }>): Promise<void> {
-    await this.sendMessage({ type: "registerFiles", to: "indexingWorker", files });
+  async registerFiles(
+    files: Array<{ path: string; name: string; size: number }>,
+  ): Promise<void> {
+    await this.sendMessage({
+      type: "registerFiles",
+      to: "indexingWorker",
+      files,
+    });
   }
 
   async startIndexing(filePaths: string[]): Promise<void> {
-    await this.sendMessage({ type: "startIndexing", to: "indexingWorker", filePaths });
+    await this.sendMessage({
+      type: "startIndexing",
+      to: "indexingWorker",
+      filePaths,
+    });
   }
 
-  async indexSingleFile(file: { path: string; name: string; size: number }): Promise<void> {
-    await this.sendMessage({ type: "indexSingleFile", to: "indexingWorker", file });
+  async indexSingleFile(file: {
+    path: string;
+    name: string;
+    size: number;
+  }): Promise<void> {
+    await this.sendMessage({
+      type: "indexSingleFile",
+      to: "indexingWorker",
+      file,
+    });
   }
 
   async searchLogs(query: string): Promise<SearchResult[]> {
-    return this.sendMessage({ type: "searchLogs", to: "indexingWorker", query }) as Promise<SearchResult[]>;
+    return this.sendMessage({
+      type: "searchLogs",
+      to: "indexingWorker",
+      query,
+    }) as Promise<SearchResult[]>;
   }
 
   async getFileStatuses(): Promise<FileStatus[]> {
-    return this.sendMessage({ type: "getFileStatuses", to: "indexingWorker" }) as Promise<FileStatus[]>;
+    return this.sendMessage({
+      type: "getFileStatuses",
+      to: "indexingWorker",
+    }) as Promise<FileStatus[]>;
   }
-
 
   async readFileStream(
     path: string,
-    onChunk: (chunk: string, progress: { loaded: number; total: number; done: boolean }) => void,
+    onChunk: (
+      chunk: string,
+      progress: { loaded: number; total: number; done: boolean },
+    ) => void,
   ): Promise<void> {
     const worker = await this.waitForWorker();
 
@@ -146,14 +220,14 @@ export class WorkerManager implements IWorkerManager {
       this.pendingRequests.set(id, {
         resolve,
         reject,
-        onChunk
+        onChunk,
       } as StreamingPendingRequest);
 
       worker.postMessage({
         type: "readFileChunked", // Use readFileChunked for streaming
         to: "zipWorker",
         path,
-        id
+        id,
       });
     });
   }
@@ -169,7 +243,9 @@ export class WorkerManager implements IWorkerManager {
     this.pendingRequests.clear();
   }
 
-  private async sendMessage(message: Record<string, unknown>): Promise<unknown> {
+  private async sendMessage(
+    message: Record<string, unknown>,
+  ): Promise<unknown> {
     const worker = await this.waitForWorker();
 
     return new Promise((resolve, reject) => {
@@ -202,18 +278,25 @@ export class WorkerManager implements IWorkerManager {
     }
 
     // Handle chunk events for streaming FIRST - check for readFileChunk in response result
-    if (message.type === "response" && message.result?.type === "readFileChunk") {
+    if (
+      message.type === "response" &&
+      message.result?.type === "readFileChunk"
+    ) {
       const pending = this.pendingRequests.get(message.id);
-      if (pending && 'onChunk' in pending && pending.onChunk) {
+      if (pending && "onChunk" in pending && pending.onChunk) {
         // Decode bytes to text for file viewer
         const chunk = message.result.bytes;
-        const decodedChunk = chunk instanceof Uint8Array ? new TextDecoder().decode(chunk) : chunk;
+        const decodedChunk =
+          chunk instanceof Uint8Array ? new TextDecoder().decode(chunk) : chunk;
         const progressInfo = {
           done: message.result.done,
           loaded: chunk?.length || 0,
-          total: 0 // Total not available in chunk format
+          total: 0, // Total not available in chunk format
         };
-        (pending as StreamingPendingRequest).onChunk(decodedChunk, progressInfo);
+        (pending as StreamingPendingRequest).onChunk(
+          decodedChunk,
+          progressInfo,
+        );
 
         if (message.result.done) {
           this.pendingRequests.delete(message.id);
@@ -253,7 +336,9 @@ export class WorkerManager implements IWorkerManager {
           message.status as string,
           message.rowCount as number,
           message.error as string,
-          message.chunkProgress as { current: number; total: number; percentage: number } | undefined
+          message.chunkProgress as
+            | { current: number; total: number; percentage: number }
+            | undefined,
         );
         break;
 
@@ -261,7 +346,7 @@ export class WorkerManager implements IWorkerManager {
         this.options.onTableLoadingComplete?.(
           message.success as boolean,
           message.tablesLoaded as number,
-          message.error as string
+          message.error as string,
         );
         break;
 
@@ -269,7 +354,7 @@ export class WorkerManager implements IWorkerManager {
         this.options.onIndexingProgress?.({
           current: message.current as number,
           total: message.total as number,
-          fileName: message.fileName as string
+          fileName: message.fileName as string,
         });
         break;
 
@@ -278,7 +363,7 @@ export class WorkerManager implements IWorkerManager {
           message.success as boolean,
           message.totalEntries as number,
           message.error as string,
-          message.ruleDescription as string
+          message.ruleDescription as string,
         );
         break;
 
@@ -287,11 +372,16 @@ export class WorkerManager implements IWorkerManager {
         break;
 
       case "indexingFileResult":
-        this.options.onIndexingFileResult?.(message.filePath as string, message.entries as LogEntry[]);
+        this.options.onIndexingFileResult?.(
+          message.filePath as string,
+          message.entries as LogEntry[],
+        );
         break;
 
       case "fileStatusUpdate":
-        this.options.onFileStatusUpdate?.((message.fileStatuses as FileStatus[]) || []);
+        this.options.onFileStatusUpdate?.(
+          (message.fileStatuses as FileStatus[]) || [],
+        );
         break;
 
       case "readFileChunk":
@@ -301,34 +391,48 @@ export class WorkerManager implements IWorkerManager {
             type: "response",
             id: message.id,
             success: true,
-            result: message
-          }
+            result: message,
+          },
         } as MessageEvent);
         break;
 
       default:
-        console.log(`🎯 Unhandled worker message from ${message.from}:`, message.type, message);
+        console.log(
+          `🎯 Unhandled worker message from ${message.from}:`,
+          message.type,
+          message,
+        );
     }
   }
 
   private handleNotification(message: Record<string, unknown>) {
     switch (message.type) {
       case "loadingStage":
-        this.options.onLoadingStage?.(message.stage as string, message.message as string);
+        this.options.onLoadingStage?.(
+          message.stage as string,
+          message.message as string,
+        );
         break;
 
       case "fileList":
         console.log(`🎯 File list received: ${message.totalFiles} files`);
-        this.options.onFileList?.(message.entries as ZipEntryMeta[], message.totalFiles as number);
+        this.options.onFileList?.(
+          message.entries as ZipEntryMeta[],
+          message.totalFiles as number,
+        );
         break;
 
-
       case "sendStackFileToIframe":
-        this.options.onSendStackFileToIframe?.(message.path as string, message.content as string);
+        this.options.onSendStackFileToIframe?.(
+          message.path as string,
+          message.content as string,
+        );
         break;
 
       case "stackProcessingComplete":
-        this.options.onStackProcessingComplete?.(message.stackFilesCount as number);
+        this.options.onStackProcessingComplete?.(
+          message.stackFilesCount as number,
+        );
         break;
 
       case "status":
@@ -341,15 +445,20 @@ export class WorkerManager implements IWorkerManager {
 
       case "zipLoaded":
         // DEPRECATED: Keep for backwards compatibility but prefer fileList
-        console.log(`🎯 Zip loaded (deprecated): ${(message.entries as ZipEntryMeta[]).length} files`);
-        this.options.onFileList?.(message.entries as ZipEntryMeta[], (message.entries as ZipEntryMeta[]).length);
+        console.log(
+          `🎯 Zip loaded (deprecated): ${(message.entries as ZipEntryMeta[]).length} files`,
+        );
+        this.options.onFileList?.(
+          message.entries as ZipEntryMeta[],
+          (message.entries as ZipEntryMeta[]).length,
+        );
         break;
 
       case "indexingProgress":
         this.options.onIndexingProgress?.({
           current: message.current as number,
           total: message.total as number,
-          fileName: message.fileName as string
+          fileName: message.fileName as string,
         });
         break;
 
@@ -358,7 +467,7 @@ export class WorkerManager implements IWorkerManager {
           message.success as boolean,
           message.totalEntries as number,
           message.error as string,
-          message.ruleDescription as string
+          message.ruleDescription as string,
         );
         break;
 
@@ -367,7 +476,9 @@ export class WorkerManager implements IWorkerManager {
         break;
 
       case "fileStatusUpdate":
-        this.options.onFileStatusUpdate?.((message.fileStatuses as FileStatus[]) || []);
+        this.options.onFileStatusUpdate?.(
+          (message.fileStatuses as FileStatus[]) || [],
+        );
         break;
 
       default:
@@ -380,7 +491,9 @@ export class WorkerManager implements IWorkerManager {
 let globalWorkerManager: WorkerManager | null = null;
 let initializationPromise: Promise<WorkerManager> | null = null;
 
-export async function getWorkerManager(options?: IWorkerManagerCallbacks): Promise<WorkerManager> {
+export async function getWorkerManager(
+  options?: IWorkerManagerCallbacks,
+): Promise<WorkerManager> {
   if (globalWorkerManager) {
     if (options) {
       globalWorkerManager.updateCallbacks(options);

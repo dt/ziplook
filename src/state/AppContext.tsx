@@ -1,6 +1,12 @@
 import React, { createContext, useContext, useReducer, useEffect } from "react";
 import type { ReactNode } from "react";
-import type { AppState, ViewerTab, ZipEntryMeta, TableMeta, IWorkerManager } from "./types";
+import type {
+  AppState,
+  ViewerTab,
+  ZipEntryMeta,
+  TableMeta,
+  IWorkerManager,
+} from "./types";
 import { getWorkerManager } from "../services/WorkerManager";
 import { setWorkerManager } from "../services/monacoConfig";
 
@@ -27,7 +33,10 @@ export type AppAction =
   | { type: "SET_TABLES_LOADING"; loading: boolean }
   | { type: "SET_STACK_DATA"; stackData: Record<string, string> }
   | { type: "ADD_STACK_FILE"; filePath: string; content: string }
-  | { type: "SET_STACK_FILES"; stackFiles: Array<{path: string; size: number; compressedSize: number}> }
+  | {
+      type: "SET_STACK_FILES";
+      stackFiles: Array<{ path: string; size: number; compressedSize: number }>;
+    }
   | { type: "SET_STACKGAZER_READY"; ready: boolean }
   | { type: "SET_WORKER_MANAGER"; workerManager: IWorkerManager }
   | { type: "SET_WORKERS_READY"; ready: boolean }
@@ -40,7 +49,10 @@ export type AppAction =
       type: "SET_INDEXING_PROGRESS";
       progress: { current: number; total: number; fileName: string } | null;
     }
-  | { type: "SET_FILE_STATUSES"; fileStatuses: import("./types").FileIndexStatus[] };
+  | {
+      type: "SET_FILE_STATUSES";
+      fileStatuses: import("./types").FileIndexStatus[];
+    };
 
 const initialState: AppState = {
   openTabs: [],
@@ -289,7 +301,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
         ...state.stackData,
         [action.filePath]: action.content,
       };
-      console.log(`🎯 Added stack file to state: ${action.filePath}, total files: ${Object.keys(newStackData).length}`);
+      console.log(
+        `🎯 Added stack file to state: ${action.filePath}, total files: ${Object.keys(newStackData).length}`,
+      );
       return {
         ...state,
         stackData: newStackData,
@@ -451,7 +465,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
             },
           ) => {
             if (!mounted) return;
-
 
             // Update table status in app state
             const updates: Partial<TableMeta> = {};

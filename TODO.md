@@ -23,9 +23,11 @@ It would be nice to render cpu and mem profiles inline, without needing to downl
 - Offer to cache the zip in local storage for coming back to later?
 
 ### On-demand, Configurable Search Indexing
+
 An enhanced interface for selectively indexing files from large ZIP archives, providing better control and visualization of the indexing process.
 
 **Components:**
+
 - **Enhanced Search/Indexing Navigation**
   - Add filtering interface to search and indexing nav
   - Live filter preview showing matching files
@@ -56,9 +58,11 @@ An enhanced interface for selectively indexing files from large ZIP archives, pr
     - Current queue depth and processing rate
 
 ### Dedicated Jobs UI
+
 A comprehensive job inspection interface for browsing and analyzing CockroachDB job data from debug bundles.
 
 **Components:**
+
 - **Job Browser Navigation**
   - Top-level "Jobs" navigation section / browser
   - Job type categorization (BACKUP, RESTORE, SCHEMA_CHANGE, etc.)
@@ -80,28 +84,30 @@ A comprehensive job inspection interface for browsing and analyzing CockroachDB 
 
   - **Progress History**
     - Visualization of job progress history over time
-  
- - **Additional Enhancements**
-  - **Deeplink to job-scoped log search**
-    - NB: Depends on log indexing.
 
-  - **Messages & Events**
-    - Identify key changes in progress (stall points/jumps)
-    - Augment timeline from eventlog
-    - Deeplink to time-scope log search (optionally triggers time-scoped indexing).
-  
-  - **Job Trace Analysis** 
+- **Additional Enhancements**
+- **Deeplink to job-scoped log search**
+  - NB: Depends on log indexing.
 
-  - **Job Specific Analysis Toolkits**
-    - e.g. rangefeed debug tables for CDC, PCR and LDR
-    - descriptor state for schema changes
+- **Messages & Events**
+  - Identify key changes in progress (stall points/jumps)
+  - Augment timeline from eventlog
+  - Deeplink to time-scope log search (optionally triggers time-scoped indexing).
+
+- **Job Trace Analysis**
+
+- **Job Specific Analysis Toolkits**
+  - e.g. rangefeed debug tables for CDC, PCR and LDR
+  - descriptor state for schema changes
 
 **Data Sources:**
+
 - `system.jobs*` table
 - Log files (filtered by job ID)
 - Progress and error message tables
 
 **Implementation Notes:**
+
 - Leverage duckDB tables -- query them for data by job ID.
 - Integrate with current search/indexing system for log correlation
 - Consider performance implications for large job datasets.
@@ -109,7 +115,9 @@ A comprehensive job inspection interface for browsing and analyzing CockroachDB 
 ## Cleanups
 
 ### TypeScript Type Safety
+
 ### Bundle Size Optimization
+
 - **Code splitting improvements**
   - Lazy load Monaco Editor and related dependencies
   - Split worker code into separate chunks
@@ -129,6 +137,7 @@ A comprehensive job inspection interface for browsing and analyzing CockroachDB 
   - Optimize worker script sizes
 
 ### Performance Improvements
+
 - **Parallelized file loading**
   - Implement concurrent ZIP entry processing
   - Parallel decompression for multiple files
@@ -159,6 +168,7 @@ A comprehensive job inspection interface for browsing and analyzing CockroachDB 
 ## Testing
 
 ### Unit Testing Infrastructure
+
 - **Component restructuring for testability**
   - Extract business logic from React components
   - Create pure functions for data processing
@@ -174,6 +184,7 @@ A comprehensive job inspection interface for browsing and analyzing CockroachDB 
   - Implement coverage gates in CI
 
 ### Unit Test Priorities
+
 - **Core functionality**
   - CSV processing and parsing logic
   - Protobuf decoding and message handling
@@ -194,6 +205,7 @@ A comprehensive job inspection interface for browsing and analyzing CockroachDB 
   - Search result ranking and filtering
 
 ### End-to-End Testing
+
 - **Playwright test suite**
   - File upload and ZIP processing workflows
   - Table browsing and SQL query execution
@@ -214,6 +226,7 @@ A comprehensive job inspection interface for browsing and analyzing CockroachDB 
   - Resource cleanup verification
 
 ### Test Data and Mocking
+
 - **Create representative test data**
   - Sample debug ZIP files of various sizes
   - Mock SendSafely API responses

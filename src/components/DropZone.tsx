@@ -1,6 +1,11 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useApp } from "../state/AppContext";
-import { createSendSafelyClient, parseSendSafelyUrl, type PackageInfo, type PackageFile } from "../utils/sendSafelyClient";
+import {
+  createSendSafelyClient,
+  parseSendSafelyUrl,
+  type PackageInfo,
+  type PackageFile,
+} from "../utils/sendSafelyClient";
 import type { ZipEntryMeta } from "../state/types";
 
 // Import types that match WorkerManager expectations
@@ -18,7 +23,7 @@ interface TableData {
 
 interface FileStatus {
   path: string;
-  status: 'pending' | 'indexing' | 'completed' | 'error';
+  status: "pending" | "indexing" | "completed" | "error";
   progress?: number;
   error?: string;
 }
@@ -85,7 +90,7 @@ function SendSafelyModalContent({
   saveCredentials,
   loadSendSafelyFile,
   setLoading,
-  setLoadingMessage
+  setLoadingMessage,
 }: SendSafelyModalProps) {
   const [showOtherFiles, setShowOtherFiles] = useState(false);
   const [forceStep1, setForceStep1] = useState(false);
@@ -111,7 +116,14 @@ function SendSafelyModalContent({
       }, 500);
       return () => clearTimeout(timeoutId);
     }
-  }, [apiKey, apiSecret, isValidating, validationStatus, validateCredentials, setValidationStatus]);
+  }, [
+    apiKey,
+    apiSecret,
+    isValidating,
+    validationStatus,
+    validateCredentials,
+    setValidationStatus,
+  ]);
 
   // Watch for validation status changes to update button states
   React.useEffect(() => {
@@ -140,8 +152,16 @@ function SendSafelyModalContent({
   // 4. File loading/error state
 
   const step1_needsCredentials = !hasValidCredentials() || forceStep1;
-  const step2_needsUrl = hasValidCredentials() && !forceStep1 && (!packageInfo || packageError); // Show URL step if no package loaded or error
-  const step3_packageReady = hasValidCredentials() && !forceStep1 && packageInfo && !packageLoading && !packageError && !fileLoading && !fileError;
+  const step2_needsUrl =
+    hasValidCredentials() && !forceStep1 && (!packageInfo || packageError); // Show URL step if no package loaded or error
+  const step3_packageReady =
+    hasValidCredentials() &&
+    !forceStep1 &&
+    packageInfo &&
+    !packageLoading &&
+    !packageError &&
+    !fileLoading &&
+    !fileError;
   const step4_fileLoading = fileLoading || fileError;
 
   return (
@@ -155,36 +175,58 @@ function SendSafelyModalContent({
       {/* Step 1: API Credentials Setup */}
       {step1_needsCredentials && (
         <div>
-          <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "16px" }}>
-            <p style={{ margin: "0 0 8px 0" }}>To access SendSafely packages, you need API credentials:</p>
+          <div
+            style={{
+              fontSize: "12px",
+              color: "var(--text-muted)",
+              marginBottom: "16px",
+            }}
+          >
+            <p style={{ margin: "0 0 8px 0" }}>
+              To access SendSafely packages, you need API credentials:
+            </p>
             <ul style={{ margin: "0", paddingLeft: "16px" }}>
-              <li>Login to <a
-                href="https://upload.cockroachlabs.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  color: "var(--accent-primary)",
-                  textDecoration: "underline"
-                }}
-              >https://upload.cockroachlabs.com</a></li>
-              <li>Click your user in top right corner and select 'Edit Profile'</li>
+              <li>
+                Login to{" "}
+                <a
+                  href="https://upload.cockroachlabs.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: "var(--accent-primary)",
+                    textDecoration: "underline",
+                  }}
+                >
+                  https://upload.cockroachlabs.com
+                </a>
+              </li>
+              <li>
+                Click your user in top right corner and select 'Edit Profile'
+              </li>
               <li>Go to 'API Keys' to generate a new key</li>
               <li>Provide the Key ID and Secret below</li>
             </ul>
-            <p style={{ margin: "8px 0 0 0", fontSize: "11px", fontStyle: "italic" }}>
+            <p
+              style={{
+                margin: "8px 0 0 0",
+                fontSize: "11px",
+                fontStyle: "italic",
+              }}
+            >
               (Keys never leave this tab's local storage)
             </p>
           </div>
 
-
           <div style={{ marginBottom: "12px" }}>
-            <label style={{
-              display: "block",
-              marginBottom: "4px",
-              fontSize: "12px",
-              fontWeight: "500",
-              color: "var(--text-primary)"
-            }}>
+            <label
+              style={{
+                display: "block",
+                marginBottom: "4px",
+                fontSize: "12px",
+                fontWeight: "500",
+                color: "var(--text-primary)",
+              }}
+            >
               API Key ID:
             </label>
             <input
@@ -211,13 +253,15 @@ function SendSafelyModalContent({
           </div>
 
           <div style={{ marginBottom: "16px" }}>
-            <label style={{
-              display: "block",
-              marginBottom: "4px",
-              fontSize: "12px",
-              fontWeight: "500",
-              color: "var(--text-primary)"
-            }}>
+            <label
+              style={{
+                display: "block",
+                marginBottom: "4px",
+                fontSize: "12px",
+                fontWeight: "500",
+                color: "var(--text-primary)",
+              }}
+            >
               API Secret:
             </label>
             <input
@@ -264,7 +308,7 @@ function SendSafelyModalContent({
             <div
               style={{
                 backgroundColor: "var(--bg-tertiary)",
-                border: `1px solid ${validationStatus.isValid ? '#4ade80' : '#ef4444'}`,
+                border: `1px solid ${validationStatus.isValid ? "#4ade80" : "#ef4444"}`,
                 borderRadius: "4px",
                 padding: "12px",
                 marginBottom: "16px",
@@ -272,7 +316,7 @@ function SendSafelyModalContent({
             >
               <div
                 style={{
-                  color: validationStatus.isValid ? '#4ade80' : '#ef4444',
+                  color: validationStatus.isValid ? "#4ade80" : "#ef4444",
                   fontSize: "12px",
                   fontWeight: "500",
                   marginBottom: validationStatus.email ? "4px" : "0",
@@ -281,7 +325,9 @@ function SendSafelyModalContent({
                 {validationStatus.message}
               </div>
               {validationStatus.email && (
-                <div style={{ color: "var(--text-secondary)", fontSize: "11px" }}>
+                <div
+                  style={{ color: "var(--text-secondary)", fontSize: "11px" }}
+                >
                   Associated email: {validationStatus.email}
                 </div>
               )}
@@ -295,9 +341,9 @@ function SendSafelyModalContent({
               onClick={() => {
                 // Clear from localStorage first
                 try {
-                  localStorage.removeItem('sendsafely_config');
+                  localStorage.removeItem("sendsafely_config");
                 } catch (e) {
-                  console.error('Failed to clear SendSafely config:', e);
+                  console.error("Failed to clear SendSafely config:", e);
                 }
                 // Then clear form state
                 setApiKey("");
@@ -335,17 +381,23 @@ function SendSafelyModalContent({
                   padding: "8px 12px",
                   border: "1px solid var(--border)",
                   borderRadius: "4px",
-                  background: (!apiKey.trim() || !apiSecret.trim() || isValidating)
-                    ? "var(--background)"
-                    : "var(--accent-secondary)",
-                  color: (!apiKey.trim() || !apiSecret.trim() || isValidating)
-                    ? "var(--text-muted)"
-                    : "white",
-                  cursor: (!apiKey.trim() || !apiSecret.trim() || isValidating)
-                    ? "not-allowed"
-                    : "pointer",
+                  background:
+                    !apiKey.trim() || !apiSecret.trim() || isValidating
+                      ? "var(--background)"
+                      : "var(--accent-secondary)",
+                  color:
+                    !apiKey.trim() || !apiSecret.trim() || isValidating
+                      ? "var(--text-muted)"
+                      : "white",
+                  cursor:
+                    !apiKey.trim() || !apiSecret.trim() || isValidating
+                      ? "not-allowed"
+                      : "pointer",
                   fontSize: "12px",
-                  opacity: (!apiKey.trim() || !apiSecret.trim() || isValidating) ? 0.6 : 1,
+                  opacity:
+                    !apiKey.trim() || !apiSecret.trim() || isValidating
+                      ? 0.6
+                      : 1,
                 }}
               >
                 {isValidating ? "Validating..." : "Validate"}
@@ -383,12 +435,26 @@ function SendSafelyModalContent({
         <div>
           {/* Only show instructions if URL is invalid or we have an error */}
           {(!parsedUrl || packageError) && (
-            <div style={{ marginBottom: "16px", fontSize: "12px", lineHeight: "1.5" }}>
+            <div
+              style={{
+                marginBottom: "16px",
+                fontSize: "12px",
+                lineHeight: "1.5",
+              }}
+            >
               <p style={{ margin: "0 0 12px 0" }}>
-                To browse a SendSafely package, you need a URL with both packageCode and keycode.
+                To browse a SendSafely package, you need a URL with both
+                packageCode and keycode.
               </p>
 
-              <div style={{ margin: "12px 0", padding: "12px", backgroundColor: "var(--bg-tertiary)", borderRadius: "4px" }}>
+              <div
+                style={{
+                  margin: "12px 0",
+                  padding: "12px",
+                  backgroundColor: "var(--bg-tertiary)",
+                  borderRadius: "4px",
+                }}
+              >
                 <strong>Instructions:</strong>
                 <ol style={{ margin: "8px 0 0 0", paddingLeft: "20px" }}>
                   <li>Open the SendSafely link in a new tab</li>
@@ -413,37 +479,40 @@ function SendSafelyModalContent({
                 border: "1px solid var(--border-primary)",
               }}
             >
-              {packageError || (() => {
-                if (!sendSafelyModalUrl.trim()) return "Please enter a URL";
+              {packageError ||
+                (() => {
+                  if (!sendSafelyModalUrl.trim()) return "Please enter a URL";
 
-                const url = sendSafelyModalUrl;
-                const hasRecipientCode = url.includes('recipientCode=');
-                const hasPackageCode = url.includes('packageCode=');
-                const hasKeycode = url.includes('keycode=');
+                  const url = sendSafelyModalUrl;
+                  const hasRecipientCode = url.includes("recipientCode=");
+                  const hasPackageCode = url.includes("packageCode=");
+                  const hasKeycode = url.includes("keycode=");
 
-                if (hasRecipientCode) {
-                  return "Recipient link detected - use instructions above to get package link";
-                } else if (!hasPackageCode && !hasKeycode) {
-                  return "URL is missing both packageCode and keycode";
-                } else if (!hasPackageCode) {
-                  return "URL is missing packageCode";
-                } else if (!hasKeycode) {
-                  return "URL is missing keycode";
-                } else {
-                  return "Invalid URL format";
-                }
-              })()}
+                  if (hasRecipientCode) {
+                    return "Recipient link detected - use instructions above to get package link";
+                  } else if (!hasPackageCode && !hasKeycode) {
+                    return "URL is missing both packageCode and keycode";
+                  } else if (!hasPackageCode) {
+                    return "URL is missing packageCode";
+                  } else if (!hasKeycode) {
+                    return "URL is missing keycode";
+                  } else {
+                    return "Invalid URL format";
+                  }
+                })()}
             </div>
           )}
 
           <div style={{ marginBottom: "16px" }}>
-            <label style={{
-              display: "block",
-              marginBottom: "8px",
-              fontSize: "12px",
-              fontWeight: "500",
-              color: "var(--text-primary)"
-            }}>
+            <label
+              style={{
+                display: "block",
+                marginBottom: "8px",
+                fontSize: "12px",
+                fontWeight: "500",
+                color: "var(--text-primary)",
+              }}
+            >
               Package Link:
             </label>
             <div style={{ display: "flex", gap: "8px" }}>
@@ -461,10 +530,14 @@ function SendSafelyModalContent({
                 style={{
                   flex: 1,
                   padding: "8px",
-                  border: `1px solid ${(packageError || (!parseSendSafelyUrl(sendSafelyModalUrl) && sendSafelyModalUrl.trim())) ? '#ef4444' : 'var(--border-primary)'}`,
+                  border: `1px solid ${packageError || (!parseSendSafelyUrl(sendSafelyModalUrl) && sendSafelyModalUrl.trim()) ? "#ef4444" : "var(--border-primary)"}`,
                   borderRadius: "4px",
-                  backgroundColor: packageLoading ? "var(--bg-secondary)" : "var(--bg-tertiary)",
-                  color: packageLoading ? "var(--text-muted)" : "var(--text-primary)",
+                  backgroundColor: packageLoading
+                    ? "var(--bg-secondary)"
+                    : "var(--bg-tertiary)",
+                  color: packageLoading
+                    ? "var(--text-muted)"
+                    : "var(--text-primary)",
                   fontSize: "12px",
                   boxSizing: "border-box",
                   opacity: packageLoading ? 0.6 : 1,
@@ -472,23 +545,41 @@ function SendSafelyModalContent({
               />
               <button
                 onClick={() => attemptPackageLoad(sendSafelyModalUrl)}
-                disabled={!parseSendSafelyUrl(sendSafelyModalUrl) || packageLoading}
+                disabled={
+                  !parseSendSafelyUrl(sendSafelyModalUrl) || packageLoading
+                }
                 style={{
                   padding: "8px 12px",
                   border: "1px solid var(--border-primary)",
                   borderRadius: "4px",
-                  backgroundColor: (parseSendSafelyUrl(sendSafelyModalUrl) && !packageLoading) ? "var(--accent-primary)" : "var(--bg-secondary)",
-                  color: (parseSendSafelyUrl(sendSafelyModalUrl) && !packageLoading) ? "white" : "var(--text-muted)",
+                  backgroundColor:
+                    parseSendSafelyUrl(sendSafelyModalUrl) && !packageLoading
+                      ? "var(--accent-primary)"
+                      : "var(--bg-secondary)",
+                  color:
+                    parseSendSafelyUrl(sendSafelyModalUrl) && !packageLoading
+                      ? "white"
+                      : "var(--text-muted)",
                   fontSize: "14px",
-                  cursor: (parseSendSafelyUrl(sendSafelyModalUrl) && !packageLoading) ? "pointer" : "not-allowed",
-                  opacity: (parseSendSafelyUrl(sendSafelyModalUrl) && !packageLoading) ? 1 : 0.6,
+                  cursor:
+                    parseSendSafelyUrl(sendSafelyModalUrl) && !packageLoading
+                      ? "pointer"
+                      : "not-allowed",
+                  opacity:
+                    parseSendSafelyUrl(sendSafelyModalUrl) && !packageLoading
+                      ? 1
+                      : 0.6,
                   minWidth: "40px",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                 }}
               >
-                {packageLoading ? <span className="loading-spinner-small" /> : "→"}
+                {packageLoading ? (
+                  <span className="loading-spinner-small" />
+                ) : (
+                  "→"
+                )}
               </button>
             </div>
           </div>
@@ -518,7 +609,13 @@ function SendSafelyModalContent({
       {/* Step 3: Package Loaded - Pick a File */}
       {step3_packageReady && (
         <div>
-          <div style={{ display: "flex", alignItems: "center", marginBottom: "16px" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              marginBottom: "16px",
+            }}
+          >
             <button
               onClick={() => {
                 // Go back to URL entry step - clear parsedUrl to force step 2
@@ -540,18 +637,28 @@ function SendSafelyModalContent({
             >
               ←
             </button>
-            <div style={{ fontSize: "14px", fontWeight: "600", color: "var(--text-primary)" }}>
-              Upload from {packageInfo.packageSender || 'Unknown sender'}
+            <div
+              style={{
+                fontSize: "14px",
+                fontWeight: "600",
+                color: "var(--text-primary)",
+              }}
+            >
+              Upload from {packageInfo.packageSender || "Unknown sender"}
             </div>
           </div>
 
           {(() => {
-
-            const zipFiles = packageInfo.files.filter((file: PackageFile) => file.fileName.toLowerCase().endsWith('.zip'));
-            const otherFiles = packageInfo.files.filter((file: PackageFile) => !file.fileName.toLowerCase().endsWith('.zip'));
+            const zipFiles = packageInfo.files.filter((file: PackageFile) =>
+              file.fileName.toLowerCase().endsWith(".zip"),
+            );
+            const otherFiles = packageInfo.files.filter(
+              (file: PackageFile) =>
+                !file.fileName.toLowerCase().endsWith(".zip"),
+            );
 
             const renderFileItem = (file: PackageFile) => {
-              const isZipFile = file.fileName.toLowerCase().endsWith('.zip');
+              const isZipFile = file.fileName.toLowerCase().endsWith(".zip");
 
               return (
                 <div
@@ -568,62 +675,83 @@ function SendSafelyModalContent({
                     justifyContent: "space-between",
                     alignItems: "center",
                   }}
-                  onMouseEnter={isZipFile ? (e) => {
-                    e.currentTarget.style.border = "1px solid var(--accent-primary)";
-                  } : undefined}
-                  onMouseLeave={isZipFile ? (e) => {
-                    e.currentTarget.style.border = "1px solid transparent";
-                  } : undefined}
-                  onClick={isZipFile ? async () => {
-                    // Load SendSafely ZIP file through worker manager
-                    setFileLoading(true);
-                    setFileError(null);
-                    setLoading(true);
-                    setLoadingMessage("Preparing to load SendSafely file...");
-                    try {
-                      await loadSendSafelyFile(file);
-                    } catch (error) {
-                      setFileError(error instanceof Error ? error.message : 'Unknown error occurred');
-                      setLoading(false);
-                    } finally {
-                      setFileLoading(false);
-                    }
-                  } : undefined}
-              >
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: "bold", marginBottom: "2px" }}>
-                    {file.fileName}
+                  onMouseEnter={
+                    isZipFile
+                      ? (e) => {
+                          e.currentTarget.style.border =
+                            "1px solid var(--accent-primary)";
+                        }
+                      : undefined
+                  }
+                  onMouseLeave={
+                    isZipFile
+                      ? (e) => {
+                          e.currentTarget.style.border =
+                            "1px solid transparent";
+                        }
+                      : undefined
+                  }
+                  onClick={
+                    isZipFile
+                      ? async () => {
+                          // Load SendSafely ZIP file through worker manager
+                          setFileLoading(true);
+                          setFileError(null);
+                          setLoading(true);
+                          setLoadingMessage(
+                            "Preparing to load SendSafely file...",
+                          );
+                          try {
+                            await loadSendSafelyFile(file);
+                          } catch (error) {
+                            setFileError(
+                              error instanceof Error
+                                ? error.message
+                                : "Unknown error occurred",
+                            );
+                            setLoading(false);
+                          } finally {
+                            setFileLoading(false);
+                          }
+                        }
+                      : undefined
+                  }
+                >
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: "bold", marginBottom: "2px" }}>
+                      {file.fileName}
+                    </div>
+                    <div style={{ color: "var(--text-muted)" }}>
+                      {file.fileUploaded && (
+                        <span>
+                          {new Date(file.fileUploaded).toLocaleDateString()}{" "}
+                          •{" "}
+                        </span>
+                      )}
+                      {(() => {
+                        const sizeInMB = file.fileSize / 1024 / 1024;
+                        if (sizeInMB >= 1024) {
+                          return `${(sizeInMB / 1024).toFixed(2)} GB`;
+                        } else {
+                          return `${sizeInMB.toFixed(2)} MB`;
+                        }
+                      })()}
+                    </div>
                   </div>
-                  <div style={{ color: "var(--text-muted)" }}>
-                    {file.fileUploaded && (
-                      <span>
-                        {new Date(file.fileUploaded).toLocaleDateString()} •{" "}
-                      </span>
-                    )}
-                    {(() => {
-                      const sizeInMB = file.fileSize / 1024 / 1024;
-                      if (sizeInMB >= 1024) {
-                        return `${(sizeInMB / 1024).toFixed(2)} GB`;
-                      } else {
-                        return `${sizeInMB.toFixed(2)} MB`;
-                      }
-                    })()}
-                  </div>
+                  {isZipFile && (
+                    <div
+                      style={{
+                        color: "var(--accent-primary)",
+                        fontSize: "14px",
+                        marginLeft: "8px",
+                        opacity: 0.7,
+                      }}
+                    >
+                      →
+                    </div>
+                  )}
                 </div>
-                {isZipFile && (
-                  <div
-                    style={{
-                      color: "var(--accent-primary)",
-                      fontSize: "14px",
-                      marginLeft: "8px",
-                      opacity: 0.7,
-                    }}
-                  >
-                    →
-                  </div>
-                )}
-              </div>
-            );
+              );
             };
 
             return (
@@ -631,12 +759,14 @@ function SendSafelyModalContent({
                 {/* ZIP Files Section */}
                 {zipFiles.length > 0 && (
                   <div style={{ marginBottom: "16px" }}>
-                    <div style={{
-                      fontSize: "12px",
-                      fontWeight: "600",
-                      marginBottom: "8px",
-                      color: "var(--text-primary)"
-                    }}>
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        fontWeight: "600",
+                        marginBottom: "8px",
+                        color: "var(--text-primary)",
+                      }}
+                    >
                       ZIP Files ({zipFiles.length}):
                     </div>
                     {zipFiles.map(renderFileItem)}
@@ -655,7 +785,7 @@ function SendSafelyModalContent({
                         cursor: "pointer",
                         display: "flex",
                         alignItems: "center",
-                        gap: "4px"
+                        gap: "4px",
                       }}
                       onClick={() => setShowOtherFiles(!showOtherFiles)}
                     >
@@ -689,7 +819,13 @@ function SendSafelyModalContent({
       {/* Step 4: File Loading/Error State */}
       {step4_fileLoading && (
         <div>
-          <div style={{ display: "flex", alignItems: "center", marginBottom: "16px" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              marginBottom: "16px",
+            }}
+          >
             <button
               onClick={() => {
                 // Go back to package selection
@@ -709,7 +845,13 @@ function SendSafelyModalContent({
             >
               ←
             </button>
-            <div style={{ fontSize: "14px", fontWeight: "600", color: "var(--text-primary)" }}>
+            <div
+              style={{
+                fontSize: "14px",
+                fontWeight: "600",
+                color: "var(--text-primary)",
+              }}
+            >
               {fileLoading ? "Loading file..." : "File loading failed"}
             </div>
           </div>
@@ -717,7 +859,13 @@ function SendSafelyModalContent({
           {fileLoading && (
             <div style={{ textAlign: "center", padding: "20px" }}>
               <span className="loading-spinner-small" />
-              <div style={{ marginTop: "8px", fontSize: "12px", color: "var(--text-muted)" }}>
+              <div
+                style={{
+                  marginTop: "8px",
+                  fontSize: "12px",
+                  color: "var(--text-muted)",
+                }}
+              >
                 Downloading and decrypting file...
               </div>
             </div>
@@ -740,7 +888,13 @@ function SendSafelyModalContent({
           )}
 
           {fileError && (
-            <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: "8px",
+                justifyContent: "flex-end",
+              }}
+            >
               <button
                 onClick={() => {
                   setFileLoading(false);
@@ -762,7 +916,6 @@ function SendSafelyModalContent({
           )}
         </div>
       )}
-
     </div>
   );
 }
@@ -793,9 +946,9 @@ function DropZone() {
 
   // Debug page state
   const [showDebugPage, setShowDebugPage] = useState(false);
-  const [debugEndpoint, setDebugEndpoint] = useState('');
-  const [debugBody, setDebugBody] = useState('');
-  const [debugResult, setDebugResult] = useState('');
+  const [debugEndpoint, setDebugEndpoint] = useState("");
+  const [debugBody, setDebugBody] = useState("");
+  const [debugResult, setDebugResult] = useState("");
   const [debugLoading, setDebugLoading] = useState(false);
 
   // Legacy modal states (to be removed once unified modal is complete)
@@ -808,25 +961,32 @@ function DropZone() {
   // localStorage helpers
   const getSavedCredentials = () => {
     try {
-      const saved = localStorage.getItem('sendsafely_config');
+      const saved = localStorage.getItem("sendsafely_config");
       if (saved) {
         const config = JSON.parse(saved);
         return {
-          key: config.key || '',
-          secret: config.secret || ''
+          key: config.key || "",
+          secret: config.secret || "",
         };
       }
     } catch (e) {
-      console.error('Failed to parse SendSafely config:', e);
+      console.error("Failed to parse SendSafely config:", e);
     }
-    return { key: '', secret: '' };
+    return { key: "", secret: "" };
   };
 
   const saveCredentials = (key: string, secret: string) => {
     try {
-      localStorage.setItem('sendsafely_config', JSON.stringify({ key, secret }));
+      // SendSafely's app-specific API keys cannot be re-read after they are created, so we need to save this
+      // app-specific key they just generated for us in local persistent storage for future use or else the user
+      // will need to manually generate a new app-specific API every time they need to load a zip. This is strictly
+      // to *local* storage akin to locally saved API configuration users already have e.g. for the CLI file downloader tool.
+      localStorage.setItem(
+        "sendsafely_config",
+        JSON.stringify({ key, secret }),
+      );
     } catch (e) {
-      console.error('Failed to save SendSafely config:', e);
+      console.error("Failed to save SendSafely config:", e);
     }
   };
 
@@ -837,31 +997,33 @@ function DropZone() {
 
   const executeDebugApiCall = async () => {
     if (!debugEndpoint.trim()) {
-      setDebugResult('Error: Endpoint is required');
+      setDebugResult("Error: Endpoint is required");
       return;
     }
 
     const { key, secret } = getSavedCredentials();
     if (!key || !secret) {
-      setDebugResult('Error: No saved API credentials');
+      setDebugResult("Error: No saved API credentials");
       return;
     }
 
     setDebugLoading(true);
-    setDebugResult('Making API call...');
+    setDebugResult("Making API call...");
 
     try {
       const host = "https://cockroachlabs.sendsafely.com";
       const client = createSendSafelyClient(host, key, secret);
 
       // Determine method based on whether body is provided
-      const method = debugBody.trim() ? 'POST' : 'GET';
+      const method = debugBody.trim() ? "POST" : "GET";
       let body = undefined;
       if (debugBody.trim()) {
         try {
           body = JSON.parse(debugBody);
         } catch (e) {
-          setDebugResult(`Error: Invalid JSON in body - ${e instanceof Error ? e.message : 'Unknown error'}`);
+          setDebugResult(
+            `Error: Invalid JSON in body - ${e instanceof Error ? e.message : "Unknown error"}`,
+          );
           setDebugLoading(false);
           return;
         }
@@ -874,9 +1036,9 @@ function DropZone() {
 
       setDebugResult(JSON.stringify(response, null, 2));
       // Debug API response received
-
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       setDebugResult(`Error: ${errorMessage}`);
       // Debug API error handled
     } finally {
@@ -885,7 +1047,7 @@ function DropZone() {
   };
 
   const loadSendSafelyFile = async (file: PackageFile) => {
-    if (!file.fileName.toLowerCase().endsWith('.zip')) {
+    if (!file.fileName.toLowerCase().endsWith(".zip")) {
       throw new Error("Please select a .zip file");
     }
 
@@ -923,7 +1085,9 @@ function DropZone() {
         // Add to React state for UI logic
         dispatch({ type: "ADD_STACK_FILE", filePath: path, content: content });
 
-        const preloadedIframe = document.getElementById("stackgazer-preload") as HTMLIFrameElement;
+        const preloadedIframe = document.getElementById(
+          "stackgazer-preload",
+        ) as HTMLIFrameElement;
         if (preloadedIframe?.contentWindow) {
           setTimeout(() => {
             try {
@@ -950,7 +1114,8 @@ function DropZone() {
       onFileList: (entries: ZipEntryMeta[]) => {
         // Received file list
 
-        (window as unknown as { __zipReader: unknown }).__zipReader = workerManager;
+        (window as unknown as { __zipReader: unknown }).__zipReader =
+          workerManager;
 
         dispatch({
           type: "SET_ZIP",
@@ -961,15 +1126,20 @@ function DropZone() {
 
         // Extract stack files from the file list
         const stackFiles = entries
-          .filter((entry: ZipEntryMeta) => !entry.isDir && entry.path.includes('stacks.txt'))
+          .filter(
+            (entry: ZipEntryMeta) =>
+              !entry.isDir && entry.path.includes("stacks.txt"),
+          )
           .map((entry: ZipEntryMeta) => ({
             path: entry.path,
             size: entry.size,
-            compressedSize: entry.compressedSize
+            compressedSize: entry.compressedSize,
           }));
 
         if (stackFiles.length > 0) {
-          console.log(`🎯 Stack files found in file list: ${stackFiles.length} files`);
+          console.log(
+            `🎯 Stack files found in file list: ${stackFiles.length} files`,
+          );
           dispatch({ type: "SET_STACK_DATA", stackData: {} });
           dispatch({ type: "SET_STACK_FILES", stackFiles });
           dispatch({ type: "SET_STACKGAZER_READY", ready: false });
@@ -991,10 +1161,21 @@ function DropZone() {
           },
         });
       },
-      onIndexingProgress: (progress: { current: number; total: number; fileName: string }) => {
-        setLoadingMessage(`Indexing log files: ${progress.current}/${progress.total} - ${progress.fileName}`);
+      onIndexingProgress: (progress: {
+        current: number;
+        total: number;
+        fileName: string;
+      }) => {
+        setLoadingMessage(
+          `Indexing log files: ${progress.current}/${progress.total} - ${progress.fileName}`,
+        );
       },
-      onIndexingComplete: (success: boolean, _totalEntries: number, error?: string, ruleDescription?: string) => {
+      onIndexingComplete: (
+        success: boolean,
+        _totalEntries: number,
+        error?: string,
+        ruleDescription?: string,
+      ) => {
         dispatch({
           type: "SET_INDEXING_STATUS",
           status: success ? "ready" : "none",
@@ -1012,17 +1193,21 @@ function DropZone() {
       },
       onFileStatusUpdate: (fileStatuses: FileStatus[]) => {
         // Convert FileStatus to FileIndexStatus by adding missing fields
-        const convertedStatuses = fileStatuses.map(status => ({
+        const convertedStatuses = fileStatuses.map((status) => ({
           ...status,
-          name: status.path.split('/').pop() || status.path,
+          name: status.path.split("/").pop() || status.path,
           size: 0, // Size not available from FileStatus
-          status: status.status as "unindexed" | "indexing" | "indexed" | "error"
+          status: status.status as
+            | "unindexed"
+            | "indexing"
+            | "indexed"
+            | "error",
         }));
         dispatch({
           type: "SET_FILE_STATUSES",
-          fileStatuses: convertedStatuses
+          fileStatuses: convertedStatuses,
         });
-      }
+      },
     });
 
     // Load the SendSafely file through the worker manager
@@ -1036,8 +1221,8 @@ function DropZone() {
       packageInfo: {
         packageId: packageInfo.packageId,
         keyCode: parsed.keyCode,
-        serverSecret: secret // Use the API secret as server secret
-      }
+        serverSecret: secret, // Use the API secret as server secret
+      },
     });
 
     // Close the modal after starting the load
@@ -1048,8 +1233,11 @@ function DropZone() {
     setPackageLoading(false);
   };
 
-
-  const validateCredentials = async (host: string, key: string, secret: string) => {
+  const validateCredentials = async (
+    host: string,
+    key: string,
+    secret: string,
+  ) => {
     if (!host || key.length !== 22 || secret.length !== 22) {
       return;
     }
@@ -1064,22 +1252,23 @@ function DropZone() {
       setValidationStatus({
         isValid: true,
         message: `✅ Valid credentials`,
-        email: userInfo.email
+        email: userInfo.email,
       });
-
     } catch (error) {
-      console.error('SendSafely validation error:', error);
+      console.error("SendSafely validation error:", error);
 
-      let message = 'Unknown error occurred';
+      let message = "Unknown error occurred";
 
       if (error instanceof Error) {
         // Extract the actual error message from the response
-        if (error.message.includes('HTTP')) {
+        if (error.message.includes("HTTP")) {
           // HTTP errors like "HTTP 401: Authentication failed"
           message = error.message;
-        } else if (error.message.includes('API response:')) {
+        } else if (error.message.includes("API response:")) {
           // SendSafely API errors like "API response: "AUTHENTICATION_FAILED", message: "Invalid API Key""
-          const match = error.message.match(/API response: "([^"]+)"(?:, message: "([^"]+)")?/);
+          const match = error.message.match(
+            /API response: "([^"]+)"(?:, message: "([^"]+)")?/,
+          );
           if (match) {
             message = match[2] || match[1]; // Use the message if available, otherwise the response code
           } else {
@@ -1093,9 +1282,8 @@ function DropZone() {
 
       setValidationStatus({
         isValid: false,
-        message: `❌ ${message}`
+        message: `❌ ${message}`,
       });
-
     } finally {
       setIsValidating(false);
     }
@@ -1121,40 +1309,49 @@ function DropZone() {
     }, 500);
   };
 
+  const attemptPackageLoad = useCallback(
+    async (url: string) => {
+      const parsed = parseSendSafelyUrl(url);
+      if (!parsed) {
+        return; // URL doesn't have packageCode and keycode
+      }
 
-  const attemptPackageLoad = useCallback(async (url: string) => {
-    const parsed = parseSendSafelyUrl(url);
-    if (!parsed) {
-      return; // URL doesn't have packageCode and keycode
-    }
+      const { key, secret } = getSavedCredentials();
+      const host = "https://cockroachlabs.sendsafely.com";
+      if (!hasValidCredentials()) {
+        return; // Credentials not ready
+      }
 
-    const { key, secret } = getSavedCredentials();
-    const host = "https://cockroachlabs.sendsafely.com";
-    if (!hasValidCredentials()) {
-      return; // Credentials not ready
-    }
+      // Prevent duplicate loads
+      if (packageLoading) {
+        return;
+      }
 
-    // Prevent duplicate loads
-    if (packageLoading) {
-      return;
-    }
+      setPackageLoading(true);
+      setPackageError(null);
+      setPackageInfo(null);
 
-    setPackageLoading(true);
-    setPackageError(null);
-    setPackageInfo(null);
-
-    try {
-      const client = createSendSafelyClient(host, key, secret);
-      const packageInfo = await client.getPackageInfo(parsed.packageCode);
-      setPackageInfo(packageInfo);
-    } catch (error) {
-      console.error('Failed to load package info:', error);
-      setPackageError(error instanceof Error ? error.message : 'Unknown error');
-    } finally {
-      setPackageLoading(false);
-    }
-  }, [hasValidCredentials, packageLoading, setPackageLoading, setPackageError, setPackageInfo]);
-
+      try {
+        const client = createSendSafelyClient(host, key, secret);
+        const packageInfo = await client.getPackageInfo(parsed.packageCode);
+        setPackageInfo(packageInfo);
+      } catch (error) {
+        console.error("Failed to load package info:", error);
+        setPackageError(
+          error instanceof Error ? error.message : "Unknown error",
+        );
+      } finally {
+        setPackageLoading(false);
+      }
+    },
+    [
+      hasValidCredentials,
+      packageLoading,
+      setPackageLoading,
+      setPackageError,
+      setPackageInfo,
+    ],
+  );
 
   const handleCanonicalLinkSubmit = () => {
     if (canonicalLinkInput.trim()) {
@@ -1163,7 +1360,6 @@ function DropZone() {
       attemptPackageLoad(canonicalLinkInput);
     }
   };
-
 
   // Load saved credentials when SendSafely modal opens
   useEffect(() => {
@@ -1186,179 +1382,224 @@ function DropZone() {
         attemptPackageLoad(sendSafelyModalUrl);
       }
     }
-  }, [showSendSafelyModal, sendSafelyModalUrl, hasValidCredentials, packageInfo, packageLoading, packageError, attemptPackageLoad]);
+  }, [
+    showSendSafelyModal,
+    sendSafelyModalUrl,
+    hasValidCredentials,
+    packageInfo,
+    packageLoading,
+    packageError,
+    attemptPackageLoad,
+  ]);
 
-
-  const handleFile = useCallback(async (file: File) => {
-    if (!file.name.endsWith(".zip")) {
-      setError("Please select a .zip file");
-      return;
-    }
-
-    setLoading(true);
-    setLoadingMessage(
-      `Reading ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)...`,
-    );
-    setError(null);
-
-    try {
-      setLoadingMessage("Loading file into memory...");
-
-      // Read file with progress tracking
-      const arrayBuffer = await file.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
-
-      // Wait for workers to be ready (they're initializing eagerly in background)
-      let workerManager = state.workerManager;
-      if (!state.workersReady || !workerManager) {
-        // Waiting for workers to finish initializing
-        setLoadingMessage("Setting up background processing...");
-
-        // Wait for workers that are already initializing
-        workerManager = await waitForWorkers();
-
-        if (!workerManager) {
-          throw new Error("WorkerManager not available after initialization");
-        }
+  const handleFile = useCallback(
+    async (file: File) => {
+      if (!file.name.endsWith(".zip")) {
+        setError("Please select a .zip file");
+        return;
       }
 
-      // Set up callbacks to listen for controller notifications BEFORE starting load
-      workerManager.updateCallbacks({
-        onLoadingStage: (stage: string, message: string) => {
-          setLoadingMessage(message);
-
-          if (stage === "complete" || stage === "error") {
-            setLoading(false);
-          }
-
-          // Stack data is now sent directly by controller via onSendStackDataToIframe callback
-        },
-        onSendStackFileToIframe: (path: string, content: string) => {
-          // Add to React state for UI logic
-          dispatch({ type: "ADD_STACK_FILE", filePath: path, content: content });
-
-          // Send directly to iframe immediately - no storage needed
-          const preloadedIframe = document.getElementById("stackgazer-preload") as HTMLIFrameElement;
-          if (preloadedIframe?.contentWindow) {
-            setTimeout(() => {
-              try {
-                preloadedIframe.contentWindow!.postMessage(
-                  {
-                    type: "LOAD_STACK_FILE",
-                    path: path,
-                    content: content,
-                  },
-                  window.location.origin,
-                );
-              } catch (error) {
-                console.error("Error sending stack file to iframe:", error);
-              }
-            }, 10); // Shorter delay since we're sending one file at a time
-          }
-        },
-        onStackProcessingComplete: (_stackFilesCount: number) => {
-          // Stack files have been loaded and sent to iframe
-          // stackData should already be populated via ADD_STACK_FILE actions
-          console.log(`🎯 Stack processing complete: ${_stackFilesCount} files`);
-          dispatch({ type: "SET_STACKGAZER_READY", ready: true });
-        },
-        onFileList: (entries: ZipEntryMeta[]) => {
-          // Received file list
-
-          // Set window.__zipReader for backward compatibility with FileViewer
-          (window as unknown as { __zipReader: unknown }).__zipReader = workerManager;
-
-          dispatch({
-            type: "SET_ZIP",
-            name: file.name,
-            size: file.size,
-            entries,
-          });
-
-          // Extract stack files from the file list
-          const stackFiles = entries
-            .filter((entry: ZipEntryMeta) => !entry.isDir && entry.path.includes('stacks.txt'))
-            .map((entry: ZipEntryMeta) => ({
-              path: entry.path,
-              size: entry.size,
-              compressedSize: entry.compressedSize
-            }));
-
-          if (stackFiles.length > 0) {
-            console.log(`🎯 Stack files found in file list: ${stackFiles.length} files`);
-            dispatch({ type: "SET_STACK_DATA", stackData: {} });
-            dispatch({ type: "SET_STACK_FILES", stackFiles });
-            dispatch({ type: "SET_STACKGAZER_READY", ready: false });
-          }
-
-          // Set tables loading state - controller will start loading them
-          dispatch({ type: "SET_TABLES_LOADING", loading: true });
-        },
-        onTableAdded: (table: TableData) => {
-          // Controller already prepared the table, just register it
-          dispatch({
-            type: "REGISTER_TABLE",
-            table: {
-              name: table.name,
-              sourceFile: table.sourceFile || table.path,
-              loaded: table.loaded || false,
-              size: table.size,
-              nodeId: table.nodeId,
-              originalName: table.originalName,
-              isError: table.isError,
-            },
-          });
-        },
-        onIndexingProgress: (progress: { current: number; total: number; fileName: string }) => {
-          setLoadingMessage(`Indexing log files: ${progress.current}/${progress.total} - ${progress.fileName}`);
-        },
-        onIndexingComplete: (success: boolean, _totalEntries: number, error?: string, ruleDescription?: string) => {
-
-          // Update global indexing status for SearchView to access
-          dispatch({
-            type: "SET_INDEXING_STATUS",
-            status: success ? "ready" : "none",
-            ruleDescription,
-          });
-
-          if (success) {
-            // Indexing completed successfully
-            // Clear loading state since indexing is complete
-            setLoading(false);
-            setLoadingMessage("");
-          } else {
-            console.error(`❌ DropZone: Indexing failed: ${error}`);
-            setLoading(false);
-            setError(`Indexing failed: ${error}`);
-          }
-        },
-        onFileStatusUpdate: (fileStatuses: FileStatus[]) => {
-          // Convert FileStatus to FileIndexStatus by adding missing fields
-          const convertedStatuses = fileStatuses.map(status => ({
-            ...status,
-            name: status.path.split('/').pop() || status.path,
-            size: 0, // Size not available from FileStatus
-            status: status.status as "unindexed" | "indexing" | "indexed" | "error"
-          }));
-          dispatch({
-            type: "SET_FILE_STATUSES",
-            fileStatuses: convertedStatuses
-          });
-        }
-      });
-
-      // Just trigger the loading - controller will drive everything from here
-      // Starting controller-driven pipeline
-      await workerManager.loadZipData(uint8Array);
-
-    } catch (err) {
-      console.error("Failed to read zip:", err);
-      setError(
-        `Failed to read zip: ${err instanceof Error ? err.message : "Unknown error"}`,
+      setLoading(true);
+      setLoadingMessage(
+        `Reading ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)...`,
       );
-      setLoading(false);
-    }
-  }, [setError, setLoading, setLoadingMessage, state.workerManager, state.workersReady, waitForWorkers, dispatch]);
+      setError(null);
+
+      try {
+        setLoadingMessage("Loading file into memory...");
+
+        // Read file with progress tracking
+        const arrayBuffer = await file.arrayBuffer();
+        const uint8Array = new Uint8Array(arrayBuffer);
+
+        // Wait for workers to be ready (they're initializing eagerly in background)
+        let workerManager = state.workerManager;
+        if (!state.workersReady || !workerManager) {
+          // Waiting for workers to finish initializing
+          setLoadingMessage("Setting up background processing...");
+
+          // Wait for workers that are already initializing
+          workerManager = await waitForWorkers();
+
+          if (!workerManager) {
+            throw new Error("WorkerManager not available after initialization");
+          }
+        }
+
+        // Set up callbacks to listen for controller notifications BEFORE starting load
+        workerManager.updateCallbacks({
+          onLoadingStage: (stage: string, message: string) => {
+            setLoadingMessage(message);
+
+            if (stage === "complete" || stage === "error") {
+              setLoading(false);
+            }
+
+            // Stack data is now sent directly by controller via onSendStackDataToIframe callback
+          },
+          onSendStackFileToIframe: (path: string, content: string) => {
+            // Add to React state for UI logic
+            dispatch({
+              type: "ADD_STACK_FILE",
+              filePath: path,
+              content: content,
+            });
+
+            // Send directly to iframe immediately - no storage needed
+            const preloadedIframe = document.getElementById(
+              "stackgazer-preload",
+            ) as HTMLIFrameElement;
+            if (preloadedIframe?.contentWindow) {
+              setTimeout(() => {
+                try {
+                  preloadedIframe.contentWindow!.postMessage(
+                    {
+                      type: "LOAD_STACK_FILE",
+                      path: path,
+                      content: content,
+                    },
+                    window.location.origin,
+                  );
+                } catch (error) {
+                  console.error("Error sending stack file to iframe:", error);
+                }
+              }, 10); // Shorter delay since we're sending one file at a time
+            }
+          },
+          onStackProcessingComplete: (_stackFilesCount: number) => {
+            // Stack files have been loaded and sent to iframe
+            // stackData should already be populated via ADD_STACK_FILE actions
+            console.log(
+              `🎯 Stack processing complete: ${_stackFilesCount} files`,
+            );
+            dispatch({ type: "SET_STACKGAZER_READY", ready: true });
+          },
+          onFileList: (entries: ZipEntryMeta[]) => {
+            // Received file list
+
+            // Set window.__zipReader for backward compatibility with FileViewer
+            (window as unknown as { __zipReader: unknown }).__zipReader =
+              workerManager;
+
+            dispatch({
+              type: "SET_ZIP",
+              name: file.name,
+              size: file.size,
+              entries,
+            });
+
+            // Extract stack files from the file list
+            const stackFiles = entries
+              .filter(
+                (entry: ZipEntryMeta) =>
+                  !entry.isDir && entry.path.includes("stacks.txt"),
+              )
+              .map((entry: ZipEntryMeta) => ({
+                path: entry.path,
+                size: entry.size,
+                compressedSize: entry.compressedSize,
+              }));
+
+            if (stackFiles.length > 0) {
+              console.log(
+                `🎯 Stack files found in file list: ${stackFiles.length} files`,
+              );
+              dispatch({ type: "SET_STACK_DATA", stackData: {} });
+              dispatch({ type: "SET_STACK_FILES", stackFiles });
+              dispatch({ type: "SET_STACKGAZER_READY", ready: false });
+            }
+
+            // Set tables loading state - controller will start loading them
+            dispatch({ type: "SET_TABLES_LOADING", loading: true });
+          },
+          onTableAdded: (table: TableData) => {
+            // Controller already prepared the table, just register it
+            dispatch({
+              type: "REGISTER_TABLE",
+              table: {
+                name: table.name,
+                sourceFile: table.sourceFile || table.path,
+                loaded: table.loaded || false,
+                size: table.size,
+                nodeId: table.nodeId,
+                originalName: table.originalName,
+                isError: table.isError,
+              },
+            });
+          },
+          onIndexingProgress: (progress: {
+            current: number;
+            total: number;
+            fileName: string;
+          }) => {
+            setLoadingMessage(
+              `Indexing log files: ${progress.current}/${progress.total} - ${progress.fileName}`,
+            );
+          },
+          onIndexingComplete: (
+            success: boolean,
+            _totalEntries: number,
+            error?: string,
+            ruleDescription?: string,
+          ) => {
+            // Update global indexing status for SearchView to access
+            dispatch({
+              type: "SET_INDEXING_STATUS",
+              status: success ? "ready" : "none",
+              ruleDescription,
+            });
+
+            if (success) {
+              // Indexing completed successfully
+              // Clear loading state since indexing is complete
+              setLoading(false);
+              setLoadingMessage("");
+            } else {
+              console.error(`❌ DropZone: Indexing failed: ${error}`);
+              setLoading(false);
+              setError(`Indexing failed: ${error}`);
+            }
+          },
+          onFileStatusUpdate: (fileStatuses: FileStatus[]) => {
+            // Convert FileStatus to FileIndexStatus by adding missing fields
+            const convertedStatuses = fileStatuses.map((status) => ({
+              ...status,
+              name: status.path.split("/").pop() || status.path,
+              size: 0, // Size not available from FileStatus
+              status: status.status as
+                | "unindexed"
+                | "indexing"
+                | "indexed"
+                | "error",
+            }));
+            dispatch({
+              type: "SET_FILE_STATUSES",
+              fileStatuses: convertedStatuses,
+            });
+          },
+        });
+
+        // Just trigger the loading - controller will drive everything from here
+        // Starting controller-driven pipeline
+        await workerManager.loadZipData(uint8Array);
+      } catch (err) {
+        console.error("Failed to read zip:", err);
+        setError(
+          `Failed to read zip: ${err instanceof Error ? err.message : "Unknown error"}`,
+        );
+        setLoading(false);
+      }
+    },
+    [
+      setError,
+      setLoading,
+      setLoadingMessage,
+      state.workerManager,
+      state.workersReady,
+      waitForWorkers,
+      dispatch,
+    ],
+  );
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -1379,16 +1620,19 @@ function DropZone() {
     e.stopPropagation();
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(false);
 
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-      handleFile(files[0]);
-    }
-  }, [handleFile]);
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length > 0) {
+        handleFile(files[0]);
+      }
+    },
+    [handleFile],
+  );
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -1457,20 +1701,35 @@ function DropZone() {
         ) : (
           <>
             <h2>📦 Drop a debug.zip here</h2>
-            <p>or <span
+            <p>
+              ...or{" "}
+              <span
                 style={{
                   color: "var(--accent-primary)",
                   textDecoration: "underline",
-                  cursor: "pointer"
+                  cursor: "pointer",
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
                   document.getElementById("file-input")?.click();
                 }}
-              >browse and select</span> a file</p>
+              >
+                browse and select
+              </span>{" "}
+              a file
+            </p>
             <div style={{ margin: "1rem 0", fontSize: "0.9rem" }}>
-              <p style={{ marginBottom: "0.5rem" }}>or paste a SendSafely link to browse a remote zip:</p>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <p style={{ marginBottom: "0.5rem" }}>
+                ...or paste a SendSafely link to browse a remote zip:
+              </p>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px",
+                }}
+              >
                 <input
                   type="text"
                   placeholder="https://uploads.cockroachlabs.com/receive/?packageCode=..."
@@ -1491,11 +1750,23 @@ function DropZone() {
                   }}
                   onClick={(e) => e.stopPropagation()}
                   style={{
-                    flex: 1,
-                    padding: "0.5rem",
-                    border: "1px solid var(--border)",
+                    flex: 0.8,
+                    padding: "6px 8px",
+                    background: "var(--bg-quaternary)",
+                    border: "1px solid var(--border-primary)",
                     borderRadius: "4px",
-                    fontSize: "0.85rem",
+                    color: "var(--text-primary)",
+                    fontFamily: "inherit",
+                    fontSize: "12px",
+                    transition: "border-color 0.2s ease, background 0.2s ease",
+                  }}
+                  onFocus={(e) => {
+                    e.target.style.borderColor = "var(--accent-primary)";
+                    e.target.style.background = "var(--bg-primary)";
+                  }}
+                  onBlur={(e) => {
+                    e.target.style.borderColor = "var(--border-primary)";
+                    e.target.style.background = "var(--bg-quaternary)";
                   }}
                 />
                 <button
@@ -1511,14 +1782,37 @@ function DropZone() {
                     setPackageLoading(false);
                   }}
                   style={{
-                    padding: "0.5rem",
-                    border: "1px solid var(--border)",
+                    padding: "6px 12px",
+                    border: "1px solid var(--border-primary)",
                     borderRadius: "4px",
-                    background: sendSafelyUrl.trim() ? "var(--accent-primary)" : "var(--background)",
-                    color: sendSafelyUrl.trim() ? "white" : "var(--text-primary)",
+                    background: sendSafelyUrl.trim()
+                      ? "var(--accent-primary)"
+                      : "var(--bg-tertiary)",
+                    color: sendSafelyUrl.trim()
+                      ? "white"
+                      : "var(--text-primary)",
                     cursor: "pointer",
+                    fontSize: "14px",
+                    transition: "all 0.2s ease",
                   }}
-                  title={sendSafelyUrl.trim() ? "Open SendSafely package" : "Configure SendSafely settings"}
+                  title={
+                    sendSafelyUrl.trim()
+                      ? "Open SendSafely package"
+                      : "Configure SendSafely settings"
+                  }
+                  onMouseEnter={(e) => {
+                    if (sendSafelyUrl.trim()) {
+                      e.currentTarget.style.background =
+                        "var(--accent-primary-hover)";
+                    } else {
+                      e.currentTarget.style.background = "var(--bg-quaternary)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = sendSafelyUrl.trim()
+                      ? "var(--accent-primary)"
+                      : "var(--bg-tertiary)";
+                  }}
                 >
                   →
                 </button>
@@ -1528,12 +1822,13 @@ function DropZone() {
               style={{
                 fontSize: "0.85rem",
                 color: "var(--text-muted)",
-                marginTop: "0.5rem",
+                marginTop: "0.75rem",
               }}
             >
-              all processing is local and in-browser -- nothing is uploaded
+              all processing executes locally -- nothing is uploaded
             </p>
-            <div style={{ marginTop: "1rem" }}>
+
+            <div style={{ marginTop: "0.75rem" }}>
               <button
                 className="btn btn-secondary"
                 onClick={(e) => {
@@ -1549,7 +1844,7 @@ function DropZone() {
                   cursor: "pointer",
                 }}
               >
-                🚀 Try Demo File
+                Try a demo with an example zip file 🚀
               </button>
             </div>
           </>
@@ -1616,7 +1911,9 @@ function DropZone() {
                 >
                   SendSafely Package Access
                 </h2>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: "8px" }}
+                >
                   <button
                     onClick={() => setShowDebugPage(!showDebugPage)}
                     style={{
@@ -1635,24 +1932,24 @@ function DropZone() {
                   </button>
                   <button
                     onClick={() => {
-                    setShowSendSafelyModal(false);
-                    setValidationStatus(null);
-                    setPackageInfo(null);
-                    setPackageError(null);
-                    setPackageLoading(false);
-                  }}
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    color: "var(--text-secondary)",
-                    fontSize: "18px",
-                    cursor: "pointer",
-                    padding: "0 4px",
-                    lineHeight: "1",
-                  }}
-                >
-                  ×
-                </button>
+                      setShowSendSafelyModal(false);
+                      setValidationStatus(null);
+                      setPackageInfo(null);
+                      setPackageError(null);
+                      setPackageLoading(false);
+                    }}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "var(--text-secondary)",
+                      fontSize: "18px",
+                      cursor: "pointer",
+                      padding: "0 4px",
+                      lineHeight: "1",
+                    }}
+                  >
+                    ×
+                  </button>
                 </div>
               </div>
             </div>
@@ -1667,13 +1964,15 @@ function DropZone() {
                 }}
               >
                 <div style={{ marginBottom: "16px" }}>
-                  <label style={{
-                    display: "block",
-                    marginBottom: "4px",
-                    fontSize: "12px",
-                    fontWeight: "500",
-                    color: "var(--text-primary)"
-                  }}>
+                  <label
+                    style={{
+                      display: "block",
+                      marginBottom: "4px",
+                      fontSize: "12px",
+                      fontWeight: "500",
+                      color: "var(--text-primary)",
+                    }}
+                  >
                     Endpoint (e.g., /api/v2.0/user):
                   </label>
                   <input
@@ -1696,13 +1995,15 @@ function DropZone() {
                 </div>
 
                 <div style={{ marginBottom: "16px" }}>
-                  <label style={{
-                    display: "block",
-                    marginBottom: "4px",
-                    fontSize: "12px",
-                    fontWeight: "500",
-                    color: "var(--text-primary)"
-                  }}>
+                  <label
+                    style={{
+                      display: "block",
+                      marginBottom: "4px",
+                      fontSize: "12px",
+                      fontWeight: "500",
+                      color: "var(--text-primary)",
+                    }}
+                  >
                     Body (JSON, leave empty for GET):
                   </label>
                   <textarea
@@ -1733,25 +2034,38 @@ function DropZone() {
                       padding: "8px 16px",
                       border: "1px solid var(--border-primary)",
                       borderRadius: "4px",
-                      backgroundColor: (!debugLoading && debugEndpoint.trim()) ? "var(--accent-primary)" : "var(--bg-secondary)",
-                      color: (!debugLoading && debugEndpoint.trim()) ? "white" : "var(--text-muted)",
+                      backgroundColor:
+                        !debugLoading && debugEndpoint.trim()
+                          ? "var(--accent-primary)"
+                          : "var(--bg-secondary)",
+                      color:
+                        !debugLoading && debugEndpoint.trim()
+                          ? "white"
+                          : "var(--text-muted)",
                       fontSize: "12px",
-                      cursor: (!debugLoading && debugEndpoint.trim()) ? "pointer" : "not-allowed",
-                      opacity: (!debugLoading && debugEndpoint.trim()) ? 1 : 0.6,
+                      cursor:
+                        !debugLoading && debugEndpoint.trim()
+                          ? "pointer"
+                          : "not-allowed",
+                      opacity: !debugLoading && debugEndpoint.trim() ? 1 : 0.6,
                     }}
                   >
-                    {debugLoading ? "Calling..." : `${debugBody.trim() ? "POST" : "GET"} Request`}
+                    {debugLoading
+                      ? "Calling..."
+                      : `${debugBody.trim() ? "POST" : "GET"} Request`}
                   </button>
                 </div>
 
                 <div style={{ marginBottom: "16px" }}>
-                  <label style={{
-                    display: "block",
-                    marginBottom: "4px",
-                    fontSize: "12px",
-                    fontWeight: "500",
-                    color: "var(--text-primary)"
-                  }}>
+                  <label
+                    style={{
+                      display: "block",
+                      marginBottom: "4px",
+                      fontSize: "12px",
+                      fontWeight: "500",
+                      color: "var(--text-primary)",
+                    }}
+                  >
                     Result:
                   </label>
                   <textarea
@@ -1773,49 +2087,56 @@ function DropZone() {
                   />
                 </div>
 
-                <div style={{
-                  padding: "12px",
-                  backgroundColor: "var(--bg-tertiary)",
-                  borderRadius: "4px",
-                  fontSize: "11px",
-                  color: "var(--text-muted)",
-                }}>
+                <div
+                  style={{
+                    padding: "12px",
+                    backgroundColor: "var(--bg-tertiary)",
+                    borderRadius: "4px",
+                    fontSize: "11px",
+                    color: "var(--text-muted)",
+                  }}
+                >
                   <strong>Usage:</strong>
                   <ul style={{ margin: "4px 0 0 0", paddingLeft: "16px" }}>
                     <li>Leave body empty for GET requests</li>
                     <li>Add JSON body for POST requests</li>
-                    <li>All requests are automatically signed with saved API credentials</li>
-                    <li>Check browser console for detailed request/response logs</li>
+                    <li>
+                      All requests are automatically signed with saved API
+                      credentials
+                    </li>
+                    <li>
+                      Check browser console for detailed request/response logs
+                    </li>
                   </ul>
                 </div>
               </div>
             ) : (
               <SendSafelyModalContent
-              hasValidCredentials={hasValidCredentials}
-              sendSafelyModalUrl={sendSafelyModalUrl}
-              setSendSafelyModalUrl={setSendSafelyModalUrl}
-              attemptPackageLoad={attemptPackageLoad}
-              apiKey={apiKey}
-              setApiKey={setApiKey}
-              apiSecret={apiSecret}
-              setApiSecret={setApiSecret}
-              isValidating={isValidating}
-              validationStatus={validationStatus}
-              setValidationStatus={setValidationStatus}
-              saveCredentials={saveCredentials}
-              packageLoading={packageLoading}
-              packageError={packageError}
-              packageInfo={packageInfo}
-              setPackageInfo={setPackageInfo}
-              setPackageError={setPackageError}
-              setPackageLoading={setPackageLoading}
-              parsedUrl={parseSendSafelyUrl(sendSafelyModalUrl)}
-              validateCredentials={validateCredentials}
-              loadSendSafelyFile={loadSendSafelyFile}
-              setLoading={setLoading}
-              setLoadingMessage={setLoadingMessage}
-              waitForWorkers={waitForWorkers}
-            />
+                hasValidCredentials={hasValidCredentials}
+                sendSafelyModalUrl={sendSafelyModalUrl}
+                setSendSafelyModalUrl={setSendSafelyModalUrl}
+                attemptPackageLoad={attemptPackageLoad}
+                apiKey={apiKey}
+                setApiKey={setApiKey}
+                apiSecret={apiSecret}
+                setApiSecret={setApiSecret}
+                isValidating={isValidating}
+                validationStatus={validationStatus}
+                setValidationStatus={setValidationStatus}
+                saveCredentials={saveCredentials}
+                packageLoading={packageLoading}
+                packageError={packageError}
+                packageInfo={packageInfo}
+                setPackageInfo={setPackageInfo}
+                setPackageError={setPackageError}
+                setPackageLoading={setPackageLoading}
+                parsedUrl={parseSendSafelyUrl(sendSafelyModalUrl)}
+                validateCredentials={validateCredentials}
+                loadSendSafelyFile={loadSendSafelyFile}
+                setLoading={setLoading}
+                setLoadingMessage={setLoadingMessage}
+                waitForWorkers={waitForWorkers}
+              />
             )}
           </div>
         </div>
@@ -1925,7 +2246,13 @@ function DropZone() {
                     <strong>Package Code:</strong> {packageInfo.packageCode}
                   </div>
 
-                  <div style={{ marginBottom: "8px", fontSize: "12px", fontWeight: "600" }}>
+                  <div
+                    style={{
+                      marginBottom: "8px",
+                      fontSize: "12px",
+                      fontWeight: "600",
+                    }}
+                  >
                     Files ({packageInfo.files.length}):
                   </div>
 
@@ -1941,14 +2268,17 @@ function DropZone() {
                           fontSize: "11px",
                         }}
                       >
-                        <div style={{ fontWeight: "bold", marginBottom: "2px" }}>
+                        <div
+                          style={{ fontWeight: "bold", marginBottom: "2px" }}
+                        >
                           {file.fileName}
                         </div>
                         <div style={{ color: "var(--text-muted)" }}>
                           Size: {(file.fileSize / 1024 / 1024).toFixed(2)} MB
                           {file.createdDate && (
                             <span style={{ marginLeft: "8px" }}>
-                              Created: {new Date(file.createdDate).toLocaleDateString()}
+                              Created:{" "}
+                              {new Date(file.createdDate).toLocaleDateString()}
                             </span>
                           )}
                         </div>
@@ -1966,7 +2296,8 @@ function DropZone() {
                       color: "var(--text-muted)",
                     }}
                   >
-                    Note: File downloading from SendSafely is not yet implemented.
+                    Note: File downloading from SendSafely is not yet
+                    implemented.
                   </div>
                 </div>
               )}
@@ -2048,12 +2379,26 @@ function DropZone() {
                 maxHeight: "calc(80vh - 60px)",
               }}
             >
-              <div style={{ marginBottom: "16px", fontSize: "12px", lineHeight: "1.5" }}>
+              <div
+                style={{
+                  marginBottom: "16px",
+                  fontSize: "12px",
+                  lineHeight: "1.5",
+                }}
+              >
                 <p style={{ margin: "0 0 12px 0" }}>
-                  This is a recipient download link. To browse the package contents, you need the canonical package link.
+                  This is a recipient download link. To browse the package
+                  contents, you need the canonical package link.
                 </p>
 
-                <div style={{ margin: "12px 0", padding: "12px", backgroundColor: "var(--bg-tertiary)", borderRadius: "4px" }}>
+                <div
+                  style={{
+                    margin: "12px 0",
+                    padding: "12px",
+                    backgroundColor: "var(--bg-tertiary)",
+                    borderRadius: "4px",
+                  }}
+                >
                   <strong>Instructions:</strong>
                   <ol style={{ margin: "8px 0 0 0", paddingLeft: "20px" }}>
                     <li>Open the SendSafely link in a new tab</li>
@@ -2065,13 +2410,15 @@ function DropZone() {
               </div>
 
               <div style={{ marginBottom: "16px" }}>
-                <label style={{
-                  display: "block",
-                  marginBottom: "8px",
-                  fontSize: "12px",
-                  fontWeight: "500",
-                  color: "var(--text-primary)"
-                }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "8px",
+                    fontSize: "12px",
+                    fontWeight: "500",
+                    color: "var(--text-primary)",
+                  }}
+                >
                   Canonical Package Link:
                 </label>
                 <input
@@ -2129,8 +2476,12 @@ function DropZone() {
                   padding: "6px 12px",
                   border: "1px solid var(--border-primary)",
                   borderRadius: "4px",
-                  backgroundColor: canonicalLinkInput.trim() ? "var(--accent-primary)" : "var(--bg-secondary)",
-                  color: canonicalLinkInput.trim() ? "white" : "var(--text-muted)",
+                  backgroundColor: canonicalLinkInput.trim()
+                    ? "var(--accent-primary)"
+                    : "var(--bg-secondary)",
+                  color: canonicalLinkInput.trim()
+                    ? "white"
+                    : "var(--text-muted)",
                   fontSize: "12px",
                   cursor: canonicalLinkInput.trim() ? "pointer" : "not-allowed",
                   opacity: canonicalLinkInput.trim() ? 1 : 0.6,
