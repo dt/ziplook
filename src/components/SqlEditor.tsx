@@ -51,37 +51,6 @@ function SqlEditor({ tab }: SqlEditorProps) {
 
   const [editorHeight, setEditorHeight] = useState("52px"); // 2 lines + padding initially
 
-  // Helper function to determine column type from sample values
-  const getColumnType = (columnName: string, sampleRows: Record<string, unknown>[]): string => {
-    if (!sampleRows.length) return 'unknown';
-
-    const sampleValues = sampleRows.slice(0, 5).map(row => row[columnName]).filter(val => val !== null && val !== undefined);
-    if (!sampleValues.length) return 'null';
-
-    const firstValue = sampleValues[0];
-
-    if (typeof firstValue === 'number') {
-      return Number.isInteger(firstValue) ? 'int' : 'float';
-    }
-    if (typeof firstValue === 'boolean') return 'bool';
-    if (firstValue instanceof Date) return 'date';
-    if (typeof firstValue === 'string') {
-      // Check for common patterns
-      if (firstValue.startsWith('\\x')) return 'bytes';
-      if (firstValue.startsWith('{') || firstValue.startsWith('[')) {
-        try {
-          JSON.parse(firstValue);
-          return 'json';
-        } catch {
-          return 'text';
-        }
-      }
-      if (firstValue.match(/^\d{4}-\d{2}-\d{2}/)) return 'datetime';
-      return 'text';
-    }
-
-    return 'unknown';
-  };
 
   // Toggle column width between normal and collapsed
   const toggleColumnWidth = (columnName: string) => {
@@ -379,7 +348,6 @@ function SqlEditor({ tab }: SqlEditorProps) {
                   <tr>
                     {results[0] &&
                       Object.keys(results[0]).map((col) => {
-                        const columnType = getColumnType(col, results);
                         const isCollapsed = collapsedColumns.has(col);
                         return (
                           <th
@@ -387,17 +355,15 @@ function SqlEditor({ tab }: SqlEditorProps) {
                             className={isCollapsed ? 'collapsed-column' : ''}
                           >
                             <div className="column-header">
-                              <div className="column-name">{col}</div>
-                              <div className="column-meta">
-                                <span className="column-type">{columnType}</span>
-                                <span className="column-dot">•</span>
+                              <div className="column-name">
                                 <button
                                   className="column-toggle"
                                   onClick={() => toggleColumnWidth(col)}
                                   title={isCollapsed ? 'Expand column' : 'Collapse column'}
                                 >
-                                  {isCollapsed ? '>' : '<'}
+                                  {isCollapsed ? '▶' : '▼'}
                                 </button>
+                                {col}
                               </div>
                             </div>
                           </th>
