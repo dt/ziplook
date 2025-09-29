@@ -2,11 +2,12 @@ import { useMemo } from "react";
 import FilesView from "./sidebar/FilesView";
 import TablesView from "./sidebar/TablesView";
 import SearchView from "./sidebar/SearchView";
+import ProfilesView from "./sidebar/ProfilesView";
 import StackgazerView from "./sidebar/StackgazerView";
 import { useApp } from "../state/AppContext";
 
 interface SidebarProps {
-  activeView: "files" | "tables" | "search" | "stackgazer";
+  activeView: "files" | "tables" | "search" | "profiles" | "stackgazer";
   isVisible: boolean;
   width: number;
 }
@@ -46,6 +47,8 @@ function Sidebar({ activeView, isVisible, width }: SidebarProps) {
         return "Tables";
       case "search":
         return "Search";
+      case "profiles":
+        return "Profiles";
       case "stackgazer":
         return "Stack Traces";
     }
@@ -59,6 +62,8 @@ function Sidebar({ activeView, isVisible, width }: SidebarProps) {
         return <TablesView />;
       case "search":
         return <SearchView />;
+      case "profiles":
+        return <ProfilesView />;
       case "stackgazer":
         return <StackgazerView />;
     }

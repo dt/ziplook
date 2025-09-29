@@ -14,6 +14,7 @@ export type AppAction =
   | { type: "SET_ZIP"; name: string; size: number; entries: ZipEntryMeta[] }
   | { type: "OPEN_TAB"; tab: ViewerTab }
   | { type: "OPEN_NEW_FILE_TAB"; fileId: string; fileName: string }
+  | { type: "OPEN_PPROF_TAB"; fileId: string; fileName: string }
   | {
       type: "OPEN_FILE_AT_LINE";
       fileId: string;
@@ -164,6 +165,36 @@ function appReducer(state: AppState, action: AppAction): AppState {
       const uniqueId = `${action.fileId}_${timestamp}`;
       const newTab: ViewerTab = {
         kind: "file",
+        id: uniqueId,
+        fileId: action.fileId,
+        title: action.fileName,
+      };
+      return {
+        ...state,
+        openTabs: [...state.openTabs, newTab],
+        activeTabId: uniqueId,
+      };
+    }
+
+    case "OPEN_PPROF_TAB": {
+      // Check if a tab for this pprof file already exists
+      const existingTab = state.openTabs.find(
+        (tab) => tab.kind === "pprof" && tab.fileId === action.fileId,
+      );
+
+      if (existingTab) {
+        // Activate existing tab instead of creating duplicate
+        return {
+          ...state,
+          activeTabId: existingTab.id,
+        };
+      }
+
+      // Generate a unique ID for this new tab instance
+      const timestamp = Date.now();
+      const uniqueId = `pprof_${action.fileId}_${timestamp}`;
+      const newTab: ViewerTab = {
+        kind: "pprof",
         id: uniqueId,
         fileId: action.fileId,
         title: action.fileName,

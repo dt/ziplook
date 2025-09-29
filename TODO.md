@@ -8,12 +8,43 @@ Quick win: add a download links, e.g. for binary pprof files we don't support di
 
 - Can zip worker directly make a blob URL and pass it back for us to just show? or do we need to pull bytes back to main thread to make a blob URL?
 
-### pprof integration
+### Profile Browser
 
-It would be nice to render cpu and mem profiles inline, without needing to download and use pprof.
+Enhanced profile browsing and analysis capabilities for pprof files in debug bundles.
 
-- Is there a js version? should we just parse the proto ourselves?
-- iframe polar signals/something hosted?
+**Core Features:**
+
+1. **Download Links**
+   - Add download links to get one profile or all profiles (as a zip) for local pprof browsing
+   - Support individual profile downloads and bulk archive creation
+
+2. **Profile Summarization**
+   - Fetch and parse profile headers to get total %/inuse statistics
+   - Annotate the profile menu with summary information (CPU %, memory usage, etc.)
+   - Show profile metadata without full parsing
+
+3. **Memory Stats History Browsing**
+   - Read all memstats files from the bundle
+   - Show sparkline charts of memory usage over time
+   - Provide links to historical heap profiles at specific time points
+   - Timeline-based navigation of memory state
+
+4. **Profile Merging and Comparison**
+   - Combined cluster CPU profile (merge across nodes)
+   - Heap delta profiles (compare between time points)
+   - Cross-node profile analysis and hotspot identification
+   - Differential analysis tools
+
+5. **Enhanced Profile Display Options**
+   - Heap graph visualization
+   - TopN tables with sortable columns
+   - Interactive flame graphs with drill-down capability
+   - Call tree views with aggregation options
+
+**Implementation Notes:**
+- Leverage existing pprof parsing infrastructure
+- Integrate with current worker system for background processing
+- Consider memory usage for large profile merging operations
 
 ### Notetaking and persistent investigation sessions
 

@@ -55,5 +55,18 @@
     "vite": "^7.1.2",
     "vite-plugin-singlefile": "^2.3.0",
     "vitest": "^3.2.4"
-  }
+  },
+  "description": "A web application for exploring CockroachDB debug zip files. All processing happens locally in the browser.",
+  "main": "eslint.config.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dt/ziplook.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/dt/ziplook/issues"
+  },
+  "homepage": "https://github.com/dt/ziplook#readme"
 }

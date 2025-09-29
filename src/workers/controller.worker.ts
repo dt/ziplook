@@ -490,7 +490,6 @@ async function startStackParsing(): Promise<void> {
 
 // Load stack files on demand when Stackgazer is clicked
 async function loadStackFiles() {
-  console.log("🎯 Controller: Loading stack files on demand...");
 
   try {
     // Get the stored zip entries
@@ -548,7 +547,6 @@ async function loadStackFiles() {
       });
     }
 
-    console.log(`🎯 Controller: Loaded ${processedCount} stack files`);
   } catch (error) {
     console.error("❌ Controller: Stack loading failed:", error);
   }
@@ -816,12 +814,15 @@ self.onmessage = async (event: MessageEvent<Command>) => {
     // All other commands should use pure envelope routing
     if (command.to && workers.has(command.to)) {
       const targetWorker = workers.get(command.to)!;
+
       // Forward command as envelope message
-      targetWorker.postMessage({
+      const forwardedMessage = {
+        ...command,
         to: command.to,
         from: "mainThread",
-        ...command,
-      });
+      };
+
+      targetWorker.postMessage(forwardedMessage);
     } else {
       console.error(
         `🎯 Controller: Command missing 'to' field or unknown target: ${command.type}, to: ${command.to}`,

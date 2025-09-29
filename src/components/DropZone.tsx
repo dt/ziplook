@@ -1105,7 +1105,6 @@ function DropZone() {
       onStackProcessingComplete: (_stackFilesCount: number) => {
         // Stack files have been loaded and sent to iframe
         // stackData should already be populated via ADD_STACK_FILE actions
-        console.log(`🎯 Stack processing complete: ${_stackFilesCount} files`);
         dispatch({ type: "SET_STACKGAZER_READY", ready: true });
       },
       onFileList: (entries: ZipEntryMeta[]) => {

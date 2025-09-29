@@ -17,17 +17,13 @@ import type {
 interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
-  onChunk?: (
-    chunk: string,
-    progress: { loaded: number; total: number; done: boolean },
-  ) => void;
 }
 
 interface StreamingPendingRequest {
   resolve: (value: void) => void;
   reject: (error: Error) => void;
   onChunk: (
-    chunk: string,
+    chunk: Uint8Array,
     progress: { loaded: number; total: number; done: boolean },
   ) => void;
 }
@@ -208,9 +204,10 @@ export class WorkerManager implements IWorkerManager {
   async readFileStream(
     path: string,
     onChunk: (
-      chunk: string,
+      chunk: Uint8Array,
       progress: { loaded: number; total: number; done: boolean },
     ) => void,
+    options?: { decompress?: boolean },
   ): Promise<void> {
     const worker = await this.waitForWorker();
 
@@ -228,9 +225,11 @@ export class WorkerManager implements IWorkerManager {
         to: "zipWorker",
         path,
         id,
+        decompress: options?.decompress || false,
       });
     });
   }
+
 
   cancelStream(): void {
     this.sendMessage({ type: "cancelStream", to: "zipWorker" });
@@ -283,18 +282,16 @@ export class WorkerManager implements IWorkerManager {
       message.result?.type === "readFileChunk"
     ) {
       const pending = this.pendingRequests.get(message.id);
-      if (pending && "onChunk" in pending && pending.onChunk) {
-        // Decode bytes to text for file viewer
+      if (pending && "onChunk" in pending) {
+        // Pass through raw bytes - consumers can decode if needed
         const chunk = message.result.bytes;
-        const decodedChunk =
-          chunk instanceof Uint8Array ? new TextDecoder().decode(chunk) : chunk;
         const progressInfo = {
           done: message.result.done,
           loaded: chunk?.length || 0,
           total: 0, // Total not available in chunk format
         };
         (pending as StreamingPendingRequest).onChunk(
-          decodedChunk,
+          chunk,
           progressInfo,
         );
 
@@ -415,7 +412,6 @@ export class WorkerManager implements IWorkerManager {
         break;
 
       case "fileList":
-        console.log(`🎯 File list received: ${message.totalFiles} files`);
         this.options.onFileList?.(
           message.entries as ZipEntryMeta[],
           message.totalFiles as number,
@@ -436,7 +432,6 @@ export class WorkerManager implements IWorkerManager {
         break;
 
       case "status":
-        console.log(`🎯 Status: ${message.message}`);
         break;
 
       case "error":
@@ -482,7 +477,6 @@ export class WorkerManager implements IWorkerManager {
         break;
 
       default:
-        console.log("🎯 Unknown notification:", message);
     }
   }
 }

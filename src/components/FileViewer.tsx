@@ -55,10 +55,12 @@ function FileViewer({ tab }: FileViewerProps) {
       await reader.readFileStream(
         tab.fileId || tab.id, // Use fileId if available, fallback to id for backwards compatibility
         (
-          chunk: string,
+          chunk: Uint8Array,
           info: { loaded: number; total: number; done: boolean },
         ) => {
-          accumulatedContent += chunk;
+          // Decode chunk to text for file viewer
+          const textChunk = new TextDecoder().decode(chunk, { stream: !info.done });
+          accumulatedContent += textChunk;
 
           // Update progress
           const percent =

@@ -43,6 +43,12 @@ export type ViewerTab =
       title: string;
       query: string;
       results?: SearchResult[];
+    }
+  | {
+      kind: "pprof";
+      id: string;
+      fileId: ZipEntryId;
+      title: string;
     };
 
 export interface TableMeta {
@@ -194,9 +200,10 @@ export interface IWorkerManager {
   readFileStream(
     path: string,
     onChunk: (
-      chunk: string,
+      chunk: Uint8Array,
       progress: { loaded: number; total: number; done: boolean },
     ) => void,
+    options?: { decompress?: boolean },
   ): Promise<void>;
   cancelStream(): void;
 

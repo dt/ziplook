@@ -4,6 +4,7 @@ import type { ZipEntryMeta } from "../state/types";
 import { matchesFilter } from "../utils/filterUtils";
 import { useKeyboardNavigation } from "../hooks/useKeyboardNavigation";
 import type { NavigationItem } from "../hooks/useKeyboardNavigation";
+import { isPprofFile } from "../utils/pprofDetection";
 
 interface FileTreeProps {
   entries: ZipEntryMeta[];
@@ -176,11 +177,19 @@ function FileTree({ entries, filter }: FileTreeProps) {
   // }, [navigation.setItems, tree, expandedPaths, collectVisibleFiles]);
 
   const handleFileClick = (entry: ZipEntryMeta) => {
-    dispatch({
-      type: "OPEN_NEW_FILE_TAB",
-      fileId: entry.id,
-      fileName: entry.name,
-    });
+    if (isPprofFile(entry.name)) {
+      dispatch({
+        type: "OPEN_PPROF_TAB",
+        fileId: entry.id,
+        fileName: entry.path, // Use full path instead of just name
+      });
+    } else {
+      dispatch({
+        type: "OPEN_NEW_FILE_TAB",
+        fileId: entry.id,
+        fileName: entry.name,
+      });
+    }
   };
 
   const toggleFolder = (path: string) => {

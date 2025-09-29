@@ -14,7 +14,7 @@ import { NavigationProvider } from "./components/NavigationProvider";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useKeyboardNavigation } from "./hooks/useKeyboardNavigation";
 
-type ActiveView = "files" | "tables" | "search" | "stackgazer";
+type ActiveView = "files" | "tables" | "search" | "profiles" | "stackgazer";
 
 function AppContent() {
   const { state, dispatch } = useApp();

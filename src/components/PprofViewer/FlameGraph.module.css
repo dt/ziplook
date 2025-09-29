@@ -1,0 +1,56 @@
+/* Flame graph specific styles */
+.flameGraph {
+  position: relative;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: auto;
+}
+
+.flameBox {
+  position: absolute;
+  overflow: hidden;
+  box-sizing: border-box;
+  background: #d8d8d8;
+  border: 1px solid var(--pprof-border-color, #ffffff);
+  font-family: monospace;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--pprof-text-color, #000000);
+  line-height: 18px;
+  padding: 1px 2px;
+  white-space: nowrap;
+  transition: all 0.1s ease;
+}
+
+.flameBox:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 0 0 1px var(--pprof-highlight-color, #000000);
+}
+
+.flameBoxHighlighted {
+  box-shadow: 0 0 0 2px var(--pprof-highlight-color, #000000);
+  z-index: 1;
+}
+
+.flameBoxFocused {
+  font-weight: var(--pprof-focused-font-weight, bold);
+}
+
+.flameBoxNoSideBorders {
+  border-left: none !important;
+  border-right: none !important;
+}
+
+.fadeOut {
+  pointer-events: none;
+  border-left: none;
+  border-right: none;
+}
+
+.fadeOutLeft {
+  composes: fadeOut;
+}
+
+.fadeOutRight {
+  composes: fadeOut;
+}

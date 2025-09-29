@@ -79,7 +79,7 @@ function TabBar() {
           ) : (
             <span className="tab-title" title={tab.title}>
               <span className="tab-icon">
-                {tab.kind === "file" ? "📄" : tab.kind === "sql" ? "📖" : "⚠️"}
+                {tab.kind === "file" ? "📄" : tab.kind === "sql" ? "📖" : tab.kind === "pprof" ? "📈" : "⚠️"}
               </span>
               {tab.title}
             </span>

@@ -1,6 +1,6 @@
 interface IconRailProps {
-  activeView: "files" | "tables" | "search" | "stackgazer";
-  onViewChange: (view: "files" | "tables" | "search" | "stackgazer") => void;
+  activeView: "files" | "tables" | "search" | "profiles" | "stackgazer";
+  onViewChange: (view: "files" | "tables" | "search" | "profiles" | "stackgazer") => void;
 }
 
 function IconRail({ activeView, onViewChange }: IconRailProps) {
@@ -80,6 +80,29 @@ function IconRail({ activeView, onViewChange }: IconRailProps) {
             strokeWidth="3"
             strokeLinecap="round"
           />
+        </svg>
+      </button>
+      <button
+        className={`icon-rail-item ${activeView === "profiles" ? "active" : ""}`}
+        onClick={() => onViewChange("profiles")}
+        title="Profiles"
+      >
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
+          {/* Gauge arc - flipped to top like rainbow */}
+          <path d="M3 12a9 9 0 0 1 18 0" strokeLinecap="round" />
+          {/* Gauge markings */}
+          <path d="M6.34 6.34L7.05 7.05M17.66 6.34L16.95 7.05M4 12h1M20 12h-1" />
+          {/* Needle pointing to middle-right (indicating some usage) */}
+          <path d="M12 12L16 8" strokeWidth="2.5" strokeLinecap="round" />
+          {/* Center dot */}
+          <circle cx="12" cy="12" r="1.5" fill="currentColor" />
         </svg>
       </button>
       <button

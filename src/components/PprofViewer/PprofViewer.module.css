@@ -1,0 +1,207 @@
+/* CSS Custom Properties for theming */
+.container {
+  --pprof-bg-color: var(--pprof-background-color, #ffffff);
+  --pprof-border-color: var(--pprof-border-color, #ccc);
+  --pprof-text-color: var(--pprof-text-color, #212121);
+  --pprof-header-bg-color: var(--pprof-header-background-color, #eee);
+  --pprof-header-text-color: var(--pprof-header-text-color, #212121);
+  --pprof-tooltip-bg-color: var(--pprof-tooltip-background-color, rgba(0, 0, 0, 0.8));
+  --pprof-tooltip-text-color: var(--pprof-tooltip-text-color, #ffffff);
+  --pprof-highlight-color: var(--pprof-highlight-color, #000000);
+  --pprof-focused-font-weight: var(--pprof-focused-font-weight, bold);
+  --pprof-dropzone-bg-color: var(--pprof-dropzone-background-color, #f9f9f9);
+  --pprof-dropzone-border-color: var(--pprof-dropzone-border-color, #ccc);
+
+  font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';
+  font-size: 13px;
+  line-height: 1.4;
+  display: flex;
+  flex-direction: column;
+  background: var(--pprof-bg-color);
+  color: var(--pprof-text-color);
+  height: 100%;
+  min-height: 400px;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--pprof-header-bg-color);
+  color: var(--pprof-header-text-color);
+  padding: 8px 1rem;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  gap: 8px;
+  border-bottom: 1px solid var(--pprof-border-color);
+}
+
+.headerCompact {
+  composes: header;
+  padding: 4px 1rem;
+  gap: 4px;
+}
+
+.headerRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.headerRowCompact {
+  composes: headerRow;
+  gap: 12px;
+}
+
+.headerRow > *:first-child {
+  margin-left: 8px;
+}
+
+.headerRowCompact > *:first-child {
+  margin-left: 0;
+}
+
+.select,
+.input {
+  padding: 4px 8px;
+  border: 1px solid var(--pprof-border-color);
+  border-radius: 3px;
+  font-size: 12px;
+  background: var(--pprof-bg-color);
+  color: var(--pprof-text-color);
+}
+
+.selectCompact {
+  composes: select;
+  padding: 8px 16px;
+  font-size: 14px;
+  border: none;
+  border-bottom: 2px solid var(--accent-color, #007acc);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-color, #ffffff);
+  min-width: 200px;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23007acc' d='M6 9L1.5 4.5h9z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px;
+  padding-right: 40px;
+}
+
+.selectCompact:focus {
+  outline: none;
+  border-bottom-color: var(--accent-color, #007acc);
+  box-shadow: none;
+}
+
+.selectCompact:active {
+  outline: none;
+  box-shadow: none;
+}
+
+.inputCompact {
+  composes: input;
+  padding: 8px 16px;
+  font-size: 14px;
+  border: none;
+  border-bottom: 1px solid var(--border-color, #444);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-color, #ffffff);
+  width: 200px;
+  max-width: 200px;
+}
+
+.inputCompact:focus {
+  outline: none;
+  border-bottom-color: var(--accent-color, #007acc);
+}
+
+.focusInfo {
+  font-size: 1.4em;
+  max-width: 60%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.focusInfoCompact {
+  composes: focusInfo;
+  font-size: 1.2em;
+  max-width: 70%;
+}
+
+.focusStats {
+  font-size: 1.4em;
+  max-width: 40%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+
+.focusStatsCompact {
+  composes: focusStats;
+  font-size: 1.2em;
+  max-width: 30%;
+}
+
+.dropZone {
+  border: 2px dashed var(--pprof-dropzone-border-color);
+  border-radius: 4px;
+  padding: 20px;
+  text-align: center;
+  margin: 10px;
+  background: var(--pprof-dropzone-bg-color);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.dropZone:hover {
+  border-color: var(--pprof-border-color);
+  background: color-mix(in srgb, var(--pprof-dropzone-bg-color) 90%, var(--pprof-border-color) 10%);
+}
+
+.dropZoneDragover {
+  border-color: var(--pprof-highlight-color);
+  background: color-mix(in srgb, var(--pprof-dropzone-bg-color) 80%, var(--pprof-border-color) 20%);
+}
+
+.flameGraph {
+  width: 100%;
+  position: relative;
+  padding: 2px;
+  flex: 1;
+  overflow: auto;
+}
+
+.error {
+  color: #e74c3c;
+  padding: 20px;
+  text-align: center;
+  background: #fdf2f2;
+  border: 1px solid #fbb;
+  border-radius: 4px;
+  margin: 10px;
+}
+
+.tooltip {
+  position: absolute;
+  padding: 8px;
+  background: var(--pprof-tooltip-bg-color);
+  color: var(--pprof-tooltip-text-color);
+  border-radius: 4px;
+  pointer-events: none;
+  font-size: 12px;
+  z-index: 1000;
+  max-width: 300px;
+  word-wrap: break-word;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.hidden {
+  display: none;
+}

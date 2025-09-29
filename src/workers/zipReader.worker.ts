@@ -108,6 +108,7 @@ type ReadFileChunkedMsg = {
   id: string;
   path: string; // entry path as returned by getEntries
   chunkSize?: number; // post-decompression chunk size (default ~256KB)
+  decompress?: boolean; // decompress file content (e.g., gzip files within zip)
   to?: string; // for routing support
   from?: string; // for routing support
 };
@@ -421,6 +422,11 @@ function parseLocalHeaderForDataStart(
 
 // -------------------- Utility helpers --------------------
 
+function verifyGzipMagicBytes(bytes: Uint8Array): boolean {
+  // Gzip magic bytes: 0x1f 0x8b
+  return bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+}
+
 function toMeta(e: ZipEntryInternal): ZipEntryMeta {
   return {
     id: e.path,
@@ -594,7 +600,7 @@ async function onGetEntries(msg: GetEntriesMsg) {
 }
 
 async function onReadFileChunked(msg: ReadFileChunkedMsg) {
-  const { id, path } = msg;
+  const { id, path, decompress } = msg;
   const chunkOutSize = msg.chunkSize ?? 256 * 1024;
 
   // Check if this is a routed message (has 'from' field)
@@ -627,18 +633,12 @@ async function onReadFileChunked(msg: ReadFileChunkedMsg) {
     // Build a stream of *compressed* bytes via the provider
     const compStream = makeRangeStream(provider, dataStart, compSize);
 
-    if (entry.method === 0 /* Stored */) {
-      const reader = compStream.getReader();
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        if (value) await chunkAndEmit(value as Uint8Array, chunkOutSize, emit);
-      }
-      emit(new Uint8Array(0), true);
-      return;
-    }
+    // First decompress from ZIP format (deflate or stored)
+    let fileContentStream: ReadableStream<Uint8Array>;
 
-    if (entry.method === 8 /* Deflate */) {
+    if (entry.method === 0 /* Stored */) {
+      fileContentStream = compStream;
+    } else if (entry.method === 8 /* Deflate */) {
       // Feature detection for DecompressionStream without global mutation
       if (typeof DecompressionStream === "undefined") {
         throw new Error(
@@ -646,23 +646,70 @@ async function onReadFileChunked(msg: ReadFileChunkedMsg) {
         );
       }
       const Decomp = DecompressionStream;
-      const plainStream = compStream.pipeThrough(
+      fileContentStream = compStream.pipeThrough(
         new Decomp("deflate-raw") as ReadableWritablePair<
           Uint8Array,
           Uint8Array
         >,
       );
-      const reader = plainStream.getReader();
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        if (value) await chunkAndEmit(value as Uint8Array, chunkOutSize, emit);
-      }
-      emit(new Uint8Array(0), true);
-      return;
+    } else {
+      throw new Error(`Unsupported compression method: ${entry.method}`);
     }
 
-    throw new Error(`Unsupported compression method: ${entry.method}`);
+    // If decompress option is true, apply additional gzip decompression
+    if (decompress) {
+      if (typeof DecompressionStream === "undefined") {
+        throw new Error(
+          "DecompressionStream API not available in this environment",
+        );
+      }
+
+      // Verify gzip magic bytes by reading first chunk
+      const gzipReader = fileContentStream.getReader();
+      const { value: firstChunk, done: isFirstDone } = await gzipReader.read();
+
+      if (isFirstDone || !firstChunk) {
+        throw new Error("File is empty, cannot verify gzip format");
+      }
+
+
+      if (!verifyGzipMagicBytes(firstChunk)) {
+        throw new Error("File does not have gzip magic bytes (0x1f 0x8b)");
+      }
+
+
+      // Create a new stream starting with the first chunk, then the rest
+      const gzipStream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(firstChunk);
+        },
+        async pull(controller) {
+          const { value, done } = await gzipReader.read();
+          if (done) {
+            controller.close();
+          } else {
+            controller.enqueue(value);
+          }
+        },
+        cancel() {
+          gzipReader.cancel();
+        }
+      });
+
+      const Decomp = DecompressionStream;
+      fileContentStream = gzipStream.pipeThrough(
+        new Decomp("gzip") as ReadableWritablePair<Uint8Array, Uint8Array>
+      );
+    }
+
+    // Stream the final content in chunks
+    const reader = fileContentStream.getReader();
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value) await chunkAndEmit(value as Uint8Array, chunkOutSize, emit);
+    }
+    emit(new Uint8Array(0), true);
   } catch (e) {
     errMessage(id, e);
   }
@@ -762,7 +809,6 @@ class SendSafelyProvider implements BytesProvider {
   private apiKey: string;
   private apiSecret: string;
   private keyCode: string;
-  private fileName: string;
 
   // Hydrated from package info (provided by frontend)
   private packageId: string;
@@ -809,7 +855,7 @@ class SendSafelyProvider implements BytesProvider {
     }>;
     const f = files.find((x) => x.fileId === this.fileId) ?? files[0];
     if (!f) throw new Error(`File not found in package: ${this.fileId}`);
-    this.fileName = f.fileName;
+    // fileName stored but not used
     this.fileSize = f.fileSize;
     this.parts = f.parts;
 

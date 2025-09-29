@@ -506,9 +506,11 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
       await state.workerManager.readFileStream(
         fileEntry.path,
         (
-          chunk: string,
+          chunk: Uint8Array,
           progressInfo: { loaded: number; total: number; done: boolean },
         ) => {
+          // Decode chunk to text for file viewer
+          const textChunk = new TextDecoder().decode(chunk, { stream: !progressInfo.done });
           // In preview mode, stop accumulating after preview size limit
           if (
             isPreviewMode &&
@@ -527,7 +529,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
             return;
           }
 
-          accumulatedContent += chunk;
+          accumulatedContent += textChunk;
 
           // Check content for binary on first chunk (if extension didn't already detect it)
           if (!hasCheckedContent && accumulatedContent.length >= 1024) {

@@ -3,6 +3,7 @@ import TabBar from "./TabBar";
 import FileViewer from "./FileViewer";
 import SqlEditor from "./SqlEditor";
 import ErrorViewer from "./ErrorViewer";
+import { PprofTab } from "./PprofTab";
 import DropZone from "./DropZone";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useCallback } from "react";
@@ -106,6 +107,7 @@ function MainPanel() {
               >
                 {tab.kind === "file" && <FileViewer tab={tab} />}
                 {tab.kind === "sql" && <SqlEditor tab={tab} />}
+                {tab.kind === "pprof" && <PprofTab tab={tab} />}
                 {tab.kind === "error" && (
                   <ErrorViewer
                     error={tab.error}
