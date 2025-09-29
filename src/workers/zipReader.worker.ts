@@ -881,16 +881,10 @@ class SendSafelyProvider implements BytesProvider {
     const chunksToProbe = [];
     if (this.parts >= 1) chunksToProbe.push(0); // first
     if (this.parts >= 2) chunksToProbe.push(1); // second
-    if (this.parts >= 3) chunksToProbe.push(this.parts - 2); // penultimate
-    if (this.parts >= 4) chunksToProbe.push(this.parts - 1); // last
+    if (this.parts >= 3) chunksToProbe.push(this.parts - 3); // antipenultimate
+    if (this.parts >= 4) chunksToProbe.push(this.parts - 2); // penultimate
+    if (this.parts >= 5) chunksToProbe.push(this.parts - 1); // last
 
-    // If we have fewer than 4 parts, adjust our probe strategy
-    if (this.parts < 4) {
-      // Probe all available chunks
-      for (let i = 0; i < this.parts; i++) {
-        if (!chunksToProbe.includes(i)) chunksToProbe.push(i);
-      }
-    }
 
     // Decrypt each probe chunk and measure plaintext sizes
     const chunkInfo: Array<{ chunkIdx: number; plaintextSize: number }> = [];
@@ -928,6 +922,9 @@ class SendSafelyProvider implements BytesProvider {
       // Four or more chunks - verify middle chunks are consistent
       const firstInfo = chunkInfo.find((c) => c.chunkIdx === 0);
       const secondInfo = chunkInfo.find((c) => c.chunkIdx === 1);
+      const antepenultimateInfo = chunkInfo.find(
+        (c) => c.chunkIdx === this.parts - 3,
+      );
       const penultimateInfo = chunkInfo.find(
         (c) => c.chunkIdx === this.parts - 2,
       );
@@ -935,10 +932,19 @@ class SendSafelyProvider implements BytesProvider {
 
       if (!firstInfo || !secondInfo || !penultimateInfo || !lastInfo) {
         throw new Error("Failed to probe required chunks");
-      }
+      }        
 
       // Verify second and penultimate chunks are the same size (middle chunk pattern)
-      if (secondInfo.plaintextSize !== penultimateInfo.plaintextSize) {
+      if (secondInfo.plaintextSize !== penultimateInfo.plaintextSize && (lastInfo.plaintextSize >0 || secondInfo.plaintextSize !== antepenultimateInfo?.plaintextSize)) {
+        // Debug logging for chunk sizes
+          console.log(`Chunk size debugging:
+            First chunk (0): ${firstInfo.plaintextSize}B
+            Second chunk (1): ${secondInfo.plaintextSize}B
+            Antepenultimate chunk (${this.parts - 3}): ${antepenultimateInfo?.plaintextSize || 'N/A'} B
+            Penultimate chunk (${this.parts - 2}): ${penultimateInfo?.plaintextSize || 'N/A'}B
+            Last chunk (${this.parts - 1}): ${lastInfo?.plaintextSize || 'N/A'}B
+            Total parts: ${this.parts}`);
+
         throw new Error(
           `Middle chunks have different sizes: chunk 1=${secondInfo.plaintextSize}B, chunk ${this.parts - 2}=${penultimateInfo.plaintextSize}B`,
         );
