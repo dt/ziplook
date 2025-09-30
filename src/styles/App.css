@@ -183,7 +183,7 @@ body {
 .tab {
   min-width: 120px;
   max-width: 400px;
-  flex: 1;
+  flex: 0 0 auto;
   height: 100%;
   padding: 0 12px;
   background: var(--bg-tertiary);
@@ -219,8 +219,6 @@ body {
 
 .tab-title {
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   margin-right: 8px;
 }

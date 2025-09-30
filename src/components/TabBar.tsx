@@ -6,6 +6,8 @@ function TabBar() {
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const editInputRef = useRef<HTMLInputElement>(null);
+  const tabBarRef = useRef<HTMLDivElement>(null);
+  const activeTabRef = useRef<HTMLDivElement>(null);
 
   const handleTabClick = (tabId: string) => {
     if (!editingTabId) {
@@ -57,11 +59,23 @@ function TabBar() {
     }
   }, [editingTabId]);
 
+  // Scroll active tab into view when activeTabId changes
+  useEffect(() => {
+    if (activeTabRef.current && tabBarRef.current) {
+      activeTabRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'center'
+      });
+    }
+  }, [state.activeTabId]);
+
   return (
-    <div className="tab-bar">
+    <div className="tab-bar" ref={tabBarRef}>
       {state.openTabs.map((tab) => (
         <div
           key={tab.id}
+          ref={state.activeTabId === tab.id ? activeTabRef : null}
           className={`tab ${state.activeTabId === tab.id ? "active" : ""}`}
           onClick={() => handleTabClick(tab.id)}
           onDoubleClick={() => handleTabDoubleClick(tab.id)}

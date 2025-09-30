@@ -8,7 +8,7 @@ import DropZone from "./DropZone";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useCallback } from "react";
 
-function MainPanel() {
+function MainPanel({ style }: { style?: React.CSSProperties }) {
   const { state, dispatch } = useApp();
 
   // Keyboard shortcuts for tab navigation
@@ -75,7 +75,7 @@ function MainPanel() {
 
   if (!state.zip || state.tablesLoading) {
     return (
-      <div className="main-panel">
+      <div className="main-panel" style={style}>
         <div className="content-area">
           <DropZone />
         </div>
@@ -84,7 +84,7 @@ function MainPanel() {
   }
 
   return (
-    <div className="main-panel">
+    <div className="main-panel" style={style}>
       {state.openTabs.length > 0 && <TabBar />}
       <div className="content-area">
         {state.openTabs.length === 0 ? (

@@ -10,9 +10,10 @@ interface SidebarProps {
   activeView: "files" | "tables" | "search" | "profiles" | "stackgazer";
   isVisible: boolean;
   width: number;
+  style?: React.CSSProperties;
 }
 
-function Sidebar({ activeView, isVisible, width }: SidebarProps) {
+function Sidebar({ activeView, isVisible, width, style }: SidebarProps) {
   const { state } = useApp();
 
   // Calculate loading progress for tables view
@@ -72,7 +73,10 @@ function Sidebar({ activeView, isVisible, width }: SidebarProps) {
   return (
     <div
       className={`sidebar ${!isVisible ? "collapsed" : ""}`}
-      style={{ width: isVisible ? `${width}px` : undefined }}
+      style={{
+        width: isVisible ? `${width}px` : undefined,
+        ...style
+      }}
     >
       <div className="sidebar-header">
         <span>{getTitle()}</span>

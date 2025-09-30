@@ -254,22 +254,25 @@ function AppContent() {
         }`}
       >
         <IconRail activeView={activeView} onViewChange={handleViewChange} />
-        {!isStackgazerFullScreen && (
-          <>
-            <Sidebar
-              activeView={activeView}
-              isVisible={sidebarVisible}
-              width={sidebarWidth}
-            />
-            {sidebarVisible && (
-              <div
-                className="sidebar-resize-handle"
-                onMouseDown={handleMouseDown}
-              />
-            )}
-            <MainPanel />
-          </>
+        <Sidebar
+          activeView={activeView}
+          isVisible={sidebarVisible && !isStackgazerFullScreen}
+          width={sidebarWidth}
+          style={{
+            display: isStackgazerFullScreen ? 'none' : undefined
+          }}
+        />
+        {sidebarVisible && !isStackgazerFullScreen && (
+          <div
+            className="sidebar-resize-handle"
+            onMouseDown={handleMouseDown}
+          />
         )}
+        <MainPanel
+          style={{
+            display: isStackgazerFullScreen ? 'none' : 'flex'
+          }}
+        />
         {/* Preloaded iframe that gets repositioned when stackgazer is active */}
         <div
           id="stackgazer-iframe-container"
