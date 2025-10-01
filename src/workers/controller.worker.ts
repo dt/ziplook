@@ -516,6 +516,40 @@ async function loadStackFiles() {
       message: "Loading stack files...",
     });
 
+    // Compute common prefix and suffix for display names
+    let commonPrefix = "";
+    let commonSuffix = "";
+
+    if (stackFiles.length > 1) {
+      // Find common prefix - compare character by character
+      const firstPath = stackFiles[0].path;
+      let prefixLen = firstPath.length;
+      let suffixLen = firstPath.length;
+
+      for (const stackFile of stackFiles) {
+        const path = stackFile.path;
+
+        // Find how many characters match at the start
+        let matchStart = 0;
+        while (matchStart < prefixLen && matchStart < path.length &&
+               firstPath[matchStart] === path[matchStart]) {
+          matchStart++;
+        }
+        prefixLen = matchStart;
+
+        // Find how many characters match at the end
+        let matchEnd = 0;
+        while (matchEnd < suffixLen && matchEnd < path.length &&
+               firstPath[firstPath.length - 1 - matchEnd] === path[path.length - 1 - matchEnd]) {
+          matchEnd++;
+        }
+        suffixLen = matchEnd;
+      }
+
+      commonPrefix = firstPath.substring(0, prefixLen);
+      commonSuffix = firstPath.substring(firstPath.length - suffixLen);
+    }
+
     // Process each stack file individually
     let processedCount = 0;
     for (const stackFile of stackFiles) {
@@ -523,10 +557,24 @@ async function loadStackFiles() {
         // Request file content from zip worker
         const fileContent = await readStackFile(stackFile.path);
 
+        // Compute display name by removing common prefix/suffix
+        let name = stackFile.path;
+        if (commonPrefix.length > 0) {
+          name = name.substring(commonPrefix.length);
+        }
+        if (commonSuffix.length > 0 && name.endsWith(commonSuffix)) {
+          name = name.substring(0, name.length - commonSuffix.length);
+        }
+        // If name is empty after trimming, use the full path
+        if (name.length === 0) {
+          name = stackFile.path;
+        }
+
         // Send each file individually to UI
         notify({
           type: "sendStackFileToIframe",
           path: stackFile.path,
+          name: name,
           content: fileContent,
         });
 

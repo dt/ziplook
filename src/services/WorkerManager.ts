@@ -422,6 +422,7 @@ export class WorkerManager implements IWorkerManager {
         this.options.onSendStackFileToIframe?.(
           message.path as string,
           message.content as string,
+          message.name as string | undefined,
         );
         break;
 

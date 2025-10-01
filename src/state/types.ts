@@ -228,7 +228,7 @@ export interface IWorkerManagerCallbacks {
   onLoadingStage?: (stage: string, message: string) => void;
   onFileList?: (entries: ZipEntryMeta[], totalFiles: number) => void;
   onTableAdded?: (table: TableData) => void;
-  onSendStackFileToIframe?: (path: string, content: string) => void;
+  onSendStackFileToIframe?: (path: string, content: string, name?: string) => void;
   onStackProcessingComplete?: (stackFilesCount: number) => void;
 
   // Indexing callbacks

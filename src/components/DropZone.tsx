@@ -1078,7 +1078,7 @@ function DropZone() {
           setLoading(false);
         }
       },
-      onSendStackFileToIframe: (path: string, content: string) => {
+      onSendStackFileToIframe: (path: string, content: string, name?: string) => {
         // Add to React state for UI logic
         dispatch({ type: "ADD_STACK_FILE", filePath: path, content: content });
 
@@ -1092,6 +1092,7 @@ function DropZone() {
                 {
                   type: "LOAD_STACK_FILE",
                   path: path,
+                  name: name,
                   content: content,
                 },
                 window.location.origin,
@@ -1432,7 +1433,7 @@ function DropZone() {
 
             // Stack data is now sent directly by controller via onSendStackDataToIframe callback
           },
-          onSendStackFileToIframe: (path: string, content: string) => {
+          onSendStackFileToIframe: (path: string, content: string, name?: string) => {
             // Add to React state for UI logic
             dispatch({
               type: "ADD_STACK_FILE",
@@ -1451,6 +1452,7 @@ function DropZone() {
                     {
                       type: "LOAD_STACK_FILE",
                       path: path,
+                      name: name,
                       content: content,
                     },
                     window.location.origin,
