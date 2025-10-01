@@ -180,6 +180,7 @@ export interface SendSafelyConfig {
 export interface IWorkerManager {
   // Core operations
   loadZipData(zipData: Uint8Array): Promise<ZipEntryMeta[]>;
+  loadZipFile(file: File): Promise<ZipEntryMeta[]>;
   loadZipDataFromSendSafely(config: SendSafelyConfig): Promise<ZipEntryMeta[]>;
   initializeWorkers(): Promise<void>;
   destroy(): void;

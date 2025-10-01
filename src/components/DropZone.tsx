@@ -1402,12 +1402,6 @@ function DropZone() {
       setError(null);
 
       try {
-        setLoadingMessage("Loading file into memory...");
-
-        // Read file with progress tracking
-        const arrayBuffer = await file.arrayBuffer();
-        const uint8Array = new Uint8Array(arrayBuffer);
-
         // Wait for workers to be ready (they're initializing eagerly in background)
         let workerManager = state.workerManager;
         if (!state.workersReady || !workerManager) {
@@ -1577,8 +1571,9 @@ function DropZone() {
         });
 
         // Just trigger the loading - controller will drive everything from here
+        // For large files, pass the File object directly to avoid loading into memory
         // Starting controller-driven pipeline
-        await workerManager.loadZipData(uint8Array);
+        await workerManager.loadZipFile(file);
       } catch (err) {
         console.error("Failed to read zip:", err);
         setError(

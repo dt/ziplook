@@ -78,6 +78,13 @@ export class WorkerManager implements IWorkerManager {
     return [];
   }
 
+  async loadZipFile(file: File): Promise<ZipEntryMeta[]> {
+    // Pass File object directly for large files to avoid loading into memory
+    await this.sendMessage({ type: "loadZipFile", file });
+    // Return empty array - main thread will get notifications with actual entries
+    return [];
+  }
+
   async loadZipDataFromSendSafely(
     sendSafelyConfig: SendSafelyConfig,
   ): Promise<ZipEntryMeta[]> {

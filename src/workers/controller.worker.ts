@@ -186,7 +186,66 @@ async function initializeDatabase(): Promise<void> {
   });
 }
 
-// Load zip file and run the entire pipeline
+// Load zip file from File object and run the entire pipeline
+async function loadZipFromFile(file: File): Promise<void> {
+  try {
+    // Reset pipeline state
+    stackParsingCompleted = false;
+
+    // Stage 1: Reading zip file
+    notify({
+      type: "loadingStage",
+      stage: "reading-zip",
+      message: "Loading zip file...",
+    });
+
+    const zipEntries = await loadZipDataFromFile(file);
+
+    // Stage 2: Scanning files
+    notify({
+      type: "loadingStage",
+      stage: "scanning-files",
+      message: `Scanning ${zipEntries.length} files...`,
+    });
+
+    // Notify main thread about file list
+    notify({
+      type: "fileList",
+      entries: zipEntries,
+      totalFiles: zipEntries.length,
+    });
+
+    // Store zip entries in worker scope for later stages
+    self.zipEntries = zipEntries;
+
+    // Stage 3: Table loading - let DB worker decide what to load
+    notify({
+      type: "loadingStage",
+      stage: "table-loading",
+      message: "Starting table loading...",
+    });
+
+    // Send the full file listing to DB worker - let it decide what to load
+    if (dbWorker) {
+      dbWorker.postMessage({
+        type: "processFileList",
+        id: generateId(),
+        fileList: zipEntries,
+      });
+    }
+
+    // Zip file processing complete, table loading in progress
+  } catch (error) {
+    console.error("❌ Controller: Load failed:", error);
+    notify({
+      type: "error",
+      message: `Load failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+    });
+    throw error;
+  }
+}
+
+// Load zip file from buffer and run the entire pipeline
 async function loadZipFile(zipData: Uint8Array): Promise<void> {
   try {
     // Reset pipeline state
@@ -319,7 +378,71 @@ async function loadZipFileFromSendSafely(
   }
 }
 
-// Load zip data into zip worker
+// Load zip data from File object into zip worker
+async function loadZipDataFromFile(file: File): Promise<ZipEntryMeta[]> {
+  if (!zipWorker) throw new Error("Zip worker not initialized");
+
+  // First initialize the zip worker with File object
+  await new Promise<void>((resolve, reject) => {
+    const id = generateId();
+    const timeout = setTimeout(
+      () => reject(new Error("Zip initialization timeout")),
+      30000,
+    );
+
+    pendingRequests.set(id, {
+      resolve: (response: WorkerResponse) => {
+        clearTimeout(timeout);
+        if (response.type === "initializeComplete") {
+          resolve();
+        } else if (response.type === "error") {
+          reject(new Error(response.error || "Failed to initialize zip"));
+        }
+      },
+      reject: (error: Error) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
+    });
+
+    zipWorker!.postMessage({
+      type: "initialize",
+      id,
+      file: file,
+    });
+  });
+
+  // Then get the entries
+  return new Promise((resolve, reject) => {
+    const id = generateId();
+    const timeout = setTimeout(
+      () => reject(new Error("Get entries timeout")),
+      30000,
+    );
+
+    pendingRequests.set(id, {
+      resolve: (response: WorkerResponse) => {
+        clearTimeout(timeout);
+        if (response.type === "getEntriesComplete") {
+          resolve((response.entries as ZipEntryMeta[]) || []);
+        } else if (response.type === "error") {
+          reject(new Error(response.error || "Failed to get entries"));
+        }
+      },
+      reject: (error: Error) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
+    });
+
+    zipWorker!.postMessage({
+      type: "getEntries",
+      id,
+    });
+  });
+}
+
+// Load zip data from buffer into zip worker
 async function loadZipData(zipData: Uint8Array): Promise<ZipEntryMeta[]> {
   if (!zipWorker) throw new Error("Zip worker not initialized");
 
@@ -841,6 +964,13 @@ self.onmessage = async (event: MessageEvent<Command>) => {
           ? new Uint8Array(command.zipData)
           : (command.zipData as Uint8Array);
       await loadZipFile(zipData);
+      self.postMessage({ type: "response", id: command.id, success: true });
+      return;
+    }
+
+    if (command.type === "loadZipFile") {
+      // Load from File object directly (for large files)
+      await loadZipFromFile(command.file as File);
       self.postMessage({ type: "response", id: command.id, success: true });
       return;
     }
