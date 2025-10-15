@@ -1386,7 +1386,6 @@ async function executeQuery(
   try {
     const rewrittenSql = rewriteQuery(sql);
     const result = await conn.query(rewrittenSql);
-    const data = result.toArray();
 
     // Get column types from the result schema
     const schema = result.schema.fields;
@@ -1395,14 +1394,85 @@ async function executeQuery(
       columnTypes.set(field.name, field.type.toString());
     });
 
+    // Extract interval columns before toArray() loses the data
+    const intervalColumns = new Map<string, any>();
+    schema.forEach((field, idx) => {
+      if (field.type.toString().toUpperCase().includes('INTERVAL')) {
+        intervalColumns.set(field.name, result.getChildAt(idx));
+      }
+    });
+
+    const data = result.toArray();
+
     // Sanitize data and convert types in one pass
-    const sanitizedData = data.map((row) => {
+    const sanitizedData = data.map((row, rowIndex) => {
       const sanitizedRow: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(row)) {
         const columnType = columnTypes.get(key);
 
+        // Handle INTERVAL columns - get from raw Arrow data
+        if (columnType && columnType.toUpperCase().includes('INTERVAL')) {
+          const intervalColumn = intervalColumns.get(key);
+          if (intervalColumn) {
+            // Access raw values array directly since .get() loses data
+            const data = intervalColumn.data[0];
+            const values = data.values;
+
+            // stride=3 means layout is: [months, days, nanos_low] repeated, with nanos_high separate
+            // Actually for MONTH_DAY_NANO it should be 4 int32s per interval
+            // Let me check the actual memory layout
+            const stride = 4; // Force 4 for MONTH_DAY_NANO (months, days, nanos as int64)
+            const offset = rowIndex * stride;
+
+            console.log('Stride info:', 'column.stride:', intervalColumn.stride, 'values.length:', values.length, 'rowIndex:', rowIndex, 'calculated offset:', offset);
+            console.log('Values at offset:', values.slice(offset, offset + 4));
+
+            // MONTH_DAY_NANO intervals: [int32 months, int32 days, int64 nanos as two int32s]
+            const months = values[offset] || 0;
+            const days = values[offset + 1] || 0;
+            // Reconstruct 64-bit nanoseconds from two 32-bit parts (signed!)
+            const nanosLow = values[offset + 2] || 0;
+            const nanosHigh = values[offset + 3] || 0;
+
+            console.log('Parsed values:', {months, days, nanosLow, nanosHigh});
+
+            // Convert to unsigned for low part, keep high part signed
+            const nanos = (BigInt(nanosHigh) << 32n) | BigInt(nanosLow >>> 0);
+
+            // Convert to human-readable string
+            const components: string[] = [];
+
+            if (months !== 0) {
+              const years = Math.floor(Math.abs(months) / 12);
+              const remainingMonths = Math.abs(months) % 12;
+              if (years > 0) components.push(`${months < 0 ? '-' : ''}${years} year${years !== 1 ? 's' : ''}`);
+              if (remainingMonths > 0) components.push(`${months < 0 && years === 0 ? '-' : ''}${remainingMonths} mon${remainingMonths !== 1 ? 's' : ''}`);
+            }
+            if (days !== 0) {
+              components.push(`${days < 0 ? '-' : ''}${Math.abs(days)} day${Math.abs(days) !== 1 ? 's' : ''}`);
+            }
+            if (nanos !== 0n) {
+              // Convert nanoseconds to seconds
+              const totalNanos = nanos < 0n ? -nanos : nanos;
+              const totalSeconds = Number(totalNanos) / 1000000000;
+              const hours = Math.floor(totalSeconds / 3600);
+              const minutes = Math.floor((totalSeconds % 3600) / 60);
+              const seconds = totalSeconds % 60;
+
+              const timeParts: string[] = [];
+              if (hours > 0) timeParts.push(`${hours}:`);
+              timeParts.push(`${String(minutes).padStart(hours > 0 ? 2 : 1, '0')}:`);
+              timeParts.push(String(seconds.toFixed(6)).padStart(9, '0'));
+              components.push(`${nanos < 0n ? '-' : ''}${timeParts.join('')}`);
+            }
+
+            sanitizedRow[key] = components.length > 0 ? components.join(' ') : '00:00:00';
+          } else {
+            sanitizedRow[key] = value;
+          }
+        }
         // Handle TIME columns (microseconds since midnight as bigint)
-        if (columnType && (columnType.toUpperCase().includes('TIME') || columnType === 'Time64[us]')) {
+        else if (columnType && (columnType.toUpperCase().includes('TIME') || columnType === 'Time64[us]')) {
           if (value !== null && value !== undefined && (typeof value === 'bigint' || typeof value === 'number')) {
             // Convert microseconds to HH:MM:SS.ffffff
             const totalMicros = typeof value === 'bigint' ? Number(value) : value;
