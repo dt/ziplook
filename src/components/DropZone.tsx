@@ -19,6 +19,13 @@ interface TableData {
   loaded?: boolean;
   loading?: boolean;
   sourceFile?: string;
+  clusterName?: string;
+  nodeFiles?: Array<{
+    path: string;
+    size: number;
+    nodeId: number;
+    isError: boolean;
+  }>;
 }
 
 interface FileStatus {
@@ -1132,10 +1139,13 @@ function DropZone() {
         });
 
         // Extract stack files from the file list (both stacks.txt and stacks_with_labels.txt)
+        // Exclude files in cluster/ directory
         const stackFiles = entries
           .filter(
             (entry: ZipEntryMeta) =>
-              !entry.isDir && (entry.path.endsWith("stacks.txt") || entry.path.endsWith("stacks_with_labels.txt")),
+              !entry.isDir &&
+              (entry.path.endsWith("stacks.txt") || entry.path.endsWith("stacks_with_labels.txt")) &&
+              !entry.path.includes("/cluster/"),
           )
           .map((entry: ZipEntryMeta) => ({
             path: entry.path,
@@ -1144,9 +1154,6 @@ function DropZone() {
           }));
 
         if (stackFiles.length > 0) {
-          console.log(
-            `🎯 Stack files found in file list: ${stackFiles.length} files`,
-          );
           dispatch({ type: "SET_STACK_DATA", stackData: {} });
           dispatch({ type: "SET_STACK_FILES", stackFiles });
           dispatch({ type: "SET_STACKGAZER_READY", ready: false });
@@ -1480,9 +1487,6 @@ function DropZone() {
           onStackProcessingComplete: (_stackFilesCount: number) => {
             // Stack files have been loaded and sent to iframe
             // stackData should already be populated via ADD_STACK_FILE actions
-            console.log(
-              `🎯 Stack processing complete: ${_stackFilesCount} files`,
-            );
             dispatch({ type: "SET_STACKGAZER_READY", ready: true });
           },
           onFileList: (entries: ZipEntryMeta[]) => {
@@ -1500,10 +1504,13 @@ function DropZone() {
             });
 
             // Extract stack files from the file list (both stacks.txt and stacks_with_labels.txt)
+            // Exclude files in cluster/ directory
             const stackFiles = entries
               .filter(
                 (entry: ZipEntryMeta) =>
-                  !entry.isDir && (entry.path.endsWith("stacks.txt") || entry.path.endsWith("stacks_with_labels.txt")),
+                  !entry.isDir &&
+                  (entry.path.endsWith("stacks.txt") || entry.path.endsWith("stacks_with_labels.txt")) &&
+                  !entry.path.includes("/cluster/"),
               )
               .map((entry: ZipEntryMeta) => ({
                 path: entry.path,
@@ -1512,9 +1519,6 @@ function DropZone() {
               }));
 
             if (stackFiles.length > 0) {
-              console.log(
-                `🎯 Stack files found in file list: ${stackFiles.length} files`,
-              );
               dispatch({ type: "SET_STACK_DATA", stackData: {} });
               dispatch({ type: "SET_STACK_FILES", stackFiles });
               dispatch({ type: "SET_STACKGAZER_READY", ready: false });

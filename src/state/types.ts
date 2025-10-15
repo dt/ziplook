@@ -52,7 +52,7 @@ export type ViewerTab =
     };
 
 export interface TableMeta {
-  name: string; // normalized (e.g., system_jobs)
+  name: string; // normalized (e.g., system_jobs or cluster1.system.jobs)
   sourceFile: ZipEntryId;
   loaded: boolean;
   rowCount?: number;
@@ -60,7 +60,8 @@ export interface TableMeta {
   size?: number; // File size in bytes
   loading?: boolean; // Currently loading
   nodeId?: number; // Node ID for node-specific tables
-  originalName?: string; // Original table name without node prefix
+  originalName?: string; // Original table name without node prefix or cluster prefix
+  clusterName?: string; // Cluster name for virtual cluster tables (undefined for root cluster)
   isError?: boolean; // True for .err.txt files
   loadError?: string; // Error message if loading failed
   chunkProgress?: {
@@ -159,6 +160,7 @@ export interface TableData {
   loaded?: boolean;
   loading?: boolean;
   sourceFile?: string;
+  clusterName?: string; // Cluster name for virtual cluster tables (undefined for root cluster)
   nodeFiles?: Array<{
     path: string;
     size: number;

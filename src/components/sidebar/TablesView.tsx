@@ -10,14 +10,31 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }
 
-function parseTableName(name: string): { prefix?: string; mainName: string } {
-  // Check for system. or crdb_internal. prefix
+function parseTableName(name: string): {
+  cluster?: string;
+  prefix?: string;
+  mainName: string;
+} {
+  // Check for cluster.system. or cluster.crdb_internal. pattern
+  // Examples: tenant1.system.jobs, mixed-version-tenant-ikhut.crdb_internal.active_range_feeds_by_node
+  // Allow alphanumeric, underscores, and hyphens in cluster names
+  const clusterMatch = name.match(/^([a-zA-Z0-9_-]+)\.(system|crdb_internal)\.(.+)$/);
+  if (clusterMatch) {
+    return {
+      cluster: clusterMatch[1],
+      prefix: clusterMatch[2],
+      mainName: clusterMatch[3],
+    };
+  }
+
+  // Check for system. or crdb_internal. prefix (root cluster)
   if (name.startsWith("system.")) {
     return { prefix: "system", mainName: name.substring(7) };
   }
   if (name.startsWith("crdb_internal.")) {
     return { prefix: "crdb_internal", mainName: name.substring(14) };
   }
+
   // Check for per-node schemas like n1_system. or n1_crdb_internal.
   if (name.match(/^n\d+_system\./)) {
     const dotIndex = name.indexOf(".");
@@ -33,6 +50,7 @@ function parseTableName(name: string): { prefix?: string; mainName: string } {
       mainName: name.substring(dotIndex + 1),
     };
   }
+
   return { mainName: name };
 }
 
@@ -153,13 +171,57 @@ function TablesView() {
   // Sort all tables by name
   const allTables = filteredTables.sort((a, b) => a.name.localeCompare(b.name));
 
-  // Separate zero-row tables from regular tables
-  const regularTables = allTables.filter(
-    (t) => !t.loaded || t.rowCount === undefined || t.rowCount > 0,
-  );
-  const emptyTables = allTables.filter(
-    (t) => t.loaded && t.rowCount === 0,
-  );
+  // Group tables by cluster
+  const tablesByCluster = useMemo(() => {
+    const groups = new Map<string, typeof allTables>();
+
+    for (const table of allTables) {
+      const { cluster } = parseTableName(table.name);
+      const clusterKey = cluster || "_root"; // Use _root for root cluster
+
+      if (!groups.has(clusterKey)) {
+        groups.set(clusterKey, []);
+      }
+      groups.get(clusterKey)!.push(table);
+    }
+
+    return groups;
+  }, [allTables]);
+
+  // Separate zero-row tables from regular tables (for each cluster)
+  const clusterGroups = useMemo(() => {
+    const groups: Array<{
+      clusterKey: string;
+      clusterName: string;
+      regularTables: typeof allTables;
+      emptyTables: typeof allTables;
+    }> = [];
+
+    for (const [clusterKey, tables] of tablesByCluster.entries()) {
+      const regularTables = tables.filter(
+        (t) => !t.loaded || t.rowCount === undefined || t.rowCount > 0,
+      );
+      const emptyTables = tables.filter(
+        (t) => t.loaded && t.rowCount === 0,
+      );
+
+      groups.push({
+        clusterKey,
+        clusterName: clusterKey === "_root" ? "System Cluster" : clusterKey,
+        regularTables,
+        emptyTables,
+      });
+    }
+
+    // Sort: root cluster first, then others alphabetically
+    groups.sort((a, b) => {
+      if (a.clusterKey === "_root") return -1;
+      if (b.clusterKey === "_root") return 1;
+      return a.clusterName.localeCompare(b.clusterName);
+    });
+
+    return groups;
+  }, [tablesByCluster]);
 
   // Auto-expand sections when filtering
   useEffect(() => {
@@ -446,8 +508,135 @@ function TablesView() {
         </div>
       )}
 
-      {/* Tables Section */}
-      {(regularTables.length > 0 || emptyTables.length > 0) && (
+      {/* Cluster Sections - each cluster is a top-level section when there are multiple clusters */}
+      {clusterGroups.length > 1 ? (
+        <>
+          {clusterGroups.map((group) => (
+            <div key={group.clusterKey} className="table-section">
+              {/* Cluster Header */}
+              <div
+                className="section-header sub-header clickable"
+                onClick={() => toggleSection(`cluster-${group.clusterKey}`)}
+              >
+                <span className="section-chevron">
+                  {collapsedSections.has(`cluster-${group.clusterKey}`) ? "▶" : "▼"}
+                </span>
+                {group.clusterName} ({group.regularTables.length + group.emptyTables.length})
+              </div>
+
+              {/* Tables in this cluster */}
+              {!collapsedSections.has(`cluster-${group.clusterKey}`) && (
+                    <>
+                      {group.regularTables.map((table) => {
+                        const { prefix, mainName } = parseTableName(table.name);
+                        const isHighlighted =
+                          navigation.state.isNavigating &&
+                          navigation.state.items[navigation.state.highlightedIndex]
+                            ?.id === `table-${table.name}`;
+                        return (
+                          <div
+                            key={table.name}
+                            ref={(el) => registerElement(`table-${table.name}`, el)}
+                            className={`table-item-compact ${table.loading ? "loading" : ""} ${table.deferred ? "deferred" : ""} ${table.isError ? "error-file" : ""} ${table.loadError ? "load-failed" : ""} ${table.rowCount === 0 ? "empty-table" : ""} ${!table.loaded && !table.loading && !table.deferred ? "unloaded" : ""} ${isHighlighted ? "keyboard-highlighted" : ""}`}
+                            onClick={() => handleTableClick(table)}
+                          >
+                            {table.loaded &&
+                              table.rowCount !== undefined &&
+                              !table.isError &&
+                              !table.loadError &&
+                              !table.deferred && (
+                                <span className="table-row-count">
+                                  {table.rowCount.toLocaleString()} rows
+                                </span>
+                              )}
+                            {table.loading && (
+                              <span className="loading-spinner-small" />
+                            )}
+                            <div className="table-name-compact">
+                              {prefix && <span className="table-prefix">{prefix}</span>}
+                              <span className="table-main-name">{mainName}</span>
+                            </div>
+                            {(table.isError || table.loadError || table.deferred) && (
+                              <div className="table-status-compact">
+                                {table.isError && (
+                                  <span className="status-icon">⚠️</span>
+                                )}
+                                {table.loadError && (
+                                  <span className="status-icon">❌</span>
+                                )}
+                                {table.deferred && (
+                                  <span className="status-text">
+                                    {formatFileSize(table.size || 0)}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            {/* Chunk progress bar */}
+                            {table.chunkProgress && (
+                              <div className="chunk-progress-bar">
+                                <div
+                                  className="chunk-progress-fill"
+                                  style={{
+                                    width: `${table.chunkProgress.percentage}%`,
+                                    height: "3px",
+                                    backgroundColor: "#007acc",
+                                    transition: "width 0.3s ease",
+                                  }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      {/* Empty Tables Section for this cluster */}
+                      {group.emptyTables.length > 0 && (
+                        <>
+                          <div
+                            className="subsection-header clickable"
+                            onClick={() => toggleSection(`empty-${group.clusterKey}`)}
+                          >
+                            <span className="section-chevron">
+                              {collapsedSections.has(`empty-${group.clusterKey}`) ? "▶" : "▼"}
+                            </span>
+                            Empty Tables ({group.emptyTables.length})
+                          </div>
+                          {!collapsedSections.has(`empty-${group.clusterKey}`) &&
+                            group.emptyTables.map((table) => {
+                              const { prefix, mainName } = parseTableName(table.name);
+                              const isHighlighted =
+                                navigation.state.isNavigating &&
+                                navigation.state.items[
+                                  navigation.state.highlightedIndex
+                                ]?.id === `table-${table.name}`;
+                              return (
+                                <div
+                                  key={table.name}
+                                  ref={(el) =>
+                                    registerElement(`table-${table.name}`, el)
+                                  }
+                                  className={`table-item-compact empty-table ${isHighlighted ? "keyboard-highlighted" : ""}`}
+                                  onClick={() => handleTableClick(table)}
+                                >
+                                  <span className="table-row-count">0 rows</span>
+                                  <div className="table-name-compact">
+                                    {prefix && (
+                                      <span className="table-prefix">{prefix}</span>
+                                    )}
+                                    <span className="table-main-name">{mainName}</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </>
+                      )}
+                    </>
+                  )}
+            </div>
+          ))}
+        </>
+      ) : clusterGroups.length === 1 ? (
+        /* Single cluster - show tables directly under a "Tables" section */
         <div className="table-section">
           <div
             className="section-header sub-header clickable"
@@ -456,11 +645,11 @@ function TablesView() {
             <span className="section-chevron">
               {collapsedSections.has("tables") ? "▶" : "▼"}
             </span>
-            Tables
+            Tables ({clusterGroups[0].regularTables.length + clusterGroups[0].emptyTables.length})
           </div>
           {!collapsedSections.has("tables") && (
             <>
-              {regularTables.map((table) => {
+              {clusterGroups[0].regularTables.map((table) => {
                 const { prefix, mainName } = parseTableName(table.name);
                 const isHighlighted =
                   navigation.state.isNavigating &&
@@ -504,7 +693,6 @@ function TablesView() {
                         )}
                       </div>
                     )}
-                    {/* Chunk progress bar */}
                     {table.chunkProgress && (
                       <div className="chunk-progress-bar">
                         <div
@@ -523,7 +711,7 @@ function TablesView() {
               })}
 
               {/* Empty Tables Section */}
-              {emptyTables.length > 0 && (
+              {clusterGroups[0].emptyTables.length > 0 && (
                 <>
                   <div
                     className="subsection-header clickable"
@@ -532,10 +720,10 @@ function TablesView() {
                     <span className="section-chevron">
                       {collapsedSections.has("empty") ? "▶" : "▼"}
                     </span>
-                    Empty Tables ({emptyTables.length})
+                    Empty Tables ({clusterGroups[0].emptyTables.length})
                   </div>
                   {!collapsedSections.has("empty") &&
-                    emptyTables.map((table) => {
+                    clusterGroups[0].emptyTables.map((table) => {
                       const { prefix, mainName } = parseTableName(table.name);
                       const isHighlighted =
                         navigation.state.isNavigating &&
@@ -566,7 +754,7 @@ function TablesView() {
             </>
           )}
         </div>
-      )}
+      ) : null}
 
       {/* Show message if everything is filtered out */}
       {filter &&

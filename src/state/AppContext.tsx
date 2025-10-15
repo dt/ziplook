@@ -340,9 +340,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
         ...state.stackData,
         [action.filePath]: action.content,
       };
-      console.log(
-        `🎯 Added stack file to state: ${action.filePath}, total files: ${Object.keys(newStackData).length}`,
-      );
       return {
         ...state,
         stackData: newStackData,
@@ -354,9 +351,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
         ...state.stackDataPerG,
         [action.filePath]: action.content,
       };
-      console.log(
-        `🎯 Added per-g stack file to state: ${action.filePath}, total files: ${Object.keys(newStackData).length}`,
-      );
       return {
         ...state,
         stackDataPerG: newStackData,
@@ -368,9 +362,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
         ...state.stackDataLabeled,
         [action.filePath]: action.content,
       };
-      console.log(
-        `🎯 Added labeled stack file to state: ${action.filePath}, total files: ${Object.keys(newStackData).length}`,
-      );
       return {
         ...state,
         stackDataLabeled: newStackData,

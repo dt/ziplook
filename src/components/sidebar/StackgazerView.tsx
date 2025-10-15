@@ -14,8 +14,6 @@ interface StackgazerViewProps {
   onCollapse?: () => void;
 }
 
-type StackMode = "per-goroutine" | "labeled";
-
 function StackgazerView({ onCollapse }: StackgazerViewProps) {
   const { state, dispatch } = useApp();
   const mode = state.stackgazerMode || "per-goroutine";

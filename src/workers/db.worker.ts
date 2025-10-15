@@ -198,7 +198,6 @@ async function loadLargeFileIncrementally(
   const totalSize = data.length;
   let offset = 0;
   let remainder = "";
-  let totalRows = 0;
   let chunkNumber = 0;
   let headers: string[] = [];
 
@@ -211,12 +210,13 @@ async function loadLargeFileIncrementally(
   // Check if table already exists (for multi-node tables)
   let tableExists = false;
   if (nodeId !== undefined) {
-    try {
-      await conn.query(`SELECT 1 FROM ${quotedTableName} LIMIT 1`);
-      tableExists = true;
-    } catch {
-      tableExists = false;
-    }
+    // Use catalog query to avoid error logging
+    const checkResult = await conn.query(`
+      SELECT COUNT(*) as count
+      FROM information_schema.tables
+      WHERE table_name = '${tableName}' AND table_schema = 'main'
+    `);
+    tableExists = checkResult.toArray()[0].count > 0;
   } else {
     // Drop table if exists (only for non-multi-node tables)
     await conn.query(`DROP TABLE IF EXISTS ${quotedTableName}`);
@@ -801,6 +801,22 @@ async function loadSingleTable(table: TableInfo) {
     throw new Error("Database not initialized");
   }
 
+  // If this is an error file, don't try to load it - just mark it as discovered
+  // Error files are shown in the UI with a warning icon and clicking opens the error content
+  if (isError) {
+    self.postMessage({
+      type: "tableLoadProgress",
+      tableName,
+      status: "completed",
+      rowCount: 0,
+      nodeId,
+      originalName,
+      isError: true,
+      size,
+    });
+    return;
+  }
+
   try {
     // Send progress update - loading
     self.postMessage({
@@ -818,6 +834,11 @@ async function loadSingleTable(table: TableInfo) {
 
       let totalRowCount = 0;
       for (const nodeFile of nodeFiles) {
+        // Skip error files - don't try to load them into DuckDB
+        if (nodeFile.isError) {
+          continue;
+        }
+
         // Request file from zip worker
         const fileResponse = await sendMessageToZipWorker({
           type: "readFileChunked",
@@ -1043,12 +1064,13 @@ async function loadTableFromText(
     // Check if table already exists (for multi-node tables)
     let tableExists = false;
     if (nodeId !== undefined) {
-      try {
-        await conn.query(`SELECT 1 FROM ${quotedTableName} LIMIT 1`);
-        tableExists = true;
-      } catch {
-        tableExists = false;
-      }
+      // Use catalog query to avoid error logging
+      const checkResult = await conn.query(`
+        SELECT COUNT(*) as count
+        FROM information_schema.tables
+        WHERE table_name = '${tableName}' AND table_schema = 'main'
+      `);
+      tableExists = checkResult.toArray()[0].count > 0;
     }
 
     // Create table from CSV with auto-detection or explicit types
@@ -1327,21 +1349,21 @@ async function loadTableFromText(
 
 function rewriteQuery(sql: string): string {
   // Convert schema.table references to quoted table names since tables are stored with dots
+  // Skip rewriting if user already used quotes (they know what they're doing)
+  if (sql.includes('"')) {
+    return sql;
+  }
+
   let rewritten = sql;
 
-  // Handle explicit schema.table references by quoting them
-  rewritten = rewritten.replace(/\bsystem\.([a-zA-Z0-9_]+)\b/gi, '"system.$1"');
-  rewritten = rewritten.replace(
-    /\bcrdb_internal\.([a-zA-Z0-9_]+)\b/gi,
-    '"crdb_internal.$1"',
-  );
+  // Match dotted identifiers in table-name contexts (FROM, JOIN, INTO, TABLE, UPDATE, EXISTS)
+  // This handles any prefix: system.jobs, cluster.system.jobs, n1_system.jobs, etc.
+  // Allow hyphens in cluster names: mixed-version-tenant-ikhut.system.jobs
+  const tableContextPattern = /\b(FROM|JOIN|INTO|TABLE|UPDATE|EXISTS)\s+((?:[a-zA-Z0-9_-]+\.)?(system|crdb_internal)\.[a-zA-Z0-9_]+)\b/gi;
 
-  // Handle per-node schema references like n1_system.table -> "n1_system.table"
-  rewritten = rewritten.replace(/\bn\d+_system\.([a-zA-Z0-9_]+)\b/gi, '"$&"');
-  rewritten = rewritten.replace(
-    /\bn\d+_crdb_internal\.([a-zA-Z0-9_]+)\b/gi,
-    '"$&"',
-  );
+  rewritten = rewritten.replace(tableContextPattern, (_match, keyword, tableName) => {
+    return `${keyword} "${tableName}"`;
+  });
 
   return rewritten;
 }
@@ -1678,17 +1700,79 @@ async function processFileList(message: ProcessFileListMessage) {
   try {
     // Processing file list
 
-    // Simplified filter: just files that start with "system" and end with ".txt"
-    const tablesToLoad = message.fileList.filter(
+    // Filter for table files - match system.* and crdb_internal.* files
+    // These files can be at root level, in /nodes/, or in /cluster/*/
+    const allTableFiles = message.fileList.filter(
       (entry) =>
         !entry.isDir &&
         (entry.path.includes("/system.") ||
           entry.path.includes("/crdb_internal.")) &&
         entry.path.endsWith(".txt"),
     );
+
+    // Build a map of base table paths to their entries
+    // If both foo.txt and foo.err.txt exist in the SAME DIRECTORY, we only want ONE entry (the .err.txt)
+    // Key format: full directory path + base name (without .txt or .err.txt)
+    const tableMap = new Map<string, typeof allTableFiles[0]>();
+
+    for (const entry of allTableFiles) {
+      // Split path into directory and filename
+      const lastSlash = entry.path.lastIndexOf("/");
+      const dirPath = lastSlash >= 0 ? entry.path.substring(0, lastSlash + 1) : "";
+      const filename = lastSlash >= 0 ? entry.path.substring(lastSlash + 1) : entry.path;
+
+      // Check if it's an error file
+      const isErrorFile = entry.path.endsWith(".err.txt");
+
+      // Remove extensions - handle .txt.err.txt and .err.txt cases consistently
+      let baseName: string;
+      if (isErrorFile) {
+        // Remove .err.txt suffix, then also remove any .txt suffix that might remain
+        // This handles both foo.err.txt -> foo and foo.txt.err.txt -> foo
+        baseName = filename.replace(/\.err\.txt$/, "").replace(/\.txt$/, "");
+      } else {
+        // Remove .txt or .csv suffix
+        baseName = filename.replace(/\.(txt|csv)$/, "");
+      }
+
+      // Create unique key for this directory + base name
+      const mapKey = dirPath + baseName;
+
+      const existing = tableMap.get(mapKey);
+      if (!existing) {
+        // No entry yet, add this one
+        tableMap.set(mapKey, entry);
+      } else {
+        // Entry exists - prefer .err.txt over .txt (in the same directory)
+        if (isErrorFile) {
+          tableMap.set(mapKey, entry);
+        }
+        // Otherwise keep the existing one (which might be .txt since we prefer .err.txt)
+      }
+    }
+
+    // Get the deduplicated list - each table appears only once
+    const tablesToLoad = Array.from(tableMap.values());
+
     // Found potential table files
 
-    // Prepare tables with proper naming (same logic as DropZone had)
+    // Helper function to extract cluster name from path
+    // Paths can be:
+    // - debug/system.jobs.txt (root cluster)
+    // - debug/nodes/1/system.jobs.txt (root cluster, per-node)
+    // - debug/cluster/tenant1/system.jobs.txt (virtual cluster)
+    // - debug/cluster/tenant1/nodes/1/system.jobs.txt (virtual cluster, per-node)
+    function extractClusterInfo(path: string): { clusterName: string; isRoot: boolean } {
+      // Match /cluster/ anywhere in the path (not just at the start)
+      const clusterMatch = path.match(/\/cluster\/([^/]+)\//);
+      if (clusterMatch) {
+        return { clusterName: clusterMatch[1], isRoot: false };
+      }
+      return { clusterName: "", isRoot: true }; // Root cluster has empty name
+    }
+
+    // Prepare tables with proper naming
+    // Group by cluster first, then by table name
     const clusterTables: Array<{
       name: string;
       sourceFile: string;
@@ -1699,6 +1783,7 @@ async function processFileList(message: ProcessFileListMessage) {
       isError: boolean;
       loaded: boolean;
       loading: boolean;
+      clusterName?: string;
       nodeFiles?: Array<{
         path: string;
         size: number;
@@ -1706,32 +1791,56 @@ async function processFileList(message: ProcessFileListMessage) {
         isError: boolean;
       }>;
     }> = [];
-    const perNodeFiles: Map<string, Array<{
-      path: string;
-      size: number;
-      nodeId: number;
-      isError: boolean;
-    }>> = new Map();
+
+    // Key format: "clusterName|tableName" for grouping per-node files
+    const perNodeFiles: Map<string, {
+      clusterName: string;
+      files: Array<{
+        path: string;
+        size: number;
+        nodeId: number;
+        isError: boolean;
+      }>;
+    }> = new Map();
 
     for (const entry of tablesToLoad) {
-      // Extract just the filename from the path
-      const filename = entry.name.split("/").pop() || entry.name;
-      let tableName = filename.replace(/\.(err\.txt|txt|csv)$/, "");
+      // Extract cluster info
+      const { clusterName, isRoot } = extractClusterInfo(entry.path);
+
+      // Extract filename from PATH (not entry.name, which might differ)
+      const lastSlash = entry.path.lastIndexOf("/");
+      const filename = lastSlash >= 0 ? entry.path.substring(lastSlash + 1) : entry.path;
 
       // Check if it's an error file
       const isErrorFile = entry.path.endsWith(".err.txt");
 
-      // Parse node ID from path like /nodes/1/system.jobs.txt
+      // Remove extensions - use the SAME logic as deduplication
+      let baseName: string;
+      if (isErrorFile) {
+        // Remove .err.txt suffix, then also remove any .txt suffix that might remain
+        // This handles both foo.err.txt -> foo and foo.txt.err.txt -> foo
+        baseName = filename.replace(/\.err\.txt$/, "").replace(/\.txt$/, "");
+      } else {
+        // Remove .txt or .csv suffix
+        baseName = filename.replace(/\.(txt|csv)$/, "");
+      }
+
+      // Parse node ID from path like /nodes/1/system.jobs.txt or /cluster/tenant1/nodes/1/system.jobs.txt
       const nodeMatch = entry.path.match(/\/nodes\/(\d+)\//);
       if (nodeMatch) {
         const nodeId = parseInt(nodeMatch[1], 10);
-        const originalName = tableName;
+        const originalName = baseName;
 
-        // Group per-node files by their original table name
-        if (!perNodeFiles.has(originalName)) {
-          perNodeFiles.set(originalName, []);
+        // Create composite key for grouping: "clusterName|tableName"
+        const groupKey = `${clusterName}|${originalName}`;
+
+        if (!perNodeFiles.has(groupKey)) {
+          perNodeFiles.set(groupKey, {
+            clusterName,
+            files: [],
+          });
         }
-        perNodeFiles.get(originalName)!.push({
+        perNodeFiles.get(groupKey)!.files.push({
           path: entry.path,
           size: entry.size,
           nodeId,
@@ -1739,16 +1848,20 @@ async function processFileList(message: ProcessFileListMessage) {
         });
       } else {
         // Cluster-level table (no node ID)
+        // Apply cluster prefix to table name if not root
+        const tableName = isRoot ? baseName : `${clusterName}.${baseName}`;
+
         const preparedTable = {
           name: tableName,
           sourceFile: entry.path,
           path: entry.path,
           size: entry.size,
           nodeId: undefined,
-          originalName: undefined,
+          originalName: baseName, // Store original name without cluster prefix
           isError: isErrorFile,
           loaded: false,
           loading: false,
+          clusterName: isRoot ? undefined : clusterName,
         };
         clusterTables.push(preparedTable);
       }
@@ -1764,17 +1877,23 @@ async function processFileList(message: ProcessFileListMessage) {
     }
 
     // Process per-node tables - create combined _by_node tables
-    for (const [originalName, nodeFiles] of perNodeFiles.entries()) {
+    for (const [groupKey, groupData] of perNodeFiles.entries()) {
+      const { clusterName, files: nodeFiles } = groupData;
+      const [, originalName] = groupKey.split("|");
+
       // Calculate total size across all nodes
       const totalSize = nodeFiles.reduce((sum, file) => sum + file.size, 0);
       const hasErrors = nodeFiles.some(f => f.isError);
 
-      // Create combined table name with _by_node suffix
-      const combinedTableName = `${originalName}_by_node`;
+      // Apply cluster prefix if not root cluster
+      const isRoot = clusterName === "";
+      const tableName = isRoot
+        ? `${originalName}_by_node`
+        : `${clusterName}.${originalName}_by_node`;
 
       // Create a single table entry representing all nodes
       const combinedTable = {
-        name: combinedTableName,
+        name: tableName,
         sourceFile: nodeFiles[0].path, // Store first file path for reference
         path: nodeFiles[0].path,
         size: totalSize,
@@ -1783,6 +1902,7 @@ async function processFileList(message: ProcessFileListMessage) {
         isError: hasErrors,
         loaded: false,
         loading: false,
+        clusterName: isRoot ? undefined : clusterName,
         // Store metadata about constituent nodes
         nodeFiles: nodeFiles.map(f => ({
           path: f.path,
