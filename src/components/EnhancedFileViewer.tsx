@@ -136,12 +136,6 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
 
   // Store initial filter state
   if (filterText) {
-    console.log(
-      "📄 FileViewer: Initial filter detected:",
-      filterText,
-      "context:",
-      contextLines,
-    );
     initialFilterRef.current = {
       text: filterText,
       context: parseInt(contextLines) || 0,
@@ -153,11 +147,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
 
   // Apply filter/grep functionality
   const applyFilter = useCallback((query: string, context: number = 0) => {
-    console.log("📄 FileViewer: Applying filter:", query, "context:", context);
     if (!editorRef.current || !monacoRef.current) {
-      console.log(
-        "📄 FileViewer: Editor or Monaco not available for filtering",
-      );
       return;
     }
 
@@ -330,13 +320,6 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
     if (lineNumber > currentLineCount) {
       // Line not loaded yet, store for retry
       pendingLineNumber.current = lineNumber;
-      console.log(
-        "📄 FileViewer: Line",
-        lineNumber,
-        "not yet loaded (current max:",
-        currentLineCount,
-        "), will retry",
-      );
       return false;
     }
 
@@ -419,17 +402,6 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
 
       // Clear pending navigation since we succeeded with the exact line
       pendingLineNumber.current = null;
-      console.log(
-        "📄 FileViewer: Successfully navigated to exact line",
-        lineNumber,
-      );
-    } else {
-      console.log(
-        "📄 FileViewer: Navigated to partial line",
-        targetLine,
-        "waiting for line",
-        lineNumber,
-      );
     }
 
     return isExactLine;
@@ -570,12 +542,6 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
             progressInfo.done;
 
           if (shouldUpdate) {
-            console.log(
-              "📄 FileViewer: Setting content, accumulated length:",
-              accumulatedContent.length,
-              "done:",
-              progressInfo.done,
-            );
             setContent(accumulatedContent);
             lastUpdateTime = now;
             hasSetInitialContent = true;
@@ -591,23 +557,15 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
           }
 
           if (progressInfo.done) {
-            console.log(
-              "📄 FileViewer: Streaming complete, final content length:",
-              accumulatedContent.length,
-            );
             setLoading(false);
             setIsStreaming(false);
             abortRef.current = null;
-            loadInitiatedRef.current = false; // Reset for potential future loads
+            // Don't reset loadInitiatedRef - file has successfully loaded!
 
             // Final retry for pending line navigation
             if (pendingLineNumber.current) {
               setTimeout(() => {
                 if (pendingLineNumber.current) {
-                  console.log(
-                    "📄 FileViewer: Final retry for line navigation:",
-                    pendingLineNumber.current,
-                  );
                   navigateToLine(pendingLineNumber.current);
                 }
               }, 200); // Slightly longer delay for final attempt
@@ -628,8 +586,9 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
   }, [tab.fileId, state.filesIndex, state.workerManager, navigateToLine]);
 
   useEffect(() => {
+    // Only load if we haven't initiated a load yet
+    // Don't check content length - empty files are valid!
     if (
-      !content &&
       !loading &&
       state.workerManager &&
       !loadInitiatedRef.current
@@ -643,7 +602,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
         abortRef.current();
       }
     };
-  }, [loadFile, content, loading, state.workerManager]);
+  }, [loadFile, loading, state.workerManager]);
 
   const handleBeforeMount = useCallback((monaco: Monaco) => {
     // Setup log language if this is a log file

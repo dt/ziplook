@@ -42,6 +42,12 @@ interface StartTableLoadingMessage {
     nodeId?: number;
     originalName?: string;
     isError?: boolean;
+    nodeFiles?: Array<{
+      path: string;
+      size: number;
+      nodeId: number;
+      isError: boolean;
+    }>;
   }>;
 }
 
@@ -55,6 +61,12 @@ interface LoadSingleTableMessage {
     nodeId?: number;
     originalName?: string;
     isError?: boolean;
+    nodeFiles?: Array<{
+      path: string;
+      size: number;
+      nodeId: number;
+      isError: boolean;
+    }>;
   };
 }
 
@@ -176,6 +188,7 @@ async function loadLargeFileIncrementally(
   tableName: string,
   delimiter: string,
   nameForPreprocessing: string,
+  nodeId?: number,
 ): Promise<number> {
   if (!conn || !db) {
     throw new Error("DuckDB not initialized");
@@ -195,8 +208,19 @@ async function loadLargeFileIncrementally(
   // Use quoted table name to preserve dots
   const quotedTableName = `"${tableName}"`;
 
-  // Drop table if exists
-  await conn.query(`DROP TABLE IF EXISTS ${quotedTableName}`);
+  // Check if table already exists (for multi-node tables)
+  let tableExists = false;
+  if (nodeId !== undefined) {
+    try {
+      await conn.query(`SELECT 1 FROM ${quotedTableName} LIMIT 1`);
+      tableExists = true;
+    } catch {
+      tableExists = false;
+    }
+  } else {
+    // Drop table if exists (only for non-multi-node tables)
+    await conn.query(`DROP TABLE IF EXISTS ${quotedTableName}`);
+  }
 
   while (offset < totalSize) {
     const end = Math.min(offset + chunkSize, totalSize);
@@ -263,30 +287,54 @@ async function loadLargeFileIncrementally(
           await db.registerFileText(chunkFileName, processedContent);
 
           // Load this chunk into the table
-          if (chunkNumber === 0) {
-            // First chunk - create table with headers
-            const sql = `
-              CREATE TABLE ${quotedTableName} AS
-              SELECT * FROM read_csv_auto(
-                '${chunkFileName}',
-                delim='${delimiter}',
-                header=true
-              )
-            `;
+          if (chunkNumber === 0 && !tableExists) {
+            // First chunk and table doesn't exist - create table
+            let sql: string;
+            if (nodeId !== undefined) {
+              sql = `
+                CREATE TABLE ${quotedTableName} AS
+                SELECT ${nodeId} AS debug_node, * FROM read_csv_auto(
+                  '${chunkFileName}',
+                  delim='${delimiter}',
+                  header=true
+                )
+              `;
+            } else {
+              sql = `
+                CREATE TABLE ${quotedTableName} AS
+                SELECT * FROM read_csv_auto(
+                  '${chunkFileName}',
+                  delim='${delimiter}',
+                  header=true
+                )
+              `;
+            }
             await conn.query(sql);
             console.log(
               `📊 Created table from first chunk (${dataLines.length} data rows)`,
             );
           } else {
-            // Subsequent chunks - insert data
-            const sql = `
-              INSERT INTO ${quotedTableName}
-              SELECT * FROM read_csv_auto(
-                '${chunkFileName}',
-                delim='${delimiter}',
-                header=true
-              )
-            `;
+            // Subsequent chunks or table exists - insert data
+            let sql: string;
+            if (nodeId !== undefined) {
+              sql = `
+                INSERT INTO ${quotedTableName}
+                SELECT ${nodeId} AS debug_node, * FROM read_csv_auto(
+                  '${chunkFileName}',
+                  delim='${delimiter}',
+                  header=true
+                )
+              `;
+            } else {
+              sql = `
+                INSERT INTO ${quotedTableName}
+                SELECT * FROM read_csv_auto(
+                  '${chunkFileName}',
+                  delim='${delimiter}',
+                  header=true
+                )
+              `;
+            }
             await conn.query(sql);
             console.log(
               `📊 Inserted ${dataLines.length} rows from chunk ${chunkNumber + 1}`,
@@ -341,27 +389,51 @@ async function loadLargeFileIncrementally(
     const chunkFileName = `${tableName}_final.txt`;
     await db.registerFileText(chunkFileName, processedContent);
 
-    if (chunkNumber === 0) {
-      // Only remainder content
-      const sql = `
-        CREATE TABLE ${quotedTableName} AS
-        SELECT * FROM read_csv_auto(
-          '${chunkFileName}',
-          delim='${delimiter}',
-          header=true
-        )
-      `;
+    if (chunkNumber === 0 && !tableExists) {
+      // Only remainder content and table doesn't exist
+      let sql: string;
+      if (nodeId !== undefined) {
+        sql = `
+          CREATE TABLE ${quotedTableName} AS
+          SELECT ${nodeId} AS debug_node, * FROM read_csv_auto(
+            '${chunkFileName}',
+            delim='${delimiter}',
+            header=true
+          )
+        `;
+      } else {
+        sql = `
+          CREATE TABLE ${quotedTableName} AS
+          SELECT * FROM read_csv_auto(
+            '${chunkFileName}',
+            delim='${delimiter}',
+            header=true
+          )
+        `;
+      }
       await conn.query(sql);
     } else {
       // Insert final chunk
-      const sql = `
-        INSERT INTO ${quotedTableName}
-        SELECT * FROM read_csv_auto(
-          '${chunkFileName}',
-          delim='${delimiter}',
-          header=true
-        )
-      `;
+      let sql: string;
+      if (nodeId !== undefined) {
+        sql = `
+          INSERT INTO ${quotedTableName}
+          SELECT ${nodeId} AS debug_node, * FROM read_csv_auto(
+            '${chunkFileName}',
+            delim='${delimiter}',
+            header=true
+          )
+        `;
+      } else {
+        sql = `
+          INSERT INTO ${quotedTableName}
+          SELECT * FROM read_csv_auto(
+            '${chunkFileName}',
+            delim='${delimiter}',
+            header=true
+          )
+        `;
+      }
       await conn.query(sql);
     }
 
@@ -385,14 +457,30 @@ async function loadLargeFileIncrementally(
   }
 
   // Get final row count
-  const countResult = await conn.query(
-    `SELECT COUNT(*) as count FROM ${quotedTableName}`,
-  );
-  totalRows = countResult.toArray()[0].count;
+  let finalRowCount: number;
+  if (nodeId !== undefined && tableExists) {
+    // For multi-node INSERT operations, return only rows added (not total)
+    // Count from the processed data
+    const countBeforeResult = await conn.query(
+      `SELECT COUNT(*) as count FROM ${quotedTableName} WHERE debug_node != ${nodeId}`,
+    );
+    const countBefore = countBeforeResult.toArray()[0].count;
+    const countAfterResult = await conn.query(
+      `SELECT COUNT(*) as count FROM ${quotedTableName}`,
+    );
+    const countAfter = countAfterResult.toArray()[0].count;
+    finalRowCount = countAfter - countBefore;
+  } else {
+    // For CREATE operations or single-node tables, get total count
+    const countResult = await conn.query(
+      `SELECT COUNT(*) as count FROM ${quotedTableName}`,
+    );
+    finalRowCount = countResult.toArray()[0].count;
+  }
 
-  console.log(`✅ Successfully loaded large table with ${totalRows} rows`);
+  console.log(`✅ Successfully loaded large table with ${finalRowCount} rows`);
   loadedTables.add(tableName);
-  return totalRows;
+  return finalRowCount;
 }
 
 interface ResponseMessage {
@@ -698,10 +786,16 @@ interface TableInfo {
   nodeId?: number;
   originalName?: string;
   isError?: boolean;
+  nodeFiles?: Array<{
+    path: string;
+    size: number;
+    nodeId: number;
+    isError: boolean;
+  }>;
 }
 
 async function loadSingleTable(table: TableInfo) {
-  const { name: tableName, path, size, nodeId, originalName, isError } = table;
+  const { name: tableName, path, size, nodeId, originalName, isError, nodeFiles } = table;
 
   if (!conn) {
     throw new Error("Database not initialized");
@@ -719,7 +813,73 @@ async function loadSingleTable(table: TableInfo) {
       size,
     });
 
-    // Check if already loaded
+    // Handle multi-node tables
+    if (nodeFiles && nodeFiles.length > 0) {
+
+      let totalRowCount = 0;
+      for (const nodeFile of nodeFiles) {
+        // Request file from zip worker
+        const fileResponse = await sendMessageToZipWorker({
+          type: "readFileChunked",
+          path: nodeFile.path,
+        });
+
+        if (!fileResponse.success) {
+          throw new Error(`Failed to read file from node ${nodeFile.nodeId}: ${fileResponse.error}`);
+        }
+
+        if (!fileResponse.result?.text) {
+          throw new Error(`No content found in file from node ${nodeFile.nodeId}`);
+        }
+
+        const text = fileResponse.result.text;
+
+        // Check if this is a large file that needs incremental loading
+        if (text === "LARGE_FILE_PLACEHOLDER") {
+          console.log(`🔄 Loading large file from node ${nodeFile.nodeId} incrementally...`);
+          const rawBytes = (fileResponse.result as { rawBytes?: Uint8Array })?.rawBytes;
+          if (!rawBytes) {
+            throw new Error("Raw bytes not available for large file processing");
+          }
+
+          const rowCount = await loadLargeFileIncrementally(
+            rawBytes,
+            new TextDecoder(),
+            tableName,
+            "\t",
+            originalName || tableName,
+            nodeFile.nodeId,
+          );
+          totalRowCount += rowCount;
+        } else {
+          // Load from text
+          const rowCount = await loadTableFromText(
+            tableName,
+            text,
+            "\t",
+            originalName,
+            nodeFile.nodeId,
+          );
+          totalRowCount += rowCount;
+        }
+      }
+
+      self.postMessage({
+        type: "tableLoadProgress",
+        tableName,
+        status: "completed",
+        rowCount: totalRowCount,
+        nodeId,
+        originalName,
+        isError,
+      });
+
+      // Mark table as loaded and return - don't fall through to single-file path
+      loadedTables.add(tableName);
+      return;
+    }
+
+    // Check if already loaded (for non-multi-node tables)
     if (loadedTables.has(tableName)) {
       const quotedTableName = `"${tableName}"`;
       const countResult = await conn.query(
@@ -828,13 +988,15 @@ async function loadTableFromText(
   content: string,
   delimiter: string = "\t",
   originalName?: string,
+  nodeId?: number,
 ): Promise<number> {
   if (!conn || !db) {
     throw new Error("DuckDB not initialized");
   }
 
-  if (loadedTables.has(tableName)) {
-    // Get and return existing row count
+  // For multi-node tables, don't skip if already loaded - we're adding more data
+  if (loadedTables.has(tableName) && nodeId === undefined) {
+    // Get and return existing row count (only for non-multi-node tables)
     const quotedTableName = `"${tableName}"`;
     const countResult = await conn.query(
       `SELECT COUNT(*) as count FROM ${quotedTableName}`,
@@ -875,51 +1037,131 @@ async function loadTableFromText(
     const fileBaseName = tableName.replace(/[^a-zA-Z0-9_]/g, "_");
     await db.registerFileText(`${fileBaseName}.txt`, processedContent);
 
-    // Drop table if exists
-    await conn.query(`DROP TABLE IF EXISTS ${quotedTableName}`);
-
     // Check if we have type hints for this table
     const typeHints = getTableTypeHints(tableName);
+
+    // Check if table already exists (for multi-node tables)
+    let tableExists = false;
+    if (nodeId !== undefined) {
+      try {
+        await conn.query(`SELECT 1 FROM ${quotedTableName} LIMIT 1`);
+        tableExists = true;
+      } catch {
+        tableExists = false;
+      }
+    }
 
     // Create table from CSV with auto-detection or explicit types
     try {
       let sql: string;
 
-      if (typeHints.size > 0) {
-        // For tables with type hints, try explicit column definitions first
-        const firstLine = processedContent.split("\n")[0];
-        const headers = firstLine.split(delimiter);
+      if (!tableExists) {
+        // Drop table if exists (only for non-multi-node or first load)
+        if (nodeId === undefined) {
+          await conn.query(`DROP TABLE IF EXISTS ${quotedTableName}`);
+        }
 
-        // Build column definitions with type hints for ALL columns
-        const columnDefs = headers.map((header) => {
-          const hint = typeHints.get(header.toLowerCase());
-          const columnType = hint || "VARCHAR"; // Safe default for columns without hints
-          return `'${header}': '${columnType}'`;
-        });
+        // CREATE TABLE
+        if (typeHints.size > 0) {
+          // For tables with type hints, try explicit column definitions first
+          const firstLine = processedContent.split("\n")[0];
+          const headers = firstLine.split(delimiter);
 
-        const columnsClause = columnDefs.join(", ");
-        sql = `
-          CREATE TABLE ${quotedTableName} AS
-          SELECT * FROM read_csv(
-            '${fileBaseName}.txt',
-            delim='${delimiter}',
-            header=true,
-            columns={${columnsClause}},
-            auto_detect=false,
-            quote='"',
-            escape='"'
-          )
-        `;
+          // Build column definitions with type hints for ALL columns
+          const columnDefs = headers.map((header) => {
+            const hint = typeHints.get(header.toLowerCase());
+            const columnType = hint || "VARCHAR"; // Safe default for columns without hints
+            return `'${header}': '${columnType}'`;
+          });
+
+          const columnsClause = columnDefs.join(", ");
+
+          if (nodeId !== undefined) {
+            // Multi-node table: add debug_node column
+            sql = `
+              CREATE TABLE ${quotedTableName} AS
+              SELECT ${nodeId} AS debug_node, * FROM read_csv(
+                '${fileBaseName}.txt',
+                delim='${delimiter}',
+                header=true,
+                columns={${columnsClause}},
+                auto_detect=false,
+                quote='"',
+                escape='"'
+              )
+            `;
+          } else {
+            sql = `
+              CREATE TABLE ${quotedTableName} AS
+              SELECT * FROM read_csv(
+                '${fileBaseName}.txt',
+                delim='${delimiter}',
+                header=true,
+                columns={${columnsClause}},
+                auto_detect=false,
+                quote='"',
+                escape='"'
+              )
+            `;
+          }
+        } else {
+          // No type hints, use standard auto-detection
+          if (nodeId !== undefined) {
+            // Multi-node table: add debug_node column
+            sql = `
+              CREATE TABLE ${quotedTableName} AS
+              SELECT ${nodeId} AS debug_node, * FROM read_csv_auto(
+                '${fileBaseName}.txt',
+                delim='${delimiter}',
+                header=true
+              )
+            `;
+          } else {
+            sql = `
+              CREATE TABLE ${quotedTableName} AS
+              SELECT * FROM read_csv_auto(
+                '${fileBaseName}.txt',
+                delim='${delimiter}',
+                header=true
+              )
+            `;
+          }
+        }
       } else {
-        // No type hints, use standard auto-detection
-        sql = `
-          CREATE TABLE ${quotedTableName} AS
-          SELECT * FROM read_csv_auto(
-            '${fileBaseName}.txt',
-            delim='${delimiter}',
-            header=true
-          )
-        `;
+        // INSERT INTO existing table
+        if (typeHints.size > 0) {
+          const firstLine = processedContent.split("\n")[0];
+          const headers = firstLine.split(delimiter);
+
+          const columnDefs = headers.map((header) => {
+            const hint = typeHints.get(header.toLowerCase());
+            const columnType = hint || "VARCHAR";
+            return `'${header}': '${columnType}'`;
+          });
+
+          const columnsClause = columnDefs.join(", ");
+          sql = `
+            INSERT INTO ${quotedTableName}
+            SELECT ${nodeId} AS debug_node, * FROM read_csv(
+              '${fileBaseName}.txt',
+              delim='${delimiter}',
+              header=true,
+              columns={${columnsClause}},
+              auto_detect=false,
+              quote='"',
+              escape='"'
+            )
+          `;
+        } else {
+          sql = `
+            INSERT INTO ${quotedTableName}
+            SELECT ${nodeId} AS debug_node, * FROM read_csv_auto(
+              '${fileBaseName}.txt',
+              delim='${delimiter}',
+              header=true
+            )
+          `;
+        }
       }
 
       await conn.query(sql);
@@ -937,14 +1179,39 @@ async function loadTableFromText(
         // Re-register with original content
         await db.registerFileText(`${fileBaseName}.txt`, content);
 
-        const sql = `
-          CREATE TABLE ${quotedTableName} AS
-          SELECT * FROM read_csv_auto(
-            '${fileBaseName}.txt',
-            delim='${delimiter}',
-            header=true
-          )
-        `;
+        let sql: string;
+        if (!tableExists) {
+          // CREATE TABLE
+          if (nodeId !== undefined) {
+            sql = `
+              CREATE TABLE ${quotedTableName} AS
+              SELECT ${nodeId} AS debug_node, * FROM read_csv_auto(
+                '${fileBaseName}.txt',
+                delim='${delimiter}',
+                header=true
+              )
+            `;
+          } else {
+            sql = `
+              CREATE TABLE ${quotedTableName} AS
+              SELECT * FROM read_csv_auto(
+                '${fileBaseName}.txt',
+                delim='${delimiter}',
+                header=true
+              )
+            `;
+          }
+        } else {
+          // INSERT INTO
+          sql = `
+            INSERT INTO ${quotedTableName}
+            SELECT ${nodeId} AS debug_node, * FROM read_csv_auto(
+              '${fileBaseName}.txt',
+              delim='${delimiter}',
+              header=true
+            )
+          `;
+        }
 
         await conn.query(sql);
       } else if (
@@ -973,17 +1240,48 @@ async function loadTableFromText(
           })
           .join(", ");
 
-        const fallbackSql = `
-          CREATE TABLE ${quotedTableName} AS
-          SELECT * FROM read_csv(
-            '${fileBaseName}.txt',
-            delim='${delimiter}',
-            header=true,
-            columns={${columnDefs}},
-            auto_detect=false,
-            sample_size=1
-          )
-        `;
+        let fallbackSql: string;
+        if (!tableExists) {
+          // CREATE TABLE
+          if (nodeId !== undefined) {
+            fallbackSql = `
+              CREATE TABLE ${quotedTableName} AS
+              SELECT ${nodeId} AS debug_node, * FROM read_csv(
+                '${fileBaseName}.txt',
+                delim='${delimiter}',
+                header=true,
+                columns={${columnDefs}},
+                auto_detect=false,
+                sample_size=1
+              )
+            `;
+          } else {
+            fallbackSql = `
+              CREATE TABLE ${quotedTableName} AS
+              SELECT * FROM read_csv(
+                '${fileBaseName}.txt',
+                delim='${delimiter}',
+                header=true,
+                columns={${columnDefs}},
+                auto_detect=false,
+                sample_size=1
+              )
+            `;
+          }
+        } else {
+          // INSERT INTO
+          fallbackSql = `
+            INSERT INTO ${quotedTableName}
+            SELECT ${nodeId} AS debug_node, * FROM read_csv(
+              '${fileBaseName}.txt',
+              delim='${delimiter}',
+              header=true,
+              columns={${columnDefs}},
+              auto_detect=false,
+              sample_size=1
+            )
+          `;
+        }
 
         try {
           await conn.query(fallbackSql);
@@ -1004,10 +1302,20 @@ async function loadTableFromText(
     }
 
     // Get row count
-    const countResult = await conn.query(
-      `SELECT COUNT(*) as count FROM ${quotedTableName}`,
-    );
-    const count = countResult.toArray()[0].count;
+    let count: number;
+    if (nodeId !== undefined && tableExists) {
+      // For multi-node INSERT operations, count rows we just added
+      // We can't easily get this from DuckDB, so parse the content
+      const lines = content.split('\n');
+      // First line is header, rest are data (excluding empty last line)
+      count = lines.filter((line, idx) => idx > 0 && line.trim()).length;
+    } else {
+      // For CREATE operations or single-node tables, get total count
+      const countResult = await conn.query(
+        `SELECT COUNT(*) as count FROM ${quotedTableName}`,
+      );
+      count = countResult.toArray()[0].count;
+    }
 
     loadedTables.add(tableName);
     return count;
@@ -1058,14 +1366,35 @@ async function executeQuery(
     const result = await conn.query(rewrittenSql);
     const data = result.toArray();
 
-    // Get column names and check for timestamps in the data
-    // DuckDB returns timestamps as numbers (milliseconds since epoch)
-    if (data.length > 0) {
-      const firstRow = data[0];
-      Object.keys(firstRow).forEach((columnName) => {
-        const value = firstRow[columnName];
-        // Check if this looks like a timestamp (large number in milliseconds range)
-        if (
+    // Get column types from the result schema
+    const schema = result.schema.fields;
+    const columnTypes = new Map<string, string>();
+    schema.forEach((field) => {
+      columnTypes.set(field.name, field.type.toString());
+    });
+
+    // Sanitize data and convert types in one pass
+    const sanitizedData = data.map((row) => {
+      const sanitizedRow: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(row)) {
+        const columnType = columnTypes.get(key);
+
+        // Handle TIME columns (microseconds since midnight as bigint)
+        if (columnType && (columnType.toUpperCase().includes('TIME') || columnType === 'Time64[us]')) {
+          if (value !== null && value !== undefined && (typeof value === 'bigint' || typeof value === 'number')) {
+            // Convert microseconds to HH:MM:SS.ffffff
+            const totalMicros = typeof value === 'bigint' ? Number(value) : value;
+            const hours = Math.floor(totalMicros / 3600000000);
+            const minutes = Math.floor((totalMicros % 3600000000) / 60000000);
+            const seconds = Math.floor((totalMicros % 60000000) / 1000000);
+            const micros = totalMicros % 1000000;
+            sanitizedRow[key] = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(micros).padStart(6, '0')}`;
+          } else {
+            sanitizedRow[key] = value;
+          }
+        }
+        // Handle TIMESTAMP columns
+        else if (
           (typeof value === "number" &&
             value > 1000000000000 &&
             value < 2000000000000) ||
@@ -1073,29 +1402,18 @@ async function executeQuery(
             value > 1000000000000n &&
             value < 2000000000000n)
         ) {
-          // This is likely a timestamp in milliseconds, convert all rows
-          data.forEach((row) => {
-            if (typeof row[columnName] === "number") {
-              row[columnName] = new Date(row[columnName]);
-            } else if (typeof row[columnName] === "bigint") {
-              row[columnName] = new Date(Number(row[columnName]));
-            }
-          });
+          sanitizedRow[key] = new Date(Number(value));
         }
-      });
-    }
-
-    // Sanitize data to ensure it can be cloned for postMessage
-    const sanitizedData = data.map((row) => {
-      const sanitizedRow: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(row)) {
-        try {
-          // Test if the value can be cloned by attempting JSON serialization
-          JSON.stringify(value);
-          sanitizedRow[key] = value;
-        } catch {
-          // If value can't be serialized, convert to string
-          sanitizedRow[key] = String(value);
+        // Handle other values
+        else {
+          try {
+            // Test if the value can be cloned by attempting JSON serialization
+            JSON.stringify(value);
+            sanitizedRow[key] = value;
+          } catch {
+            // If value can't be serialized, convert to string
+            sanitizedRow[key] = String(value);
+          }
         }
       }
       return sanitizedRow;
@@ -1371,51 +1689,114 @@ async function processFileList(message: ProcessFileListMessage) {
     // Found potential table files
 
     // Prepare tables with proper naming (same logic as DropZone had)
-    const preparedTables = [];
+    const clusterTables: Array<{
+      name: string;
+      sourceFile: string;
+      path: string;
+      size: number;
+      nodeId?: number;
+      originalName?: string;
+      isError: boolean;
+      loaded: boolean;
+      loading: boolean;
+      nodeFiles?: Array<{
+        path: string;
+        size: number;
+        nodeId: number;
+        isError: boolean;
+      }>;
+    }> = [];
+    const perNodeFiles: Map<string, Array<{
+      path: string;
+      size: number;
+      nodeId: number;
+      isError: boolean;
+    }>> = new Map();
+
     for (const entry of tablesToLoad) {
       // Extract just the filename from the path
       const filename = entry.name.split("/").pop() || entry.name;
       let tableName = filename.replace(/\.(err\.txt|txt|csv)$/, "");
-      let nodeId: number | undefined;
-      let originalName: string | undefined;
-
-      // Parse node ID from path like /nodes/1/system.jobs.txt
-      const nodeMatch = entry.path.match(/\/nodes\/(\d+)\//);
-      if (nodeMatch) {
-        nodeId = parseInt(nodeMatch[1], 10);
-        originalName = tableName;
-
-        // For schema.table format, create per-node schema: system.job_info -> n1_system.job_info
-        if (tableName.includes(".")) {
-          const [schema, table] = tableName.split(".", 2);
-          tableName = `n${nodeId}_${schema}.${table}`;
-        } else {
-          // For regular tables, prefix as before
-          tableName = `n${nodeId}_${tableName}`;
-        }
-      }
 
       // Check if it's an error file
       const isErrorFile = entry.path.endsWith(".err.txt");
 
-      const preparedTable = {
-        name: tableName,
-        sourceFile: entry.path, // UI expects sourceFile, not path
-        path: entry.path,
-        size: entry.size,
-        nodeId,
-        originalName,
-        isError: isErrorFile,
-        loaded: false, // Initially not loaded
-        loading: false, // Initially not loading
-      };
+      // Parse node ID from path like /nodes/1/system.jobs.txt
+      const nodeMatch = entry.path.match(/\/nodes\/(\d+)\//);
+      if (nodeMatch) {
+        const nodeId = parseInt(nodeMatch[1], 10);
+        const originalName = tableName;
 
-      preparedTables.push(preparedTable);
+        // Group per-node files by their original table name
+        if (!perNodeFiles.has(originalName)) {
+          perNodeFiles.set(originalName, []);
+        }
+        perNodeFiles.get(originalName)!.push({
+          path: entry.path,
+          size: entry.size,
+          nodeId,
+          isError: isErrorFile,
+        });
+      } else {
+        // Cluster-level table (no node ID)
+        const preparedTable = {
+          name: tableName,
+          sourceFile: entry.path,
+          path: entry.path,
+          size: entry.size,
+          nodeId: undefined,
+          originalName: undefined,
+          isError: isErrorFile,
+          loaded: false,
+          loading: false,
+        };
+        clusterTables.push(preparedTable);
+      }
+    }
 
-      // Notify controller about each table we want to load
+    // Process cluster tables
+    const preparedTables = [...clusterTables];
+    for (const table of clusterTables) {
       self.postMessage({
         type: "tableDiscovered",
-        table: preparedTable,
+        table,
+      });
+    }
+
+    // Process per-node tables - create combined _by_node tables
+    for (const [originalName, nodeFiles] of perNodeFiles.entries()) {
+      // Calculate total size across all nodes
+      const totalSize = nodeFiles.reduce((sum, file) => sum + file.size, 0);
+      const hasErrors = nodeFiles.some(f => f.isError);
+
+      // Create combined table name with _by_node suffix
+      const combinedTableName = `${originalName}_by_node`;
+
+      // Create a single table entry representing all nodes
+      const combinedTable = {
+        name: combinedTableName,
+        sourceFile: nodeFiles[0].path, // Store first file path for reference
+        path: nodeFiles[0].path,
+        size: totalSize,
+        nodeId: undefined, // No single node ID - it's multi-node
+        originalName,
+        isError: hasErrors,
+        loaded: false,
+        loading: false,
+        // Store metadata about constituent nodes
+        nodeFiles: nodeFiles.map(f => ({
+          path: f.path,
+          size: f.size,
+          nodeId: f.nodeId,
+          isError: f.isError,
+        })),
+      };
+
+      preparedTables.push(combinedTable);
+
+      self.postMessage({
+        type: "tableDiscovered",
+        table: combinedTable,
       });
     }
 

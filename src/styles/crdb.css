@@ -24,22 +24,9 @@
 }
 
 .sql-cell-expanded {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  z-index: 1000;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-primary);
-  padding: 8px;
-  border-radius: 4px;
-  max-width: 500px;
-  max-height: 300px;
-  overflow: auto;
   white-space: pre-wrap;
-  word-break: break-all;
-  font-size: 11px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  margin-top: 4px;
+  word-break: break-word;
+  display: inline;
 }
 
 .sql-cell-hex-value {

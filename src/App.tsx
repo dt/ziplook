@@ -89,9 +89,9 @@ function AppContent() {
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
   const handleViewChange = (view: ActiveView) => {
-    if (view === activeView && sidebarVisible) {
+    if (view === activeView) {
       // If clicking the current view, toggle sidebar
-      setSidebarVisible(false);
+      setSidebarVisible((prev) => !prev);
     } else {
       // Otherwise, show sidebar and change view
       setSidebarVisible(true);
@@ -102,6 +102,10 @@ function AppContent() {
   // Global keyboard shortcuts
   const toggleSidebar = useCallback(() => {
     setSidebarVisible((prev) => !prev);
+  }, []);
+
+  const collapseSidebar = useCallback(() => {
+    setSidebarVisible(false);
   }, []);
 
   const focusFilterInput = useCallback(() => {
@@ -242,27 +246,26 @@ function AppContent() {
     { key: "9", cmd: true, handler: () => handleTabSwitch(9) },
   ]);
 
-  // Check if stackgazer iframe should be full-screen
-  const isStackgazerFullScreen =
-    activeView === "stackgazer" && state.zip && state.stackgazerReady;
+  // Stackgazer is active when we're on the stackgazer view and have loaded files in either mode
+  const isStackgazerActive =
+    activeView === "stackgazer" && state.zip &&
+    (state.stackgazerReady || state.stackgazerReadyPerG || state.stackgazerReadyLabeled);
 
   return (
     <>
       <div
         className={`app-container ${
-          !sidebarVisible || isStackgazerFullScreen ? "sidebar-collapsed" : ""
+          !sidebarVisible || isStackgazerActive ? "sidebar-collapsed" : ""
         }`}
       >
         <IconRail activeView={activeView} onViewChange={handleViewChange} />
         <Sidebar
           activeView={activeView}
-          isVisible={sidebarVisible && !isStackgazerFullScreen}
+          isVisible={sidebarVisible}
           width={sidebarWidth}
-          style={{
-            display: isStackgazerFullScreen ? 'none' : undefined
-          }}
+          onCollapse={collapseSidebar}
         />
-        {sidebarVisible && !isStackgazerFullScreen && (
+        {sidebarVisible && (
           <div
             className="sidebar-resize-handle"
             onMouseDown={handleMouseDown}
@@ -270,23 +273,25 @@ function AppContent() {
         )}
         <MainPanel
           style={{
-            display: isStackgazerFullScreen ? 'none' : 'flex'
+            display: isStackgazerActive ? 'none' : 'flex'
           }}
         />
-        {/* Preloaded iframe that gets repositioned when stackgazer is active */}
+        {/* Stackgazer iframes - two separate instances for per-g and labeled modes */}
+        {/* Both always mounted, visibility controlled by CSS based on active mode */}
         <div
-          id="stackgazer-iframe-container"
+          id="stackgazer-per-g-container"
           style={{
-            position: isStackgazerFullScreen ? "static" : "absolute",
-            left: isStackgazerFullScreen ? "auto" : "-9999px",
-            top: isStackgazerFullScreen ? "auto" : "-9999px",
-            width: isStackgazerFullScreen ? "100%" : "1px",
-            height: isStackgazerFullScreen ? "100%" : "1px",
-            flex: isStackgazerFullScreen ? 1 : "none",
-            display: isStackgazerFullScreen ? "flex" : "block",
+            position: isStackgazerActive && state.stackgazerMode === "per-goroutine" ? "relative" : "absolute",
+            width: isStackgazerActive && state.stackgazerMode === "per-goroutine" ? "100%" : "1px",
+            height: isStackgazerActive && state.stackgazerMode === "per-goroutine" ? "100%" : "1px",
+            flex: isStackgazerActive && state.stackgazerMode === "per-goroutine" ? 1 : undefined,
+            display: isStackgazerActive && state.stackgazerMode === "per-goroutine" ? "flex" : "block",
             flexDirection: "column",
             overflow: "hidden",
+            left: isStackgazerActive && state.stackgazerMode === "per-goroutine" ? undefined : "-9999px",
+            top: isStackgazerActive && state.stackgazerMode === "per-goroutine" ? undefined : "-9999px",
           }}
+          data-mode="per-goroutine"
         >
           <iframe
             src="./stackgazer.html"
@@ -296,7 +301,33 @@ function AppContent() {
               border: "none",
               backgroundColor: "white",
             }}
-            id="stackgazer-preload"
+            id="stackgazer-per-g"
+          />
+        </div>
+        <div
+          id="stackgazer-labeled-container"
+          style={{
+            position: isStackgazerActive && state.stackgazerMode === "labeled" ? "relative" : "absolute",
+            width: isStackgazerActive && state.stackgazerMode === "labeled" ? "100%" : "1px",
+            height: isStackgazerActive && state.stackgazerMode === "labeled" ? "100%" : "1px",
+            flex: isStackgazerActive && state.stackgazerMode === "labeled" ? 1 : undefined,
+            display: isStackgazerActive && state.stackgazerMode === "labeled" ? "flex" : "block",
+            flexDirection: "column",
+            overflow: "hidden",
+            left: isStackgazerActive && state.stackgazerMode === "labeled" ? undefined : "-9999px",
+            top: isStackgazerActive && state.stackgazerMode === "labeled" ? undefined : "-9999px",
+          }}
+          data-mode="labeled"
+        >
+          <iframe
+            src="./stackgazer.html"
+            style={{
+              width: "100%",
+              height: "100%",
+              border: "none",
+              backgroundColor: "white",
+            }}
+            id="stackgazer-labeled"
           />
         </div>
       </div>

@@ -611,9 +611,8 @@ async function startStackParsing(): Promise<void> {
   }
 }
 
-// Load stack files on demand when Stackgazer is clicked
-async function loadStackFiles() {
-
+// Load a single stack file on demand
+async function loadSingleStackFile(filePath: string) {
   try {
     // Get the stored zip entries
     const storedEntries = self.zipEntries;
@@ -622,35 +621,35 @@ async function loadStackFiles() {
       return;
     }
 
-    // Find all stacks.txt files
-    const stackFiles = storedEntries.filter(
+    // Find the specific file
+    const stackFile = storedEntries.find(
+      (entry: ZipEntryMeta) => entry.path === filePath
+    );
+
+    if (!stackFile) {
+      console.warn(`❌ Controller: Stack file not found: ${filePath}`);
+      return;
+    }
+
+    // Read the file content
+    const fileContent = await readStackFile(stackFile.path);
+
+    // Find all stack files to compute common prefix/suffix
+    const allStackFiles = storedEntries.filter(
       (entry: ZipEntryMeta) =>
         !entry.isDir && entry.path.includes("stacks.txt"),
     );
 
-    if (stackFiles.length === 0) {
-      console.warn("❌ Controller: No stack files found");
-      return;
-    }
-
-    notify({
-      type: "loadingStage",
-      stage: "stack-loading",
-      message: "Loading stack files...",
-    });
-
-    // Compute common prefix and suffix for display names
-    let commonPrefix = "";
-    let commonSuffix = "";
-
-    if (stackFiles.length > 1) {
+    // Compute display name by removing common prefix/suffix
+    let name = stackFile.path;
+    if (allStackFiles.length > 1) {
       // Find common prefix - compare character by character
-      const firstPath = stackFiles[0].path;
+      const firstPath = allStackFiles[0].path;
       let prefixLen = firstPath.length;
       let suffixLen = firstPath.length;
 
-      for (const stackFile of stackFiles) {
-        const path = stackFile.path;
+      for (const sf of allStackFiles) {
+        const path = sf.path;
 
         // Find how many characters match at the start
         let matchStart = 0;
@@ -669,57 +668,49 @@ async function loadStackFiles() {
         suffixLen = matchEnd;
       }
 
-      commonPrefix = firstPath.substring(0, prefixLen);
-      commonSuffix = firstPath.substring(firstPath.length - suffixLen);
-    }
+      let commonPrefix = firstPath.substring(0, prefixLen);
+      const commonSuffix = firstPath.substring(firstPath.length - suffixLen);
 
-    // Process each stack file individually
-    let processedCount = 0;
-    for (const stackFile of stackFiles) {
-      try {
-        // Request file content from zip worker
-        const fileContent = await readStackFile(stackFile.path);
+      // Trim common prefix to end at a directory boundary (/)
+      // This ensures we don't cut off in the middle of a directory name
+      const lastSlash = commonPrefix.lastIndexOf('/');
+      if (lastSlash >= 0) {
+        commonPrefix = commonPrefix.substring(0, lastSlash + 1);
+      }
 
-        // Compute display name by removing common prefix/suffix
-        let name = stackFile.path;
-        if (commonPrefix.length > 0) {
-          name = name.substring(commonPrefix.length);
-        }
-        if (commonSuffix.length > 0 && name.endsWith(commonSuffix)) {
-          name = name.substring(0, name.length - commonSuffix.length);
-        }
-        // If name is empty after trimming, use the full path
-        if (name.length === 0) {
-          name = stackFile.path;
-        }
-
-        // Send each file individually to UI
-        notify({
-          type: "sendStackFileToIframe",
-          path: stackFile.path,
-          name: name,
-          content: fileContent,
-        });
-
-        processedCount++;
-      } catch (error) {
-        console.error(
-          `❌ Controller: Failed to read stack file ${stackFile.path}:`,
-          error,
-        );
+      // Strip common prefix and suffix
+      if (commonPrefix.length > 0) {
+        name = name.substring(commonPrefix.length);
+      }
+      if (commonSuffix.length > 0 && name.endsWith(commonSuffix)) {
+        name = name.substring(0, name.length - commonSuffix.length);
+      }
+      // If name is empty after trimming, use the full path
+      if (name.length === 0) {
+        name = stackFile.path;
       }
     }
 
-    // Send completion notification after all files have been sent individually
-    if (processedCount > 0) {
+    // Send the file to UI - this will add it to stackData and send to iframe
+    // The onSendStackFileToIframe callback will handle both updating state and sending to iframe
+    notify({
+      type: "sendStackFileToIframe",
+      path: stackFile.path,
+      name: name,
+      content: fileContent,
+    });
+
+    // Wait a moment for the file to be added to stackData, then mark as ready
+    // This ensures stackData has the file before stackgazerReady becomes true
+    setTimeout(() => {
       notify({
         type: "stackProcessingComplete",
-        stackFilesCount: processedCount,
+        stackFilesCount: 1,
       });
-    }
+    }, 50);
 
   } catch (error) {
-    console.error("❌ Controller: Stack loading failed:", error);
+    console.error(`❌ Controller: Failed to load stack file ${filePath}:`, error);
   }
 }
 
@@ -983,8 +974,8 @@ self.onmessage = async (event: MessageEvent<Command>) => {
       return;
     }
 
-    if (command.type === "loadStackFiles") {
-      await loadStackFiles();
+    if (command.type === "loadSingleStackFile") {
+      await loadSingleStackFile(command.filePath as string);
       self.postMessage({ type: "response", id: command.id, success: true });
       return;
     }

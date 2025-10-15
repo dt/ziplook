@@ -69,6 +69,13 @@ export interface TableMeta {
     total: number;
     percentage: number;
   };
+  nodeFiles?: Array<{
+    // For multi-node tables
+    path: string;
+    size: number;
+    nodeId: number;
+    isError: boolean;
+  }>;
 }
 
 // Search-related types
@@ -152,6 +159,12 @@ export interface TableData {
   loaded?: boolean;
   loading?: boolean;
   sourceFile?: string;
+  nodeFiles?: Array<{
+    path: string;
+    size: number;
+    nodeId: number;
+    isError: boolean;
+  }>;
 }
 
 export interface FileStatus {
@@ -211,7 +224,6 @@ export interface IWorkerManager {
   // Indexing operations
   searchLogs(query: string): Promise<SearchResult[]>;
   getFileStatuses(): Promise<FileStatus[]>;
-  loadStackFiles(): Promise<void>;
   startIndexing(filePaths: string[]): Promise<void>;
   indexSingleFile(file: {
     path: string;
@@ -281,9 +293,14 @@ export interface AppState {
   fileCache: Map<ZipEntryId, { text?: string; bytes?: Uint8Array }>;
   tables: Record<string, TableMeta>;
   tablesLoading?: boolean; // Global state for table loading
-  stackData?: Record<string, string>; // Stack trace files: path -> content
+  stackData?: Record<string, string>; // Stack trace files: path -> content (DEPRECATED - use per-mode states)
+  stackDataPerG?: Record<string, string>; // Per-goroutine stack files: path -> content
+  stackDataLabeled?: Record<string, string>; // Labeled stack files: path -> content
   stackFiles?: Array<{ path: string; size: number; compressedSize: number }>; // Available stack files metadata
-  stackgazerReady?: boolean; // Whether all stack files have been loaded and sent to iframe
+  stackgazerReady?: boolean; // Whether all stack files have been loaded and sent to iframe (DEPRECATED)
+  stackgazerReadyPerG?: boolean; // Whether per-g stack files are ready
+  stackgazerReadyLabeled?: boolean; // Whether labeled stack files are ready
+  stackgazerMode?: "per-goroutine" | "labeled"; // Current stackgazer viewing mode
   searchIndex?: SearchIndex; // Log search index state
   workerManager?: IWorkerManager; // Worker manager instance
   workersReady?: boolean; // Whether workers are initialized and ready

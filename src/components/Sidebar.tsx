@@ -11,9 +11,10 @@ interface SidebarProps {
   isVisible: boolean;
   width: number;
   style?: React.CSSProperties;
+  onCollapse?: () => void;
 }
 
-function Sidebar({ activeView, isVisible, width, style }: SidebarProps) {
+function Sidebar({ activeView, isVisible, width, style, onCollapse }: SidebarProps) {
   const { state } = useApp();
 
   // Calculate loading progress for tables view
@@ -66,7 +67,7 @@ function Sidebar({ activeView, isVisible, width, style }: SidebarProps) {
       case "profiles":
         return <ProfilesView />;
       case "stackgazer":
-        return <StackgazerView />;
+        return <StackgazerView onCollapse={onCollapse} />;
     }
   };
 

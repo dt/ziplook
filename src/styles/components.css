@@ -1372,9 +1372,6 @@
   display: block;
 }
 
-.sql-table td.collapsed-column .sql-cell-expanded {
-  display: none;
-}
 
 .column-header {
   display: flex;

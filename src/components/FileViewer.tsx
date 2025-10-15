@@ -78,7 +78,7 @@ function FileViewer({ tab }: FileViewerProps) {
             setLoading(false);
             setIsStreaming(false);
             abortRef.current = null;
-            loadInitiatedRef.current = false; // Reset for potential future loads
+            // Don't reset loadInitiatedRef - file has successfully loaded!
           }
         },
         (loaded: number, total: number) => {
@@ -101,8 +101,8 @@ function FileViewer({ tab }: FileViewerProps) {
 
   useEffect(() => {
     // Load once on mount - prevent double loading during React StrictMode double mount
-    if (!content && !loading && !loadInitiatedRef.current) {
-      console.log(`Loading file from zip: ${tab.id}`);
+    // Don't check content - empty files are valid and shouldn't trigger reloads!
+    if (!loading && !loadInitiatedRef.current) {
       loadInitiatedRef.current = true;
       loadFile();
     }
@@ -113,14 +113,12 @@ function FileViewer({ tab }: FileViewerProps) {
         abortRef.current();
       }
     };
-  }, [content, loading, loadFile, tab.id]);
+  }, [loading, loadFile, tab.id]);
 
   // Use enhanced viewer if enabled
   if (USE_ENHANCED_VIEWER) {
     return <EnhancedFileViewer tab={tab} />;
   }
-
-  console.log(`FileViewer RENDER for ${tab.id}`);
 
   // Helper function for formatting file sizes
   const formatFileSize = (bytes: number): string => {

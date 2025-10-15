@@ -34,11 +34,16 @@ export type AppAction =
   | { type: "SET_TABLES_LOADING"; loading: boolean }
   | { type: "SET_STACK_DATA"; stackData: Record<string, string> }
   | { type: "ADD_STACK_FILE"; filePath: string; content: string }
+  | { type: "ADD_STACK_FILE_PER_G"; filePath: string; content: string }
+  | { type: "ADD_STACK_FILE_LABELED"; filePath: string; content: string }
   | {
       type: "SET_STACK_FILES";
       stackFiles: Array<{ path: string; size: number; compressedSize: number }>;
     }
   | { type: "SET_STACKGAZER_READY"; ready: boolean }
+  | { type: "SET_STACKGAZER_READY_PER_G"; ready: boolean }
+  | { type: "SET_STACKGAZER_READY_LABELED"; ready: boolean }
+  | { type: "SET_STACKGAZER_MODE"; mode: "per-goroutine" | "labeled" }
   | { type: "SET_WORKER_MANAGER"; workerManager: IWorkerManager }
   | { type: "SET_WORKERS_READY"; ready: boolean }
   | {
@@ -62,6 +67,9 @@ const initialState: AppState = {
   fileCache: new Map(),
   tables: {},
   stackData: {}, // Initialize as empty object so stackgazer can be enabled when stacks are loaded
+  stackDataPerG: {},
+  stackDataLabeled: {},
+  stackgazerMode: "per-goroutine",
 };
 
 function appReducer(state: AppState, action: AppAction): AppState {
@@ -341,6 +349,34 @@ function appReducer(state: AppState, action: AppAction): AppState {
       };
     }
 
+    case "ADD_STACK_FILE_PER_G": {
+      const newStackData = {
+        ...state.stackDataPerG,
+        [action.filePath]: action.content,
+      };
+      console.log(
+        `🎯 Added per-g stack file to state: ${action.filePath}, total files: ${Object.keys(newStackData).length}`,
+      );
+      return {
+        ...state,
+        stackDataPerG: newStackData,
+      };
+    }
+
+    case "ADD_STACK_FILE_LABELED": {
+      const newStackData = {
+        ...state.stackDataLabeled,
+        [action.filePath]: action.content,
+      };
+      console.log(
+        `🎯 Added labeled stack file to state: ${action.filePath}, total files: ${Object.keys(newStackData).length}`,
+      );
+      return {
+        ...state,
+        stackDataLabeled: newStackData,
+      };
+    }
+
     case "SET_STACK_FILES": {
       return {
         ...state,
@@ -352,6 +388,27 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         stackgazerReady: action.ready,
+      };
+    }
+
+    case "SET_STACKGAZER_READY_PER_G": {
+      return {
+        ...state,
+        stackgazerReadyPerG: action.ready,
+      };
+    }
+
+    case "SET_STACKGAZER_READY_LABELED": {
+      return {
+        ...state,
+        stackgazerReadyLabeled: action.ready,
+      };
+    }
+
+    case "SET_STACKGAZER_MODE": {
+      return {
+        ...state,
+        stackgazerMode: action.mode,
       };
     }
 

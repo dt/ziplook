@@ -114,23 +114,26 @@ function SqlEditor({ tab }: SqlEditorProps) {
       const isExpanded =
         expandedCell?.row === rowIndex && expandedCell?.col === colIndex;
       return (
-        <div>
-          <span
-            onClick={() =>
-              setExpandedCell(
-                isExpanded ? null : { row: rowIndex, col: colIndex },
-              )
-            }
-            style={{ cursor: "pointer" }}
-          >
-            {strValue.substring(0, 100)}...
-          </span>
-          {isExpanded && <div className="sql-cell-expanded">{strValue}</div>}
-        </div>
+        <span className={isExpanded ? "sql-cell-expanded" : ""}>
+          {isExpanded ? strValue : `${strValue.substring(0, 100)}...`}
+        </span>
       );
     }
 
     return strValue;
+  };
+
+  const handleCellClick = (rowIndex: number, colIndex: number, value: unknown) => {
+    const selection = window.getSelection();
+    const hasSelection = selection && selection.toString().length > 0;
+    if (hasSelection) return;
+
+    const strValue = formatValue(value);
+    if (strValue.length > 100) {
+      const isExpanded =
+        expandedCell?.row === rowIndex && expandedCell?.col === colIndex;
+      setExpandedCell(isExpanded ? null : { row: rowIndex, col: colIndex });
+    }
   };
 
   const runQuery = useCallback(async () => {
@@ -374,14 +377,20 @@ function SqlEditor({ tab }: SqlEditorProps) {
                 <tbody>
                   {results.slice(0, 1000).map((row, i) => (
                     <tr key={i}>
-                      {Object.entries(row).map(([colName, val], j) => (
-                        <td
-                          key={j}
-                          className={collapsedColumns.has(colName) ? 'collapsed-column' : ''}
-                        >
-                          {renderCellValue(val, i, j, colName)}
-                        </td>
-                      ))}
+                      {Object.entries(row).map(([colName, val], j) => {
+                        const strValue = formatValue(val);
+                        const isTruncatable = strValue.length > 100;
+                        return (
+                          <td
+                            key={j}
+                            className={collapsedColumns.has(colName) ? 'collapsed-column' : ''}
+                            onClick={() => handleCellClick(i, j, val)}
+                            style={isTruncatable ? { cursor: 'pointer' } : undefined}
+                          >
+                            {renderCellValue(val, i, j, colName)}
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))}
                 </tbody>

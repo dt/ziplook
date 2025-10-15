@@ -99,9 +99,9 @@ export class WorkerManager implements IWorkerManager {
     await this.sendMessage({ type: "init" });
   }
 
-  async loadStackFiles(): Promise<void> {
-    // Trigger loading of stack files on demand
-    await this.sendMessage({ type: "loadStackFiles" });
+  async loadSingleStackFile(filePath: string): Promise<void> {
+    // Trigger loading of a single stack file
+    await this.sendMessage({ type: "loadSingleStackFile", filePath });
   }
 
   async initializeDatabase(): Promise<void> {

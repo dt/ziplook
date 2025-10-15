@@ -1079,16 +1079,26 @@ function DropZone() {
         }
       },
       onSendStackFileToIframe: (path: string, content: string, name?: string) => {
-        // Add to React state for UI logic
+        // Detect mode based on file path
+        const isLabeled = path.includes("stacks_with_labels.txt");
+        const isPerG = path.includes("stacks.txt") && !isLabeled;
+
+        // Add to React state for UI logic (mode-specific)
+        if (isPerG) {
+          dispatch({ type: "ADD_STACK_FILE_PER_G", filePath: path, content: content });
+        } else if (isLabeled) {
+          dispatch({ type: "ADD_STACK_FILE_LABELED", filePath: path, content: content });
+        }
+        // Also update legacy stackData for backwards compatibility
         dispatch({ type: "ADD_STACK_FILE", filePath: path, content: content });
 
-        const preloadedIframe = document.getElementById(
-          "stackgazer-preload",
-        ) as HTMLIFrameElement;
-        if (preloadedIframe?.contentWindow) {
+        // Send to appropriate iframe based on file type
+        const iframeId = isLabeled ? "stackgazer-labeled" : "stackgazer-per-g";
+        const iframe = document.getElementById(iframeId) as HTMLIFrameElement;
+        if (iframe?.contentWindow) {
           setTimeout(() => {
             try {
-              preloadedIframe.contentWindow!.postMessage(
+              iframe.contentWindow!.postMessage(
                 {
                   type: "LOAD_STACK_FILE",
                   path: path,
@@ -1121,11 +1131,11 @@ function DropZone() {
           entries,
         });
 
-        // Extract stack files from the file list
+        // Extract stack files from the file list (both stacks.txt and stacks_with_labels.txt)
         const stackFiles = entries
           .filter(
             (entry: ZipEntryMeta) =>
-              !entry.isDir && entry.path.includes("stacks.txt"),
+              !entry.isDir && (entry.path.endsWith("stacks.txt") || entry.path.endsWith("stacks_with_labels.txt")),
           )
           .map((entry: ZipEntryMeta) => ({
             path: entry.path,
@@ -1155,6 +1165,7 @@ function DropZone() {
             nodeId: table.nodeId,
             originalName: table.originalName,
             isError: table.isError,
+            nodeFiles: table.nodeFiles,
           },
         });
       },
@@ -1428,21 +1439,30 @@ function DropZone() {
             // Stack data is now sent directly by controller via onSendStackDataToIframe callback
           },
           onSendStackFileToIframe: (path: string, content: string, name?: string) => {
-            // Add to React state for UI logic
+            // Detect mode based on file path
+            const isLabeled = path.includes("stacks_with_labels.txt");
+            const isPerG = path.includes("stacks.txt") && !isLabeled;
+
+            // Add to React state for UI logic (mode-specific)
+            if (isPerG) {
+              dispatch({ type: "ADD_STACK_FILE_PER_G", filePath: path, content: content });
+            } else if (isLabeled) {
+              dispatch({ type: "ADD_STACK_FILE_LABELED", filePath: path, content: content });
+            }
+            // Also update legacy stackData for backwards compatibility
             dispatch({
               type: "ADD_STACK_FILE",
               filePath: path,
               content: content,
             });
 
-            // Send directly to iframe immediately - no storage needed
-            const preloadedIframe = document.getElementById(
-              "stackgazer-preload",
-            ) as HTMLIFrameElement;
-            if (preloadedIframe?.contentWindow) {
+            // Send to appropriate iframe based on file type
+            const iframeId = isLabeled ? "stackgazer-labeled" : "stackgazer-per-g";
+            const iframe = document.getElementById(iframeId) as HTMLIFrameElement;
+            if (iframe?.contentWindow) {
               setTimeout(() => {
                 try {
-                  preloadedIframe.contentWindow!.postMessage(
+                  iframe.contentWindow!.postMessage(
                     {
                       type: "LOAD_STACK_FILE",
                       path: path,
@@ -1479,11 +1499,11 @@ function DropZone() {
               entries,
             });
 
-            // Extract stack files from the file list
+            // Extract stack files from the file list (both stacks.txt and stacks_with_labels.txt)
             const stackFiles = entries
               .filter(
                 (entry: ZipEntryMeta) =>
-                  !entry.isDir && entry.path.includes("stacks.txt"),
+                  !entry.isDir && (entry.path.endsWith("stacks.txt") || entry.path.endsWith("stacks_with_labels.txt")),
               )
               .map((entry: ZipEntryMeta) => ({
                 path: entry.path,
@@ -1515,6 +1535,7 @@ function DropZone() {
                 nodeId: table.nodeId,
                 originalName: table.originalName,
                 isError: table.isError,
+                nodeFiles: table.nodeFiles,
               },
             });
           },

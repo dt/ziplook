@@ -43,14 +43,9 @@ function TablesView() {
   const [loadingTables, setLoadingTables] = useState<Set<string>>(new Set());
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
     () => {
-      // Default collapse all empty table sections and node headers
+      // Default collapse empty table section
       const initial = new Set<string>();
-      initial.add("cluster-empty"); // Collapse cluster empty tables by default
-      // Add all possible node sections (nodes 1-10 should cover most cases)
-      for (let i = 1; i <= 10; i++) {
-        initial.add(`node-${i}`); // Collapse node headers by default
-        initial.add(`node-${i}-empty`); // Collapse node empty sections by default
-      }
+      initial.add("empty"); // Collapse empty tables by default
       return initial;
     },
   );
@@ -155,41 +150,16 @@ function TablesView() {
         table.originalName.toLowerCase().includes(filter.toLowerCase())),
   );
 
-  // Separate cluster (root) tables and node tables
-  const clusterTables = filteredTables
-    .filter((t) => !t.nodeId)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  // Sort all tables by name
+  const allTables = filteredTables.sort((a, b) => a.name.localeCompare(b.name));
 
   // Separate zero-row tables from regular tables
-  const regularClusterTables = clusterTables.filter(
+  const regularTables = allTables.filter(
     (t) => !t.loaded || t.rowCount === undefined || t.rowCount > 0,
   );
-  const emptyClusterTables = clusterTables.filter(
+  const emptyTables = allTables.filter(
     (t) => t.loaded && t.rowCount === 0,
   );
-
-  const nodeTables = filteredTables.filter((t) => t.nodeId !== undefined);
-
-  // Group node tables by node
-  const nodeGroups = new Map<number, typeof tables>();
-  nodeTables.forEach((table) => {
-    if (table.nodeId !== undefined) {
-      if (!nodeGroups.has(table.nodeId)) {
-        nodeGroups.set(table.nodeId, []);
-      }
-      nodeGroups.get(table.nodeId)!.push(table);
-    }
-  });
-
-  // Sort node groups by node ID
-  const sortedNodeGroups = Array.from(nodeGroups.entries())
-    .sort(([a], [b]) => a - b)
-    .map(([nodeId, tables]) => ({
-      nodeId,
-      tables: tables.sort((a, b) =>
-        (a.originalName || a.name).localeCompare(b.originalName || b.name),
-      ),
-    }));
 
   // Auto-expand sections when filtering
   useEffect(() => {
@@ -205,31 +175,16 @@ function TablesView() {
         hasChanges = true;
       }
 
-      // Expand cluster tables section if there are matches
-      if (clusterTables.length > 0 && next.has("cluster-tables")) {
-        next.delete("cluster-tables");
+      // Expand tables section if there are matches
+      if (allTables.length > 0 && next.has("tables")) {
+        next.delete("tables");
         hasChanges = true;
-      }
-
-      // Expand node tables section and individual nodes if there are matches
-      if (sortedNodeGroups.length > 0) {
-        if (next.has("node-tables")) {
-          next.delete("node-tables");
-          hasChanges = true;
-        }
-        // Also expand individual node sections that have matches
-        sortedNodeGroups.forEach(({ nodeId }) => {
-          if (next.has(`node-${nodeId}`)) {
-            next.delete(`node-${nodeId}`);
-            hasChanges = true;
-          }
-        });
       }
 
       // Only update state if there are actual changes
       return hasChanges ? next : prev;
     });
-  }, [filter, customQueryTabs.length, clusterTables.length, sortedNodeGroups]);
+  }, [filter, customQueryTabs.length, allTables.length]);
 
   // Update navigation items when filtered results change
   // Temporarily disabled to fix infinite loop
@@ -270,6 +225,7 @@ function TablesView() {
           nodeId: table.nodeId,
           originalName: table.originalName,
           isError: table.isError,
+          nodeFiles: table.nodeFiles,
         });
 
         // The table progress will be updated via the WorkerManager callbacks
@@ -490,21 +446,21 @@ function TablesView() {
         </div>
       )}
 
-      {/* Cluster Tables Section */}
-      {(regularClusterTables.length > 0 || emptyClusterTables.length > 0) && (
+      {/* Tables Section */}
+      {(regularTables.length > 0 || emptyTables.length > 0) && (
         <div className="table-section">
           <div
             className="section-header sub-header clickable"
-            onClick={() => toggleSection("cluster-tables")}
+            onClick={() => toggleSection("tables")}
           >
             <span className="section-chevron">
-              {collapsedSections.has("cluster-tables") ? "▶" : "▼"}
+              {collapsedSections.has("tables") ? "▶" : "▼"}
             </span>
-            Cluster Tables
+            Tables
           </div>
-          {!collapsedSections.has("cluster-tables") && (
+          {!collapsedSections.has("tables") && (
             <>
-              {regularClusterTables.map((table) => {
+              {regularTables.map((table) => {
                 const { prefix, mainName } = parseTableName(table.name);
                 const isHighlighted =
                   navigation.state.isNavigating &&
@@ -567,19 +523,19 @@ function TablesView() {
               })}
 
               {/* Empty Tables Section */}
-              {emptyClusterTables.length > 0 && (
+              {emptyTables.length > 0 && (
                 <>
                   <div
                     className="subsection-header clickable"
-                    onClick={() => toggleSection("cluster-empty")}
+                    onClick={() => toggleSection("empty")}
                   >
                     <span className="section-chevron">
-                      {collapsedSections.has("cluster-empty") ? "▶" : "▼"}
+                      {collapsedSections.has("empty") ? "▶" : "▼"}
                     </span>
-                    Empty Tables ({emptyClusterTables.length})
+                    Empty Tables ({emptyTables.length})
                   </div>
-                  {!collapsedSections.has("cluster-empty") &&
-                    emptyClusterTables.map((table) => {
+                  {!collapsedSections.has("empty") &&
+                    emptyTables.map((table) => {
                       const { prefix, mainName } = parseTableName(table.name);
                       const isHighlighted =
                         navigation.state.isNavigating &&
@@ -612,180 +568,10 @@ function TablesView() {
         </div>
       )}
 
-      {/* Node Tables Section */}
-      {sortedNodeGroups.length > 0 && (
-        <div className="table-section">
-          <div
-            className="section-header sub-header clickable"
-            onClick={() => toggleSection("node-tables")}
-          >
-            <span className="section-chevron">
-              {collapsedSections.has("node-tables") ? "▶" : "▼"}
-            </span>
-            Node Tables
-          </div>
-          {!collapsedSections.has("node-tables") &&
-            sortedNodeGroups.map(({ nodeId, tables }) => {
-              // Separate zero-row tables from regular tables for each node
-              const regularNodeTables = tables.filter(
-                (t) => !t.loaded || t.rowCount === undefined || t.rowCount > 0,
-              );
-              const emptyNodeTables = tables.filter(
-                (t) => t.loaded && t.rowCount === 0,
-              );
-
-              return (
-                <div key={`node-${nodeId}`} className="node-group">
-                  <div
-                    className="node-subheader clickable"
-                    onClick={() => toggleSection(`node-${nodeId}`)}
-                  >
-                    <span className="section-chevron">
-                      {collapsedSections.has(`node-${nodeId}`) ? "▶" : "▼"}
-                    </span>
-                    Node {nodeId}
-                  </div>
-                  {!collapsedSections.has(`node-${nodeId}`) && (
-                    <>
-                      {regularNodeTables.map((table) => {
-                        const tableName = table.originalName || table.name;
-                        const { prefix, mainName } = parseTableName(tableName);
-                        const isHighlighted =
-                          navigation.state.isNavigating &&
-                          navigation.state.items[
-                            navigation.state.highlightedIndex
-                          ]?.id === `table-${table.name}`;
-                        return (
-                          <div
-                            key={table.name}
-                            ref={(el) =>
-                              registerElement(`table-${table.name}`, el)
-                            }
-                            className={`table-item-compact ${table.loading ? "loading" : ""} ${table.deferred ? "deferred" : ""} ${table.isError ? "error-file" : ""} ${table.loadError ? "load-failed" : ""} ${table.rowCount === 0 ? "empty-table" : ""} ${!table.loaded && !table.loading && !table.deferred ? "unloaded" : ""} ${isHighlighted ? "keyboard-highlighted" : ""}`}
-                            onClick={() => handleTableClick(table)}
-                          >
-                            {table.loaded &&
-                              table.rowCount !== undefined &&
-                              !table.isError &&
-                              !table.loadError &&
-                              !table.deferred && (
-                                <span className="table-row-count">
-                                  {table.rowCount.toLocaleString()}
-                                </span>
-                              )}
-                            {table.loading && (
-                              <span className="loading-spinner-small" />
-                            )}
-                            <div className="table-name-compact">
-                              {prefix && (
-                                <span className="table-prefix">{prefix}</span>
-                              )}
-                              <span className="table-main-name">
-                                {mainName}
-                              </span>
-                            </div>
-                            {(table.isError ||
-                              table.loadError ||
-                              table.deferred) && (
-                              <div className="table-status-compact">
-                                {table.isError && (
-                                  <span className="status-icon">⚠️</span>
-                                )}
-                                {table.loadError && (
-                                  <span className="status-icon">❌</span>
-                                )}
-                                {table.deferred && (
-                                  <span className="status-text">
-                                    {formatFileSize(table.size || 0)}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                            {/* Chunk progress bar */}
-                            {table.chunkProgress && (
-                              <div className="chunk-progress-bar">
-                                <div
-                                  className="chunk-progress-fill"
-                                  style={{
-                                    width: `${table.chunkProgress.percentage}%`,
-                                    height: "3px",
-                                    backgroundColor: "#007acc",
-                                    transition: "width 0.3s ease",
-                                  }}
-                                />
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-
-                      {/* Empty Tables for this node */}
-                      {emptyNodeTables.length > 0 && (
-                        <>
-                          <div
-                            className="subsection-header clickable"
-                            onClick={() =>
-                              toggleSection(`node-${nodeId}-empty`)
-                            }
-                          >
-                            <span className="section-chevron">
-                              {collapsedSections.has(`node-${nodeId}-empty`)
-                                ? "▶"
-                                : "▼"}
-                            </span>
-                            Empty Tables ({emptyNodeTables.length})
-                          </div>
-                          {!collapsedSections.has(`node-${nodeId}-empty`) &&
-                            emptyNodeTables.map((table) => {
-                              const tableName =
-                                table.originalName || table.name;
-                              const { prefix, mainName } =
-                                parseTableName(tableName);
-                              const isHighlighted =
-                                navigation.state.isNavigating &&
-                                navigation.state.items[
-                                  navigation.state.highlightedIndex
-                                ]?.id === `table-${table.name}`;
-                              return (
-                                <div
-                                  key={table.name}
-                                  ref={(el) =>
-                                    registerElement(`table-${table.name}`, el)
-                                  }
-                                  className={`table-item-compact empty-table ${isHighlighted ? "keyboard-highlighted" : ""}`}
-                                  onClick={() => handleTableClick(table)}
-                                >
-                                  <span className="table-row-count">
-                                    0 rows
-                                  </span>
-                                  <div className="table-name-compact">
-                                    {prefix && (
-                                      <span className="table-prefix">
-                                        {prefix}
-                                      </span>
-                                    )}
-                                    <span className="table-main-name">
-                                      {mainName}
-                                    </span>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                        </>
-                      )}
-                    </>
-                  )}
-                </div>
-              );
-            })}
-        </div>
-      )}
-
       {/* Show message if everything is filtered out */}
       {filter &&
         customQueryTabs.length === 0 &&
-        clusterTables.length === 0 &&
-        sortedNodeGroups.length === 0 && (
+        allTables.length === 0 && (
           <div className="empty-state">
             <p>No matching items</p>
           </div>
