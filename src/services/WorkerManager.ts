@@ -121,13 +121,19 @@ export class WorkerManager implements IWorkerManager {
     await this.sendMessage({ type: "loadSingleTable", to: "dbWorker", table });
   }
 
-  async executeQuery(sql: string): Promise<Record<string, unknown>[]> {
+  async executeQuery(sql: string): Promise<{
+    data: Record<string, unknown>[];
+    columnTypes: Record<string, string>;
+  }> {
     const result = await this.sendMessage({
       type: "executeQuery",
       to: "dbWorker",
       sql,
     });
-    return result as Record<string, unknown>[];
+    return result as {
+      data: Record<string, unknown>[];
+      columnTypes: Record<string, string>;
+    };
   }
 
   async getTableSchema(

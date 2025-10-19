@@ -181,6 +181,59 @@ const loadedTables = new Set<string>();
 let currentLoadingId: string | null = null;
 let shouldStop = false;
 
+// Helper to generate CSV read SQL with consistent parameters
+interface CsvReadOptions {
+  fileName: string;
+  tableName: string;
+  delimiter: string;
+  operation: 'create' | 'insert';
+  nodeId?: number;
+  typeHints?: Map<string, string>;
+  headers?: string[];
+}
+
+function generateCsvReadSql(options: CsvReadOptions): string {
+  const { fileName, tableName, delimiter, operation, nodeId, typeHints, headers } = options;
+  const quotedTableName = `"${tableName}"`;
+
+  // Build column specification if we have type hints and headers
+  let columnsClause = '';
+  if (typeHints && typeHints.size > 0 && headers && headers.length > 0) {
+    // Build column definitions with type hints for ALL columns
+    const columnDefs = headers.map((header) => {
+      const hint = typeHints.get(header.toLowerCase());
+      const columnType = hint || "VARCHAR";
+      return `'${header}': '${columnType}'`;
+    });
+    columnsClause = `columns={${columnDefs.join(', ')}}, auto_detect=false,`;
+  }
+  // If no type hints, don't set auto_detect at all - let DuckDB infer types from the data
+
+  // Common CSV parameters for all TSV files from CockroachDB debug zip
+  const csvParams = `
+    delim='${delimiter}',
+    header=true,
+    ${columnsClause}
+    nullstr='NULL',
+    quote='"',
+    escape='"',
+    sample_size=-1,
+    max_line_size=10485760
+  `;
+
+  // Add debug_node column for multi-node tables (per-node data like node_queries)
+  // Skip debug_node for single-file tables (cluster-wide data like cluster_settings)
+  const selectClause = nodeId !== undefined
+    ? `SELECT ${nodeId} AS debug_node, * FROM read_csv('${fileName}', ${csvParams})`
+    : `SELECT * FROM read_csv('${fileName}', ${csvParams})`;
+
+  if (operation === 'create') {
+    return `CREATE TABLE ${quotedTableName} AS ${selectClause}`;
+  } else {
+    return `INSERT INTO ${quotedTableName} ${selectClause}`;
+  }
+}
+
 // Process very large files incrementally by loading directly into DuckDB
 async function loadLargeFileIncrementally(
   data: Uint8Array,
@@ -189,6 +242,7 @@ async function loadLargeFileIncrementally(
   delimiter: string,
   nameForPreprocessing: string,
   nodeId?: number,
+  sourcePath?: string,
 ): Promise<number> {
   if (!conn || !db) {
     throw new Error("DuckDB not initialized");
@@ -289,53 +343,45 @@ async function loadLargeFileIncrementally(
           // Load this chunk into the table
           if (chunkNumber === 0 && !tableExists) {
             // First chunk and table doesn't exist - create table
-            let sql: string;
-            if (nodeId !== undefined) {
-              sql = `
-                CREATE TABLE ${quotedTableName} AS
-                SELECT ${nodeId} AS debug_node, * FROM read_csv_auto(
-                  '${chunkFileName}',
-                  delim='${delimiter}',
-                  header=true
-                )
-              `;
-            } else {
-              sql = `
-                CREATE TABLE ${quotedTableName} AS
-                SELECT * FROM read_csv_auto(
-                  '${chunkFileName}',
-                  delim='${delimiter}',
-                  header=true
-                )
-              `;
+            const sql = generateCsvReadSql({
+              fileName: chunkFileName,
+              tableName,
+              delimiter,
+              operation: 'create',
+              nodeId,
+            });
+            try {
+              await conn.query(sql);
+            } catch (error) {
+              const pathContext = sourcePath ? ` (source: ${sourcePath})` : '';
+              const enhancedError = error instanceof Error
+                ? new Error(`${error.message}${pathContext}`)
+                : new Error(`Unknown error${pathContext}`);
+              if (error instanceof Error) enhancedError.stack = error.stack;
+              throw enhancedError;
             }
-            await conn.query(sql);
             console.log(
               `📊 Created table from first chunk (${dataLines.length} data rows)`,
             );
           } else {
             // Subsequent chunks or table exists - insert data
-            let sql: string;
-            if (nodeId !== undefined) {
-              sql = `
-                INSERT INTO ${quotedTableName}
-                SELECT ${nodeId} AS debug_node, * FROM read_csv_auto(
-                  '${chunkFileName}',
-                  delim='${delimiter}',
-                  header=true
-                )
-              `;
-            } else {
-              sql = `
-                INSERT INTO ${quotedTableName}
-                SELECT * FROM read_csv_auto(
-                  '${chunkFileName}',
-                  delim='${delimiter}',
-                  header=true
-                )
-              `;
+            const sql = generateCsvReadSql({
+              fileName: chunkFileName,
+              tableName,
+              delimiter,
+              operation: 'insert',
+              nodeId,
+            });
+            try {
+              await conn.query(sql);
+            } catch (error) {
+              const pathContext = sourcePath ? ` (source: ${sourcePath})` : '';
+              const enhancedError = error instanceof Error
+                ? new Error(`${error.message}${pathContext}`)
+                : new Error(`Unknown error${pathContext}`);
+              if (error instanceof Error) enhancedError.stack = error.stack;
+              throw enhancedError;
             }
-            await conn.query(sql);
             console.log(
               `📊 Inserted ${dataLines.length} rows from chunk ${chunkNumber + 1}`,
             );
@@ -389,52 +435,24 @@ async function loadLargeFileIncrementally(
     const chunkFileName = `${tableName}_final.txt`;
     await db.registerFileText(chunkFileName, processedContent);
 
-    if (chunkNumber === 0 && !tableExists) {
-      // Only remainder content and table doesn't exist
-      let sql: string;
-      if (nodeId !== undefined) {
-        sql = `
-          CREATE TABLE ${quotedTableName} AS
-          SELECT ${nodeId} AS debug_node, * FROM read_csv_auto(
-            '${chunkFileName}',
-            delim='${delimiter}',
-            header=true
-          )
-        `;
-      } else {
-        sql = `
-          CREATE TABLE ${quotedTableName} AS
-          SELECT * FROM read_csv_auto(
-            '${chunkFileName}',
-            delim='${delimiter}',
-            header=true
-          )
-        `;
-      }
+    const operation = (chunkNumber === 0 && !tableExists) ? 'create' : 'insert';
+    const sql = generateCsvReadSql({
+      fileName: chunkFileName,
+      tableName,
+      delimiter,
+      operation,
+      nodeId,
+    });
+
+    try {
       await conn.query(sql);
-    } else {
-      // Insert final chunk
-      let sql: string;
-      if (nodeId !== undefined) {
-        sql = `
-          INSERT INTO ${quotedTableName}
-          SELECT ${nodeId} AS debug_node, * FROM read_csv_auto(
-            '${chunkFileName}',
-            delim='${delimiter}',
-            header=true
-          )
-        `;
-      } else {
-        sql = `
-          INSERT INTO ${quotedTableName}
-          SELECT * FROM read_csv_auto(
-            '${chunkFileName}',
-            delim='${delimiter}',
-            header=true
-          )
-        `;
-      }
-      await conn.query(sql);
+    } catch (error) {
+      const pathContext = sourcePath ? ` (source: ${sourcePath})` : '';
+      const enhancedError = error instanceof Error
+        ? new Error(`${error.message}${pathContext}`)
+        : new Error(`Unknown error${pathContext}`);
+      if (error instanceof Error) enhancedError.stack = error.stack;
+      throw enhancedError;
     }
 
     // Send final progress update if we processed a final chunk
@@ -846,21 +864,21 @@ async function loadSingleTable(table: TableInfo) {
         });
 
         if (!fileResponse.success) {
-          throw new Error(`Failed to read file from node ${nodeFile.nodeId}: ${fileResponse.error}`);
+          throw new Error(`Failed to read file ${nodeFile.path} from node ${nodeFile.nodeId}: ${fileResponse.error}`);
         }
 
         if (!fileResponse.result?.text) {
-          throw new Error(`No content found in file from node ${nodeFile.nodeId}`);
+          throw new Error(`No content found in file ${nodeFile.path} from node ${nodeFile.nodeId}`);
         }
 
         const text = fileResponse.result.text;
 
         // Check if this is a large file that needs incremental loading
         if (text === "LARGE_FILE_PLACEHOLDER") {
-          console.log(`🔄 Loading large file from node ${nodeFile.nodeId} incrementally...`);
+          console.log(`🔄 Loading large file ${nodeFile.path} from node ${nodeFile.nodeId} incrementally...`);
           const rawBytes = (fileResponse.result as { rawBytes?: Uint8Array })?.rawBytes;
           if (!rawBytes) {
-            throw new Error("Raw bytes not available for large file processing");
+            throw new Error(`Raw bytes not available for large file processing: ${nodeFile.path}`);
           }
 
           const rowCount = await loadLargeFileIncrementally(
@@ -870,6 +888,7 @@ async function loadSingleTable(table: TableInfo) {
             "\t",
             originalName || tableName,
             nodeFile.nodeId,
+            nodeFile.path,
           );
           totalRowCount += rowCount;
         } else {
@@ -880,6 +899,7 @@ async function loadSingleTable(table: TableInfo) {
             "\t",
             originalName,
             nodeFile.nodeId,
+            nodeFile.path,
           );
           totalRowCount += rowCount;
         }
@@ -930,22 +950,22 @@ async function loadSingleTable(table: TableInfo) {
     });
 
     if (!fileResponse.success) {
-      throw new Error(fileResponse.error || "Failed to read file from zip");
+      throw new Error(`Failed to read file from zip: ${path} - ${fileResponse.error || "Unknown error"}`);
     }
 
     if (!fileResponse.result?.text) {
-      throw new Error("No content found in file");
+      throw new Error(`No content found in file: ${path}`);
     }
 
     const text = fileResponse.result.text;
 
     // Check if this is a large file that needs incremental loading
     if (text === "LARGE_FILE_PLACEHOLDER") {
-      console.log(`🔄 Loading large table ${tableName} incrementally...`);
+      console.log(`🔄 Loading large table ${tableName} from ${path} incrementally...`);
       // Get the raw bytes from the response
       const rawBytes = (fileResponse.result as { rawBytes?: Uint8Array })?.rawBytes;
       if (!rawBytes) {
-        throw new Error("Raw bytes not available for large file processing");
+        throw new Error(`Raw bytes not available for large file processing: ${path}`);
       }
 
       // Load directly using incremental approach
@@ -955,6 +975,8 @@ async function loadSingleTable(table: TableInfo) {
         tableName,
         "\t",
         originalName || tableName,
+        nodeId,
+        path,
       );
 
       // Send completion event for incremental loading
@@ -976,6 +998,8 @@ async function loadSingleTable(table: TableInfo) {
       text,
       "\t",
       originalName,
+      nodeId,
+      path,
     );
 
     self.postMessage({
@@ -990,13 +1014,14 @@ async function loadSingleTable(table: TableInfo) {
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
-    console.error(`Failed to load table ${tableName}:`, error);
+    const fullErrorMessage = `Failed to load table ${tableName} from ${path}: ${errorMessage}`;
+    console.error(fullErrorMessage, error);
 
     self.postMessage({
       type: "tableLoadProgress",
       tableName,
       status: "error",
-      error: errorMessage,
+      error: fullErrorMessage,
       nodeId,
       originalName,
       isError,
@@ -1010,6 +1035,7 @@ async function loadTableFromText(
   delimiter: string = "\t",
   originalName?: string,
   nodeId?: number,
+  sourcePath?: string,
 ): Promise<number> {
   if (!conn || !db) {
     throw new Error("DuckDB not initialized");
@@ -1055,8 +1081,9 @@ async function loadTableFromText(
 
     // Create table from CSV/TSV content
     // First, register the content as a virtual file
-    const fileBaseName = tableName.replace(/[^a-zA-Z0-9_]/g, "_");
-    await db.registerFileText(`${fileBaseName}.txt`, processedContent);
+    // Use the source path if available for better error messages, otherwise fall back to sanitized table name
+    const fileBaseName = sourcePath || tableName.replace(/[^a-zA-Z0-9_]/g, "_");
+    await db.registerFileText(`${fileBaseName}`, processedContent);
 
     // Check if we have type hints for this table
     const typeHints = getTableTypeHints(tableName);
@@ -1075,116 +1102,25 @@ async function loadTableFromText(
 
     // Create table from CSV with auto-detection or explicit types
     try {
-      let sql: string;
-
-      if (!tableExists) {
-        // Drop table if exists (only for non-multi-node or first load)
-        if (nodeId === undefined) {
-          await conn.query(`DROP TABLE IF EXISTS ${quotedTableName}`);
-        }
-
-        // CREATE TABLE
-        if (typeHints.size > 0) {
-          // For tables with type hints, try explicit column definitions first
-          const firstLine = processedContent.split("\n")[0];
-          const headers = firstLine.split(delimiter);
-
-          // Build column definitions with type hints for ALL columns
-          const columnDefs = headers.map((header) => {
-            const hint = typeHints.get(header.toLowerCase());
-            const columnType = hint || "VARCHAR"; // Safe default for columns without hints
-            return `'${header}': '${columnType}'`;
-          });
-
-          const columnsClause = columnDefs.join(", ");
-
-          if (nodeId !== undefined) {
-            // Multi-node table: add debug_node column
-            sql = `
-              CREATE TABLE ${quotedTableName} AS
-              SELECT ${nodeId} AS debug_node, * FROM read_csv(
-                '${fileBaseName}.txt',
-                delim='${delimiter}',
-                header=true,
-                columns={${columnsClause}},
-                auto_detect=false,
-                quote='"',
-                escape='"'
-              )
-            `;
-          } else {
-            sql = `
-              CREATE TABLE ${quotedTableName} AS
-              SELECT * FROM read_csv(
-                '${fileBaseName}.txt',
-                delim='${delimiter}',
-                header=true,
-                columns={${columnsClause}},
-                auto_detect=false,
-                quote='"',
-                escape='"'
-              )
-            `;
-          }
-        } else {
-          // No type hints, use standard auto-detection
-          if (nodeId !== undefined) {
-            // Multi-node table: add debug_node column
-            sql = `
-              CREATE TABLE ${quotedTableName} AS
-              SELECT ${nodeId} AS debug_node, * FROM read_csv_auto(
-                '${fileBaseName}.txt',
-                delim='${delimiter}',
-                header=true
-              )
-            `;
-          } else {
-            sql = `
-              CREATE TABLE ${quotedTableName} AS
-              SELECT * FROM read_csv_auto(
-                '${fileBaseName}.txt',
-                delim='${delimiter}',
-                header=true
-              )
-            `;
-          }
-        }
-      } else {
-        // INSERT INTO existing table
-        if (typeHints.size > 0) {
-          const firstLine = processedContent.split("\n")[0];
-          const headers = firstLine.split(delimiter);
-
-          const columnDefs = headers.map((header) => {
-            const hint = typeHints.get(header.toLowerCase());
-            const columnType = hint || "VARCHAR";
-            return `'${header}': '${columnType}'`;
-          });
-
-          const columnsClause = columnDefs.join(", ");
-          sql = `
-            INSERT INTO ${quotedTableName}
-            SELECT ${nodeId} AS debug_node, * FROM read_csv(
-              '${fileBaseName}.txt',
-              delim='${delimiter}',
-              header=true,
-              columns={${columnsClause}},
-              auto_detect=false,
-              quote='"',
-              escape='"'
-            )
-          `;
-        } else {
-          sql = `
-            INSERT INTO ${quotedTableName}
-            SELECT ${nodeId} AS debug_node, * FROM read_csv_auto(
-              '${fileBaseName}.txt',
-              delim='${delimiter}',
-              header=true
-            )
-          `;
-        }
+      // Drop table if exists (only for non-multi-node or first load)
+      if (!tableExists && nodeId === undefined) {
+        await conn.query(`DROP TABLE IF EXISTS ${quotedTableName}`);
       }
+
+      // Parse headers if we have type hints
+      const headers = typeHints.size > 0
+        ? processedContent.split("\n")[0].split(delimiter)
+        : undefined;
+
+      const sql = generateCsvReadSql({
+        fileName: fileBaseName,
+        tableName,
+        delimiter,
+        operation: tableExists ? 'insert' : 'create',
+        nodeId,
+        typeHints,
+        headers,
+      });
 
       await conn.query(sql);
     } catch (parseError: unknown) {
@@ -1192,50 +1128,36 @@ async function loadTableFromText(
         parseError instanceof Error
           ? parseError
           : new Error(String(parseError));
+
+      // Add source path context to error message
+      const pathContext = sourcePath ? ` (source: ${sourcePath})` : '';
+      const enhancedError = new Error(`${error.message}${pathContext}`);
+      enhancedError.stack = error.stack;
+
       // If preprocessing caused issues or CSV sniffing failed, try with original content
       if (
         usePreprocessed &&
         (error.message?.includes("sniffing file") ||
           error.message?.includes("Error when sniffing file"))
       ) {
-        // Re-register with original content
-        await db.registerFileText(`${fileBaseName}.txt`, content);
+        try {
+          // Re-register with original content
+          await db.registerFileText(`${fileBaseName}`, content);
 
-        let sql: string;
-        if (!tableExists) {
-          // CREATE TABLE
-          if (nodeId !== undefined) {
-            sql = `
-              CREATE TABLE ${quotedTableName} AS
-              SELECT ${nodeId} AS debug_node, * FROM read_csv_auto(
-                '${fileBaseName}.txt',
-                delim='${delimiter}',
-                header=true
-              )
-            `;
-          } else {
-            sql = `
-              CREATE TABLE ${quotedTableName} AS
-              SELECT * FROM read_csv_auto(
-                '${fileBaseName}.txt',
-                delim='${delimiter}',
-                header=true
-              )
-            `;
-          }
-        } else {
-          // INSERT INTO
-          sql = `
-            INSERT INTO ${quotedTableName}
-            SELECT ${nodeId} AS debug_node, * FROM read_csv_auto(
-              '${fileBaseName}.txt',
-              delim='${delimiter}',
-              header=true
-            )
-          `;
+          const sql = generateCsvReadSql({
+            fileName: fileBaseName,
+            tableName,
+            delimiter,
+            operation: tableExists ? 'insert' : 'create',
+            nodeId,
+          });
+
+          await conn.query(sql);
+          // Retry succeeded, continue with normal flow
+        } catch (retryError: unknown) {
+          // If retry also fails, throw enhanced error with path
+          throw enhancedError;
         }
-
-        await conn.query(sql);
       } else if (
         error.message?.includes("Error when sniffing file") ||
         error.message?.includes("not possible to automatically detect") ||
@@ -1244,82 +1166,51 @@ async function loadTableFromText(
       ) {
         // Some files have such complex data that DuckDB can't auto-detect them
         // Try with very explicit parameters and treat everything as VARCHAR
+        const pathInfo = sourcePath ? ` from ${sourcePath}` : '';
         console.warn(
-          `Cannot auto-detect CSV format for ${tableName}, using fallback`,
+          `⚠️ CSV auto-detect failed for table ${tableName}${pathInfo}, attempting fallback with VARCHAR columns`,
         );
+        console.warn(`   Source file: ${sourcePath || 'unknown'}`);
+        console.warn(`   DuckDB internal error (above) can be ignored if fallback succeeds`);
 
-        // Parse headers manually
+        // Parse headers manually and build type map with VARCHAR fallback
         const lines = content.split("\n");
         const headerLine = lines[0];
         const headers = headerLine.split(delimiter);
 
-        // Apply type hints if available, otherwise use VARCHAR to avoid detection issues
-        const columnDefs = headers
-          .map((header) => {
-            const hint = typeHints.get(header.toLowerCase());
-            const safeType = hint || "VARCHAR";
-            return `'${header}': '${safeType}'`;
-          })
-          .join(", ");
+        // Build a type hints map with VARCHAR as default for any missing hints
+        const fallbackTypeHints = new Map<string, string>();
+        headers.forEach(header => {
+          const hint = typeHints.get(header.toLowerCase());
+          fallbackTypeHints.set(header.toLowerCase(), hint || "VARCHAR");
+        });
 
-        let fallbackSql: string;
-        if (!tableExists) {
-          // CREATE TABLE
-          if (nodeId !== undefined) {
-            fallbackSql = `
-              CREATE TABLE ${quotedTableName} AS
-              SELECT ${nodeId} AS debug_node, * FROM read_csv(
-                '${fileBaseName}.txt',
-                delim='${delimiter}',
-                header=true,
-                columns={${columnDefs}},
-                auto_detect=false,
-                sample_size=1
-              )
-            `;
-          } else {
-            fallbackSql = `
-              CREATE TABLE ${quotedTableName} AS
-              SELECT * FROM read_csv(
-                '${fileBaseName}.txt',
-                delim='${delimiter}',
-                header=true,
-                columns={${columnDefs}},
-                auto_detect=false,
-                sample_size=1
-              )
-            `;
-          }
-        } else {
-          // INSERT INTO
-          fallbackSql = `
-            INSERT INTO ${quotedTableName}
-            SELECT ${nodeId} AS debug_node, * FROM read_csv(
-              '${fileBaseName}.txt',
-              delim='${delimiter}',
-              header=true,
-              columns={${columnDefs}},
-              auto_detect=false,
-              sample_size=1
-            )
-          `;
-        }
+        const fallbackSql = generateCsvReadSql({
+          fileName: fileBaseName,
+          tableName,
+          delimiter,
+          operation: tableExists ? 'insert' : 'create',
+          nodeId,
+          typeHints: fallbackTypeHints,
+          headers,
+        });
 
         try {
           await conn.query(fallbackSql);
+          console.log(`✅ Fallback succeeded for ${tableName}${pathInfo}`);
         } catch (fallbackError: unknown) {
           const fallbackErr =
             fallbackError instanceof Error
               ? fallbackError
               : new Error(String(fallbackError));
           console.error(
-            `Even fallback failed for ${tableName}:`,
+            `❌ Even fallback failed for ${tableName}${pathInfo}:`,
             fallbackErr.message,
           );
-          throw error; // Throw original error if fallback also fails
+          throw enhancedError; // Throw enhanced error with path context
         }
       } else {
-        throw error;
+        throw enhancedError;
       }
     }
 
@@ -1342,8 +1233,18 @@ async function loadTableFromText(
     loadedTables.add(tableName);
     return count;
   } catch (error) {
-    console.error(`Failed to load table ${tableName}:`, error);
-    throw error;
+    const errorContext = originalName ? ` (original: ${originalName})` : '';
+    const nodeContext = nodeId !== undefined ? ` on node ${nodeId}` : '';
+    const pathContext = sourcePath ? ` from ${sourcePath}` : '';
+    console.error(`Failed to load table ${tableName}${errorContext}${nodeContext}${pathContext}:`, error);
+
+    // Enhance error with full context before re-throwing
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const enhancedError = new Error(`${errorMessage}${pathContext}`);
+    if (error instanceof Error) {
+      enhancedError.stack = error.stack;
+    }
+    throw enhancedError;
   }
 }
 
@@ -1405,6 +1306,12 @@ async function executeQuery(
     const data = result.toArray();
 
     // Sanitize data and convert types in one pass
+    // Convert columnTypes Map to a plain object for postMessage
+    const columnTypesObject: Record<string, string> = {};
+    columnTypes.forEach((type, name) => {
+      columnTypesObject[name] = type;
+    });
+
     const sanitizedData = data.map((row, rowIndex) => {
       const sanitizedRow: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(row)) {
@@ -1515,7 +1422,10 @@ async function executeQuery(
       type: "queryResult",
       id,
       success: true,
-      result: sanitizedData,
+      result: {
+        data: sanitizedData,
+        columnTypes: columnTypesObject,
+      },
     });
   } catch (error) {
     console.error("Query failed:", error);

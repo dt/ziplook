@@ -201,7 +201,10 @@ export interface IWorkerManager {
   destroy(): void;
 
   // Database operations
-  executeQuery(sql: string): Promise<Record<string, unknown>[]>;
+  executeQuery(sql: string): Promise<{
+    data: Record<string, unknown>[];
+    columnTypes: Record<string, string>;
+  }>;
   getTableSchema(
     tableName: string,
   ): Promise<Array<{ column_name: string; data_type: string }>>;

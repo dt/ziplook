@@ -43,7 +43,7 @@ async function updateSchemaCache() {
 
     // Get all table schemas in one query for efficiency
     try {
-      const allSchemas = await workerManager!.executeQuery(`
+      const queryResult = await workerManager!.executeQuery(`
         SELECT
           CASE
             WHEN table_schema IS NOT NULL AND table_schema != '' AND table_schema != 'main'
@@ -55,6 +55,8 @@ async function updateSchemaCache() {
         FROM information_schema.columns
         ORDER BY full_table_name, ordinal_position
       `);
+
+      const allSchemas = queryResult.data;
 
       // Debug: log the first few results to see the format
       if (allSchemas.length > 0) {

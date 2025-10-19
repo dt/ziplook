@@ -21,6 +21,9 @@ function SqlEditor({ tab }: SqlEditorProps) {
   const [results, setResults] = useState<Record<string, unknown>[] | null>(
     null,
   );
+  const [columnTypes, setColumnTypes] = useState<Record<string, string> | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [expandedCell, setExpandedCell] = useState<{
@@ -73,8 +76,11 @@ function SqlEditor({ tab }: SqlEditorProps) {
   ) => {
     if (value === null) return <span className="sql-null">NULL</span>;
 
+    // Get column type for this column
+    const columnType = columnName && columnTypes ? columnTypes[columnName] : undefined;
+
     // Use formatValue to handle Date objects properly
-    const strValue = formatValue(value);
+    const strValue = formatValue(value, columnType);
 
     // Check if it's a protobuf config column (still in hex)
     const isConfigColumn =
@@ -123,12 +129,13 @@ function SqlEditor({ tab }: SqlEditorProps) {
     return strValue;
   };
 
-  const handleCellClick = (rowIndex: number, colIndex: number, value: unknown) => {
+  const handleCellClick = (rowIndex: number, colIndex: number, value: unknown, columnName?: string) => {
     const selection = window.getSelection();
     const hasSelection = selection && selection.toString().length > 0;
     if (hasSelection) return;
 
-    const strValue = formatValue(value);
+    const columnType = columnName && columnTypes ? columnTypes[columnName] : undefined;
+    const strValue = formatValue(value, columnType);
     if (strValue.length > 100) {
       const isExpanded =
         expandedCell?.row === rowIndex && expandedCell?.col === colIndex;
@@ -147,10 +154,12 @@ function SqlEditor({ tab }: SqlEditorProps) {
     setLoading(true);
     setError(null);
     setResults(null);
+    setColumnTypes(null);
 
     try {
-      const data = await state.workerManager.executeQuery(query);
-      setResults(Array.isArray(data) ? data : []);
+      const result = await state.workerManager.executeQuery(query);
+      setResults(result.data);
+      setColumnTypes(result.columnTypes);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Query failed");
     } finally {
@@ -194,10 +203,12 @@ function SqlEditor({ tab }: SqlEditorProps) {
         setLoading(true);
         setError(null);
         setResults(null);
+        setColumnTypes(null);
 
         try {
-          const data = await state.workerManager.executeQuery(currentQuery);
-          setResults(Array.isArray(data) ? data : []);
+          const result = await state.workerManager.executeQuery(currentQuery);
+          setResults(result.data);
+          setColumnTypes(result.columnTypes);
         } catch (err) {
           setError(err instanceof Error ? err.message : "Query failed");
         } finally {
@@ -356,19 +367,19 @@ function SqlEditor({ tab }: SqlEditorProps) {
                           <th
                             key={col}
                             className={isCollapsed ? 'collapsed-column' : ''}
+                            onClick={() => toggleColumnWidth(col)}
+                            style={isCollapsed ? { cursor: 'pointer' } : undefined}
+                            title={isCollapsed ? `Show column: ${col}` : `Hide column: ${col}`}
                           >
-                            <div className="column-header">
-                              <div className="column-name">
-                                <button
-                                  className="column-toggle"
-                                  onClick={() => toggleColumnWidth(col)}
-                                  title={isCollapsed ? 'Expand column' : 'Collapse column'}
-                                >
-                                  {isCollapsed ? '▶' : '▼'}
-                                </button>
-                                {col}
+                            {isCollapsed ? (
+                              `${col.charAt(0)}...`
+                            ) : (
+                              <div className="column-header">
+                                <div className="column-name">
+                                  {col}
+                                </div>
                               </div>
-                            </div>
+                            )}
                           </th>
                         );
                       })}
@@ -378,13 +389,14 @@ function SqlEditor({ tab }: SqlEditorProps) {
                   {results.slice(0, 1000).map((row, i) => (
                     <tr key={i}>
                       {Object.entries(row).map(([colName, val], j) => {
-                        const strValue = formatValue(val);
+                        const columnType = columnTypes ? columnTypes[colName] : undefined;
+                        const strValue = formatValue(val, columnType);
                         const isTruncatable = strValue.length > 100;
                         return (
                           <td
                             key={j}
                             className={collapsedColumns.has(colName) ? 'collapsed-column' : ''}
-                            onClick={() => handleCellClick(i, j, val)}
+                            onClick={() => handleCellClick(i, j, val, colName)}
                             style={isTruncatable ? { cursor: 'pointer' } : undefined}
                           >
                             {renderCellValue(val, i, j, colName)}
