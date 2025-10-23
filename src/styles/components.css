@@ -653,6 +653,60 @@
   display: none !important;
 }*/
 
+/* File Info Bar */
+.file-info-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-secondary);
+  height: 28px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.file-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  min-width: 0;
+}
+
+.download-button {
+  padding: 2px 8px;
+  background: var(--bg-quaternary);
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.download-button:hover:not(:disabled) {
+  background: var(--accent-primary);
+  color: white;
+  border-color: var(--accent-primary);
+}
+
+.download-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.download-button.downloading {
+  background: var(--accent-primary);
+  color: white;
+  border-color: var(--accent-primary);
+  min-width: 50px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
 /* File Controls Bar */
 .file-controls {
   display: flex;
@@ -1681,6 +1735,12 @@
   background: var(--bg-quaternary, var(--bg-tertiary));
   color: var(--text-primary);
   transform: translateY(-1px);
+}
+
+.binary-warning-actions .btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
 }
 
 /* Binary Override Warning */

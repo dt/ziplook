@@ -872,7 +872,7 @@ function SearchView() {
                     {file.name}
                   </div>
                   <div style={{ color: "var(--text-muted)", fontSize: "10px" }}>
-                    {(file.size / 1024).toFixed(1)} KB
+                    {(file.size / 1000).toFixed(1)} KB {/* Decimal (matches macOS/Safari) */}
                     {file.entries && ` • ${file.entries} entries`}
                   </div>
                 </div>

@@ -220,7 +220,10 @@ body {
 .tab-title {
   flex: 1;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   margin-right: 8px;
+  min-width: 0; /* Allow flexbox to shrink below content size */
 }
 
 .tab-icon {
@@ -242,6 +245,7 @@ body {
   color: var(--text-secondary);
   cursor: pointer;
   font-size: 12px;
+  flex-shrink: 0; /* Never shrink the close button */
 }
 
 .tab:hover .tab-close,

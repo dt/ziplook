@@ -4,6 +4,7 @@ import { PprofViewer, flamegraphColorSchemes } from './PprofViewer';
 import { useApp } from '../state/AppContext';
 import type { ViewerTab } from '../state/types';
 import { getPprofFileType } from '../utils/pprofDetection';
+import { FileInfoBar } from './FileInfoBar';
 
 interface PprofTabProps {
   tab: ViewerTab & { kind: 'pprof' };
@@ -15,6 +16,8 @@ export function PprofTab({ tab }: PprofTabProps) {
   const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [progress, setProgress] = useState({ loaded: 0, total: 0, percent: 0 });
+  const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
   const loadingInitiated = useRef(false);
 
   const loadProfile = useCallback(async () => {
@@ -94,6 +97,63 @@ export function PprofTab({ tab }: PprofTabProps) {
     }
   }, [tab.fileId, state.filesIndex, state.workerManager]);
 
+  const handleDownload = useCallback(async () => {
+    if (!state.workerManager) return;
+
+    const fileEntry = state.filesIndex[tab.fileId];
+    if (!fileEntry) return;
+
+    setDownloading(true);
+    setDownloadProgress(0);
+
+    try {
+      const isGzipped = fileEntry.name.toLowerCase().endsWith('.gz') ||
+                       fileEntry.path.toLowerCase().endsWith('.gz') ||
+                       fileEntry.name.toLowerCase().endsWith('.pprof') ||
+                       fileEntry.path.toLowerCase().includes('.pprof');
+
+      let accumulatedData = new Uint8Array(0);
+
+      await state.workerManager.readFileStream(
+        fileEntry.path,
+        (chunk: Uint8Array, progressInfo: { loaded: number; total: number; done: boolean }) => {
+          const newData = new Uint8Array(accumulatedData.length + chunk.length);
+          newData.set(accumulatedData);
+          newData.set(chunk, accumulatedData.length);
+          accumulatedData = newData;
+
+          const percent = progressInfo.total > 0
+            ? Math.round((progressInfo.loaded / progressInfo.total) * 100)
+            : 0;
+          setDownloadProgress(percent);
+
+          if (progressInfo.done) {
+            // Create blob and download
+            const blob = new Blob([accumulatedData], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileEntry.name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            setTimeout(() => {
+              setDownloading(false);
+              setDownloadProgress(0);
+            }, 500);
+          }
+        },
+        { decompress: isGzipped }
+      );
+    } catch (err) {
+      console.error('Download failed:', err);
+      setDownloading(false);
+      setDownloadProgress(0);
+    }
+  }, [tab.fileId, state.filesIndex, state.workerManager]);
+
   useEffect(() => {
     if (state.workerManager && !loading && !profile && !error && !loadingInitiated.current) {
       loadProfile();
@@ -113,11 +173,17 @@ export function PprofTab({ tab }: PprofTabProps) {
 
   // Loading state
   if (loading) {
+    const fileEntry = state.filesIndex[tab.fileId];
+    const fullPath = fileEntry?.path || tab.fileId;
+
     return (
       <div className="file-viewer loading">
         <div className="loading-container">
           <div className="loading-message">
-            Loading {fileType || 'Profile'}: {tab.title}...
+            Loading {fileType || 'Profile'}...
+          </div>
+          <div className="file-path" title={fullPath} style={{ marginTop: '8px', fontSize: '12px', color: 'var(--text-muted)', wordBreak: 'break-all' }}>
+            {fullPath}
           </div>
           {progress.total > 0 && (
             <>
@@ -169,8 +235,17 @@ export function PprofTab({ tab }: PprofTabProps) {
 
   // Profile loaded - render the PprofViewer taking full content area
   if (profile) {
+    const fileEntry = state.filesIndex[tab.fileId];
+    const fullPath = fileEntry?.path || tab.fileId;
+
     return (
       <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+        <FileInfoBar
+          filePath={fullPath}
+          onDownload={handleDownload}
+          downloading={downloading}
+          downloadProgress={downloadProgress}
+        />
         <PprofViewer
           profile={profile}
           headerStyle="compact"

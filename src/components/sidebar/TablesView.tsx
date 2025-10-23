@@ -4,7 +4,7 @@ import { useKeyboardNavigation } from "../../hooks/useKeyboardNavigation";
 
 function formatFileSize(bytes: number): string {
   if (bytes === 0) return "0 B";
-  const k = 1024;
+  const k = 1000; // Decimal (matches macOS/Safari)
   const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
@@ -315,16 +315,26 @@ function TablesView() {
   );
 
   const handleTableClick = async (table: (typeof tables)[0]) => {
-    // If it's an .err.txt file, open it in the file viewer
+    // If it's an .err.txt file, open error viewer to explain the situation
     if (table.isError) {
-      const title = table.name.replace(/_/g, ".") + ".err.txt";
+      const baseName = table.originalName || table.name;
+      const errorFiles = table.nodeFiles?.filter(f => f.isError) ||
+        [{ path: table.sourceFile, nodeId: table.nodeId, size: table.size, isError: true }];
+      const availableFiles = table.nodeFiles?.filter(f => !f.isError) || [];
+
       dispatch({
         type: "OPEN_TAB",
         tab: {
-          kind: "file",
-          id: table.sourceFile,
-          fileId: table.sourceFile,
-          title,
+          kind: "error",
+          id: `error-${table.name}`,
+          title: `Error: ${baseName}`,
+          error: "", // Will be populated by ErrorViewer
+          sourceFile: table.sourceFile,
+          tableName: baseName,
+          fullTableName: table.name, // Full name with _by_node suffix if applicable
+          isPreLoadError: true,
+          errorFiles,
+          availableFiles,
         },
       });
       return;
@@ -556,10 +566,13 @@ function TablesView() {
                               {prefix && <span className="table-prefix">{prefix}</span>}
                               <span className="table-main-name">{mainName}</span>
                             </div>
-                            {(table.isError || table.loadError || table.deferred) && (
+                            {(table.isError || table.loadError || table.deferred || (table.nodeFiles && table.nodeFiles.some(f => f.isError))) && (
                               <div className="table-status-compact">
-                                {table.isError && (
-                                  <span className="status-icon">⚠️</span>
+                                {(table.isError || (table.loaded && table.nodeFiles && table.nodeFiles.some(f => f.isError))) && (
+                                  <span className="status-icon">
+                                    ⚠️
+                                    {table.nodeFiles && table.nodeFiles.length > 1 && ` ${table.nodeFiles.filter(f => f.isError).length}/${table.nodeFiles.length}`}
+                                  </span>
                                 )}
                                 {table.loadError && (
                                   <span className="status-icon">❌</span>
@@ -678,10 +691,13 @@ function TablesView() {
                       {prefix && <span className="table-prefix">{prefix}</span>}
                       <span className="table-main-name">{mainName}</span>
                     </div>
-                    {(table.isError || table.loadError || table.deferred) && (
+                    {(table.isError || table.loadError || table.deferred || (table.nodeFiles && table.nodeFiles.some(f => f.isError))) && (
                       <div className="table-status-compact">
-                        {table.isError && (
-                          <span className="status-icon">⚠️</span>
+                        {(table.isError || (table.loaded && table.nodeFiles && table.nodeFiles.some(f => f.isError))) && (
+                          <span className="status-icon">
+                            ⚠️
+                            {table.nodeFiles && table.nodeFiles.length > 1 && ` ${table.nodeFiles.filter(f => f.isError).length}/${table.nodeFiles.length}`}
+                          </span>
                         )}
                         {table.loadError && (
                           <span className="status-icon">❌</span>

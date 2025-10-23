@@ -81,8 +81,8 @@ export function formatBytes(bytes: unknown): string {
   let unitIndex = 0;
   let value = absBytes;
 
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
+  while (value >= 1000 && unitIndex < units.length - 1) { // Decimal (matches macOS/Safari)
+    value /= 1000;
     unitIndex++;
   }
 

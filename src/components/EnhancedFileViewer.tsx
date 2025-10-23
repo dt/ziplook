@@ -7,6 +7,7 @@ import { matchesFilter } from "../utils/filterUtils";
 import { useApp } from "../state/AppContext";
 import { setupLogLanguage } from "../services/monacoConfig";
 import { detectBinary, getFileTypeDescription } from "../utils/binaryDetection";
+import { FileInfoBar } from "./FileInfoBar";
 
 interface FileViewerProps {
   tab: ViewerTab & { kind: "file" };
@@ -33,6 +34,10 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
   const [contextLines, setContextLines] = useState("");
   const [visibleLineCount, setVisibleLineCount] = useState(0);
   const [totalLineCount, setTotalLineCount] = useState(0);
+
+  // Download state
+  const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
 
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
@@ -141,6 +146,107 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
       context: parseInt(contextLines) || 0,
     };
   }
+
+  // Handle download button click
+  const handleDownload = useCallback(async () => {
+    if (!state.workerManager) return;
+
+    const fileEntry = state.filesIndex[tab.fileId];
+    if (!fileEntry) return;
+
+    const SMALL_FILE_THRESHOLD = 50 * 1024 * 1024; // 50MB
+
+    setDownloading(true);
+    setDownloadProgress(0);
+
+    try {
+      // For files > 50MB, use File System Access API for direct streaming
+      if (fileEntry.size > SMALL_FILE_THRESHOLD) {
+        try {
+          // Check if File System Access API is available
+          if (!('showSaveFilePicker' in window)) {
+            alert('Large file downloads require a modern browser with File System Access API support. Please use Chrome, Edge, or another Chromium-based browser.');
+            return;
+          }
+
+          // Prompt user for save location
+          const handle = await window.showSaveFilePicker({
+            suggestedName: fileEntry.name,
+          });
+
+          const writable = await handle.createWritable();
+
+          // Stream directly to file
+          await state.workerManager.readFileStream(
+            fileEntry.path,
+            async (chunk: Uint8Array, progressInfo: { loaded: number; total: number; done: boolean }) => {
+              await writable.write(chunk);
+
+              // Update progress - calculate percentage from loaded/total
+              const percent = progressInfo.total > 0
+                ? Math.round((progressInfo.loaded / progressInfo.total) * 100)
+                : 0;
+              setDownloadProgress(percent);
+
+              if (progressInfo.done) {
+                await writable.close();
+              }
+            }
+          );
+
+          // Success!
+          console.log('✓ File saved successfully');
+        } catch (err) {
+          if ((err as Error).name === 'AbortError') {
+            // User cancelled the save dialog
+            console.log('Download cancelled');
+            return;
+          }
+          console.error('Failed to save file:', err);
+          alert(`Failed to save file: ${(err as Error).message}`);
+        }
+      } else {
+        // For files <= 50MB, use blob URL download with pre-allocated buffer
+        const buffer = new Uint8Array(fileEntry.size);
+        let offset = 0;
+
+        await state.workerManager.readFileStream(
+          fileEntry.path,
+          (chunk: Uint8Array, progressInfo: { loaded: number; total: number; done: boolean }) => {
+            // Copy chunk into pre-allocated buffer
+            buffer.set(chunk, offset);
+            offset += chunk.length;
+
+            // Update progress - calculate percentage from loaded/total
+            const percent = progressInfo.total > 0
+              ? Math.round((progressInfo.loaded / progressInfo.total) * 100)
+              : 0;
+            setDownloadProgress(percent);
+
+            if (progressInfo.done) {
+              // Create blob and download
+              const blob = new Blob([buffer], { type: 'application/octet-stream' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = fileEntry.name;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+              console.log('✓ Download started');
+            }
+          }
+        );
+      }
+    } finally {
+      // Reset download state after a brief delay to show completion
+      setTimeout(() => {
+        setDownloading(false);
+        setDownloadProgress(0);
+      }, 1000);
+    }
+  }, [state.workerManager, state.filesIndex, tab.fileId]);
 
   // DEBUG: Uncomment to test with different language
   // const language = 'javascript'; // Force javascript highlighting for testing
@@ -436,7 +542,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
         // Offer to load first portion instead of failing completely
         const previewSize = 100 * 1024 * 1024; // 100MB
         const confirmed = window.confirm(
-          `File is ${(fileEntry.size / (1024 * 1024 * 1024)).toFixed(2)}GB and exceeds viewer size limit (500MB).\n\nWould you like to view the first ${previewSize / (1024 * 1024)}MB instead?`,
+          `File is ${(fileEntry.size / (1000 * 1000 * 1000)).toFixed(2)}GB and exceeds viewer size limit (500MB).\n\nWould you like to view the first ${previewSize / (1000 * 1000)}MB instead?`, // Decimal display
         );
 
         if (!confirmed) {
@@ -451,7 +557,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
         // User wants to see preview - we'll limit the streaming
         // Set a flag to stop after preview size
         setContent(
-          `Loading first ${previewSize / (1024 * 1024)}MB of ${(fileEntry.size / (1024 * 1024 * 1024)).toFixed(2)}GB file...\n\n`,
+          `Loading first ${previewSize / (1000 * 1000)}MB of ${(fileEntry.size / (1000 * 1000 * 1000)).toFixed(2)}GB file...\n\n`, // Decimal display
         );
       }
 
@@ -764,26 +870,27 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
 
   // Show binary file warning
   if (binaryDetected && !userOverrideBinary) {
+    // Extract file extension for title
+    const fileExt = originalFileName.split('.').pop()?.toUpperCase() || '';
+
     return (
       <div className="file-viewer binary-warning">
         <div className="binary-warning-container">
-          <div className="binary-warning-icon">⚠️</div>
           <div className="binary-warning-content">
-            <h3>Binary File Detected</h3>
-            <p>
-              <strong>{fileType}</strong>
-            </p>
-            <p className="binary-reason">{binaryReason}</p>
-            <p>
-              This file appears to contain binary data and may not display
-              correctly as text.
-            </p>
+            <h3>Binary {fileExt ? `.${fileExt.toLowerCase()}` : ''} File</h3>
             <div className="binary-warning-actions">
               <button
                 className="btn btn-primary"
+                onClick={handleDownload}
+                disabled={downloading}
+              >
+                {downloading ? `Downloading... ${downloadProgress}%` : 'Download'}
+              </button>
+              <button
+                className="btn btn-secondary"
                 onClick={() => setUserOverrideBinary(true)}
               >
-                Open Anyway
+                Open as Text
               </button>
               <button
                 className="btn btn-secondary"
@@ -806,6 +913,14 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
     // User chose to override binary warning, show a warning but still render editor
     return (
       <div className="enhanced-file-viewer">
+        {/* Info bar with path and download */}
+        <FileInfoBar
+          filePath={originalFileName}
+          onDownload={handleDownload}
+          downloading={downloading}
+          downloadProgress={downloadProgress}
+        />
+
         <div className="binary-override-warning">
           <span className="warning-icon">⚠️</span>
           <span>
@@ -850,7 +965,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
         </div>
 
         <Editor
-          height="calc(100% - 70px)" // Adjust for warning banner
+          height="calc(100% - 98px)" // Adjust for info bar + warning banner + filter controls
           language="plaintext" // Force plaintext for binary files
           value={content}
           path={tab.fileId}
@@ -915,6 +1030,14 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
 
   return (
     <div className="enhanced-file-viewer">
+      {/* Info bar with path and download */}
+      <FileInfoBar
+        filePath={originalFileName}
+        onDownload={handleDownload}
+        downloading={downloading}
+        downloadProgress={downloadProgress}
+      />
+
       {/* Filter controls */}
       <div className="file-controls">
         <div className="filter-controls">
@@ -952,7 +1075,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
       </div>
 
       <Editor
-        height="calc(100% - 40px)"
+        height="calc(100% - 68px)" // Adjust for info bar + filter controls
         language={language}
         value={content}
         path={tab.fileId} // stable path for the model
@@ -1037,7 +1160,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
 
 function formatFileSize(bytes: number): string {
   if (bytes === 0) return "0 B";
-  const k = 1024;
+  const k = 1000; // Decimal (matches macOS/Safari)
   const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;

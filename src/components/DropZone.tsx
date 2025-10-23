@@ -947,6 +947,7 @@ function DropZone() {
   const [packageInfo, setPackageInfo] = useState<PackageInfo | null>(null);
   const [packageLoading, setPackageLoading] = useState(false);
   const [packageError, setPackageError] = useState<string | null>(null);
+  const [modalDismissable, setModalDismissable] = useState(false);
 
   // Debug page state
   const [showDebugPage, setShowDebugPage] = useState(false);
@@ -1384,6 +1385,14 @@ function DropZone() {
 
       // Clear validation status when modal opens to ensure fresh state
       setValidationStatus(null);
+
+      // Prevent backdrop dismissal for 300ms to avoid accidental clicks
+      setModalDismissable(false);
+      const timer = setTimeout(() => {
+        setModalDismissable(true);
+      }, 300);
+
+      return () => clearTimeout(timer);
     }
   }, [showSendSafelyModal]);
 
@@ -1415,7 +1424,7 @@ function DropZone() {
 
       setLoading(true);
       setLoadingMessage(
-        `Reading ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)...`,
+        `Reading ${file.name} (${(file.size / 1000 / 1000).toFixed(1)} MB)...`, // Decimal (matches macOS/Safari)
       );
       setError(null);
 
@@ -1884,11 +1893,13 @@ function DropZone() {
             justifyContent: "center",
           }}
           onClick={() => {
-            setShowSendSafelyModal(false);
-            setValidationStatus(null);
-            setPackageInfo(null);
-            setPackageError(null);
-            setPackageLoading(false);
+            if (modalDismissable) {
+              setShowSendSafelyModal(false);
+              setValidationStatus(null);
+              setPackageInfo(null);
+              setPackageError(null);
+              setPackageLoading(false);
+            }
           }}
         >
           <div
@@ -2291,7 +2302,7 @@ function DropZone() {
                           {file.fileName}
                         </div>
                         <div style={{ color: "var(--text-muted)" }}>
-                          Size: {(file.fileSize / 1024 / 1024).toFixed(2)} MB
+                          Size: {(file.fileSize / 1000 / 1000).toFixed(2)} MB {/* Decimal (matches macOS/Safari) */}
                           {file.createdDate && (
                             <span style={{ marginLeft: "8px" }}>
                               Created:{" "}

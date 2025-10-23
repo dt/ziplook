@@ -110,9 +110,14 @@ function MainPanel({ style }: { style?: React.CSSProperties }) {
                 {tab.kind === "pprof" && <PprofTab tab={tab} />}
                 {tab.kind === "error" && (
                   <ErrorViewer
+                    tabId={tab.id}
                     error={tab.error}
                     sourceFile={tab.sourceFile}
                     tableName={tab.tableName}
+                    fullTableName={tab.fullTableName}
+                    isPreLoadError={tab.isPreLoadError}
+                    errorFiles={tab.errorFiles}
+                    availableFiles={tab.availableFiles}
                   />
                 )}
               </div>

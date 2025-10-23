@@ -710,6 +710,11 @@ async function onReadFileChunked(msg: ReadFileChunkedMsg) {
       if (value) await chunkAndEmit(value as Uint8Array, chunkOutSize, emit);
     }
     emit(new Uint8Array(0), true);
+
+    // Log cache stats for SendSafely provider
+    if (state.provider && 'logCacheStats' in state.provider && typeof state.provider.logCacheStats === 'function') {
+      (state.provider as any).logCacheStats();
+    }
   } catch (e) {
     errMessage(id, e);
   }
@@ -828,8 +833,12 @@ class SendSafelyProvider implements BytesProvider {
   // caches
   private urls = new Map<number, string>(); // partIdx -> presigned URL
   private urlPageSize = 25;
-  private decLRU = new LRU<Uint8Array>(24); // decrypted part cache (tune)
+  private decLRU = new LRU<Uint8Array>(32); // decrypted part cache (~64MB for 2MB chunks)
   private client: SendSafelyClient | null = null; // SendSafely client instance
+
+  // cache statistics
+  private cacheHits = 0;
+  private cacheMisses = 0;
 
   constructor(init: SendSafelyInit) {
     // Store credentials - client will be created on-demand
@@ -1088,8 +1097,11 @@ class SendSafelyProvider implements BytesProvider {
   private async getDecryptedPart(partIdx: number): Promise<Uint8Array> {
     const cached = this.decLRU.get(partIdx);
     if (cached) {
+      this.cacheHits++;
       return cached;
     }
+
+    this.cacheMisses++;
 
     // ensure we have URL for this part (partIdx is 0-based)
     await this.ensureUrlsFor(partIdx);
@@ -1106,6 +1118,15 @@ class SendSafelyProvider implements BytesProvider {
 
     this.decLRU.set(partIdx, dec);
     return dec;
+  }
+
+  private logCacheStats() {
+    const total = this.cacheHits + this.cacheMisses;
+    if (total === 0) return;
+
+    const hitRate = ((this.cacheHits / total) * 100).toFixed(1);
+    const cacheSize = this.decLRU.size();
+    console.log(`📊 Cache stats: ${this.cacheHits} hits, ${this.cacheMisses} misses, ${hitRate}% hit rate, ${cacheSize} chunks cached`);
   }
 
   private async ensureUrlsFor(targetPart: number) {

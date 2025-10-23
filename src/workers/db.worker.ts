@@ -605,7 +605,7 @@ function handleRoutedMessage(message: RoutedMessage) {
         if (totalLength > 200 * 1024 * 1024) {
           // 200MB threshold
           console.log(
-            `📄 Large file detected (${(totalLength / (1024 * 1024)).toFixed(1)}MB), will handle incrementally`,
+            `📄 Large file detected (${(totalLength / (1000 * 1000)).toFixed(1)}MB), will handle incrementally`, // Decimal display
           );
           totalText = "LARGE_FILE_PLACEHOLDER"; // Signal to use incremental loading
         } else {
@@ -1872,10 +1872,14 @@ async function processFileList(message: ProcessFileListMessage) {
         : `${clusterName}.${originalName}_by_node`;
 
       // Create a single table entry representing all nodes
+      // If there are error files, use the first error file as sourceFile for better UX
+      const firstErrorFile = nodeFiles.find(f => f.isError);
+      const referenceFile = firstErrorFile || nodeFiles[0];
+
       const combinedTable = {
         name: tableName,
-        sourceFile: nodeFiles[0].path, // Store first file path for reference
-        path: nodeFiles[0].path,
+        sourceFile: referenceFile.path, // Use first error file if available, otherwise first file
+        path: referenceFile.path,
         size: totalSize,
         nodeId: undefined, // No single node ID - it's multi-node
         originalName,

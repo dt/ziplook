@@ -565,6 +565,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 }
                 updates.deferred = false;
                 updates.chunkProgress = undefined; // Clear chunk progress
+                updates.isError = false; // Clear error flag since we successfully loaded
                 break;
               case "error":
                 updates.loading = false;
