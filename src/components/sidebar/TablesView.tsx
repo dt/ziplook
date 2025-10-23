@@ -67,12 +67,60 @@ function TablesView() {
       return initial;
     },
   );
+  const [recentlyEmptyTables, setRecentlyEmptyTables] = useState<Map<string, number>>(new Map());
   const tables = Object.values(state.tables);
   const elementRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const previousTablesRef = useRef<Map<string, { loaded: boolean; rowCount?: number }>>(new Map());
 
   // Throttled debug logging - starts after 10s, then every 10s
   const lastDebugLogTime = useRef<number>(0);
   const debugLogStartTime = useRef<number>(Date.now());
+
+  // Track when tables become empty and delay their movement to empty section
+  useEffect(() => {
+    const now = Date.now();
+    const newRecentlyEmpty = new Map(recentlyEmptyTables);
+    let hasChanges = false;
+
+    // Check for newly loaded empty tables
+    tables.forEach((table) => {
+      const prevState = previousTablesRef.current.get(table.name);
+
+      // Detect transition: table just became loaded with 0 rows
+      if (table.loaded && table.rowCount === 0 && !recentlyEmptyTables.has(table.name)) {
+        // Check if this is a new state (wasn't loaded before, or rowCount just became 0)
+        const justLoaded = !prevState || !prevState.loaded;
+        const rowCountJustBecameZero = prevState && prevState.loaded && prevState.rowCount !== 0;
+
+        if (justLoaded || rowCountJustBecameZero) {
+          // This table just became empty
+          console.log(`Table ${table.name} just loaded with 0 rows - delaying move to empty section`);
+          newRecentlyEmpty.set(table.name, now);
+          hasChanges = true;
+
+          // Set timeout to remove from recently empty after 3 seconds
+          setTimeout(() => {
+            console.log(`Moving ${table.name} to empty section after 3s delay`);
+            setRecentlyEmptyTables((prev) => {
+              const next = new Map(prev);
+              next.delete(table.name);
+              return next;
+            });
+          }, 3000);
+        }
+      }
+
+      // Update previous state
+      previousTablesRef.current.set(table.name, {
+        loaded: table.loaded,
+        rowCount: table.rowCount,
+      });
+    });
+
+    if (hasChanges) {
+      setRecentlyEmptyTables(newRecentlyEmpty);
+    }
+  }, [tables, recentlyEmptyTables]);
 
   // Register element with refs
   const registerElement = useCallback(
@@ -199,10 +247,10 @@ function TablesView() {
 
     for (const [clusterKey, tables] of tablesByCluster.entries()) {
       const regularTables = tables.filter(
-        (t) => !t.loaded || t.rowCount === undefined || t.rowCount > 0,
+        (t) => !t.loaded || t.rowCount === undefined || t.rowCount > 0 || recentlyEmptyTables.has(t.name),
       );
       const emptyTables = tables.filter(
-        (t) => t.loaded && t.rowCount === 0,
+        (t) => t.loaded && t.rowCount === 0 && !recentlyEmptyTables.has(t.name),
       );
 
       groups.push({
@@ -221,7 +269,7 @@ function TablesView() {
     });
 
     return groups;
-  }, [tablesByCluster]);
+  }, [tablesByCluster, recentlyEmptyTables]);
 
   // Auto-expand sections when filtering
   useEffect(() => {

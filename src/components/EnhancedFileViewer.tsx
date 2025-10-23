@@ -274,7 +274,9 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
         decorationIds.current,
         [],
       );
-      setVisibleLineCount(model?.getLineCount() || 0); // Show all lines
+      const currentLineCount = model?.getLineCount() || 0;
+      setTotalLineCount(currentLineCount);
+      setVisibleLineCount(currentLineCount); // Show all lines
       return;
     }
 
@@ -357,7 +359,8 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
       highlightDecorations,
     );
 
-    // Update visible line count
+    // Update visible line count and total line count
+    setTotalLineCount(maxLine);
     const actualMatches = matchingLines.length > 0 ? visible.size : 0;
     setVisibleLineCount(actualMatches);
 
