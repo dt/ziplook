@@ -523,7 +523,8 @@ function sendResponse(
   }
 }
 
-const LARGE_FILE_THRESHOLD = 4 * 1024 * 1024;
+const LARGE_FILE_THRESHOLD = 1 * 1024 * 1024;
+const MAX_AUTO_LOAD_FILES = 10;
 
 function sendMessageToZipWorker(message: {
   type: string;
@@ -756,9 +757,13 @@ async function startTableLoading(message: StartTableLoadingMessage) {
         continue;
       }
 
+      // Count how many files this table requires
+      const fileCount = table.nodeFiles ? table.nodeFiles.length : 1;
+
       if (
         table.size > LARGE_FILE_THRESHOLD ||
-        (tables.length > 300 && table.path.includes("/nodes/"))
+        (tables.length > 300 && table.path.includes("/nodes/")) ||
+        fileCount > MAX_AUTO_LOAD_FILES
       ) {
         self.postMessage({
           type: "tableLoadProgress",
