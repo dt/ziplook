@@ -693,7 +693,7 @@ async function initializeDatabase(message: InitializeDatabaseMessage) {
     // Configure database options
     await db.open({
       query: {
-        castBigIntToDouble: true,
+        castBigIntToDouble: false, // Keep large integers as BigInt to preserve precision
         castTimestampToDate: true, // Convert timestamps to JavaScript Date objects
       },
     });
@@ -1410,13 +1410,18 @@ async function executeQuery(
         }
         // Handle other values
         else {
-          try {
-            // Test if the value can be cloned by attempting JSON serialization
-            JSON.stringify(value);
-            sanitizedRow[key] = value;
-          } catch {
-            // If value can't be serialized, convert to string
-            sanitizedRow[key] = String(value);
+          // Handle BigInt values explicitly - convert to string to preserve precision
+          if (typeof value === "bigint") {
+            sanitizedRow[key] = value.toString();
+          } else {
+            try {
+              // Test if the value can be cloned by attempting JSON serialization
+              JSON.stringify(value);
+              sanitizedRow[key] = value;
+            } catch {
+              // If value can't be serialized, convert to string
+              sanitizedRow[key] = String(value);
+            }
           }
         }
       }
