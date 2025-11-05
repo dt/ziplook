@@ -103,6 +103,8 @@ type InitFromSourceMsg = {
 
 type GetEntriesMsg = { type: "getEntries"; id: string };
 
+type ProceedWithRecoveryMsg = { type: "proceedWithRecovery"; id: string };
+
 type ReadFileChunkedMsg = {
   type: "readFileChunked";
   id: string;
@@ -115,7 +117,11 @@ type ReadFileChunkedMsg = {
 
 // Responses
 type ErrorResp = { type: "error"; id: string; error: string };
-type InitializeComplete = { type: "initializeComplete"; id: string };
+type InitializeComplete = {
+  type: "initializeComplete";
+  id: string;
+};
+type InitializeProgress = { type: "initializeProgress"; id: string; message: string };
 type GetEntriesComplete = {
   type: "getEntriesComplete";
   id: string;
@@ -161,12 +167,14 @@ const state: {
   entries: ZipEntryInternal[] | null;
   entriesByPath: Map<string, ZipEntryInternal>;
   sourceKind: BytesProvider["kind"] | null;
+  pendingInitId: string | null; // ID of the pending initialize request waiting for recovery confirmation
 } = {
   provider: null,
   fileSize: 0,
   entries: null,
   entriesByPath: new Map(),
   sourceKind: null,
+  pendingInitId: null,
 };
 
 // -------------------- ZIP parsing helpers --------------------
@@ -312,6 +320,11 @@ function parseCentralDirectoryLocator(
     // Fallback to 32-bit if ZIP64 locator not found
     return { cdOffset, cdSize, totalEntries };
   }
+
+  // EOCD not found
+  console.error(`❌ parseCentralDirectoryLocator: EOCD signature not found in ${tail.length} byte tail`);
+  console.error(`❌ File size: ${(_fileSize / 1024 / 1024).toFixed(1)}MB, tail starts at offset ${tailStart}`);
+
   throw new Error(
     "EOCD not found; file may not be a ZIP or tail window too small",
   );
@@ -420,6 +433,173 @@ function parseLocalHeaderForDataStart(
   return { dataStart, method };
 }
 
+// -------------------- Central Directory Recovery --------------------
+
+/**
+ * Scan a buffer for Central Directory entry signatures and return their positions
+ */
+function findCDSignatures(buf: Uint8Array): number[] {
+  const view = dv(buf);
+  const positions: number[] = [];
+
+  for (let i = 0; i <= buf.length - 46; i++) {
+    if (view.getUint32(i, true) === SIG.CEN) {
+      positions.push(i);
+    }
+  }
+
+  return positions;
+}
+
+/**
+ * Extract local header offset from a CD entry at the given position
+ */
+function getCDLocalHeaderOffset(buf: Uint8Array, cdPos: number): number {
+  const view = dv(buf);
+  return view.getUint32(cdPos + 42, true);
+}
+
+/**
+ * Validate CD entries by checking if their local header offsets point to valid LFH signatures
+ */
+async function validateCDEntries(
+  provider: BytesProvider,
+  buf: Uint8Array,
+  cdPositions: number[],
+  sampleCount = 5,
+): Promise<boolean> {
+  const toCheck = cdPositions.slice(0, Math.min(sampleCount, cdPositions.length));
+  if (toCheck.length === 0) {
+    console.warn("⚠️ CD Recovery: No CD positions to validate");
+    return false;
+  }
+
+  console.log(`🔍 CD Recovery: Validating ${toCheck.length} CD entries by checking their local header offsets...`);
+  let validCount = 0;
+  for (let i = 0; i < toCheck.length; i++) {
+    const cdPos = toCheck[i];
+    const lfhOffset = getCDLocalHeaderOffset(buf, cdPos);
+
+    // Read the first 4 bytes at that offset to check for LFH signature
+    try {
+      const header = await provider.read(lfhOffset, 4);
+      if (header.length >= 4) {
+        const sig = dv(header).getUint32(0, true);
+        if (sig === SIG.LFH) {
+          validCount++;
+          console.log(`  ✓ CD entry ${i + 1}/${toCheck.length}: Valid LFH at offset ${lfhOffset}`);
+        } else {
+          console.log(`  ✗ CD entry ${i + 1}/${toCheck.length}: Invalid signature 0x${sig.toString(16)} at offset ${lfhOffset}`);
+        }
+      } else {
+        console.log(`  ✗ CD entry ${i + 1}/${toCheck.length}: Could not read 4 bytes at offset ${lfhOffset}`);
+      }
+    } catch (e) {
+      console.log(`  ✗ CD entry ${i + 1}/${toCheck.length}: Read error at offset ${lfhOffset}:`, e);
+      continue;
+    }
+  }
+
+  // Require 100% match - any invalid entries mean we're not looking at real CD
+  const isValid = validCount === toCheck.length;
+  console.log(`${isValid ? '✅' : '❌'} CD Recovery: Validation result: ${validCount}/${toCheck.length} valid (need all)`);
+
+  return isValid;
+}
+
+/**
+ * Attempt to recover the Central Directory by scanning for CD entries and expanding backward
+ */
+async function scanForCentralDirectory(
+  provider: BytesProvider,
+  initialTail: Uint8Array,
+  initialTailStart: number,
+  fileSize: number,
+): Promise<ZipEntryInternal[]> {
+  console.log(`📂 CD Recovery: Starting recovery process...`);
+  console.log(`📂 CD Recovery: File size: ${(fileSize / 1024 / 1024).toFixed(1)}MB`);
+  console.log(`📂 CD Recovery: Initial tail: ${(initialTail.length / 1024 / 1024).toFixed(1)}MB starting at offset ${initialTailStart}`);
+
+  // Step 1: Find CD signatures in the initial tail
+  console.log(`🔍 CD Recovery: Scanning tail for Central Directory signatures...`);
+  const cdPositions = findCDSignatures(initialTail);
+  console.log(`📊 CD Recovery: Found ${cdPositions.length} potential CD entries in tail`);
+
+  if (cdPositions.length === 0) {
+    console.error(`❌ CD Recovery: No Central Directory entries found in tail - file may be severely corrupted`);
+    throw new Error("No Central Directory entries found in tail - file may be severely corrupted");
+  }
+
+  // Step 2: Validate by checking local header offsets
+  const isValid = await validateCDEntries(provider, initialTail, cdPositions);
+  if (!isValid) {
+    console.error(`❌ CD Recovery: Found CD signatures but they don't point to valid local file headers - file may be corrupted`);
+    throw new Error("Found CD signatures but they don't point to valid local file headers - file may be corrupted");
+  }
+
+  console.log("✅ CD Recovery: CD entries validated! Expanding backward to find full Central Directory...");
+
+  // Step 3: Expand backward to find the start of the CD
+  let cdStart = initialTailStart;
+  let fullCD = initialTail;
+  let expansionCount = 0;
+
+  // Expand in 10MB chunks until we stop seeing CD entries near the beginning
+  const chunkSize = 10 * 1024 * 1024;
+  while (cdStart > 0) {
+    expansionCount++;
+    const readSize = Math.min(chunkSize, cdStart);
+    const newStart = cdStart - readSize;
+
+    console.log(`⬅️  CD Recovery: Expansion ${expansionCount}: Reading ${(readSize / 1024 / 1024).toFixed(1)}MB from offset ${newStart}...`);
+    const chunk = await provider.read(newStart, readSize);
+
+    // Check if this chunk contains CD entries near its end
+    const chunkCDPositions = findCDSignatures(chunk);
+    console.log(`   Found ${chunkCDPositions.length} CD entries in this chunk`);
+
+    const hasCDNearEnd = chunkCDPositions.some(pos => pos > chunk.length - 1000);
+
+    if (!hasCDNearEnd) {
+      // No CD entries near the end of this chunk, we've gone too far back
+      console.log(`🛑 CD Recovery: No CD entries near end of chunk - CD starts at offset ${cdStart}`);
+      break;
+    }
+
+    // Prepend this chunk to our CD buffer
+    const newCD = new Uint8Array(chunk.length + fullCD.length);
+    newCD.set(chunk, 0);
+    newCD.set(fullCD, chunk.length);
+    fullCD = newCD;
+    cdStart = newStart;
+
+    console.log(`📈 CD Recovery: Expanded CD buffer to ${(fullCD.length / 1024 / 1024).toFixed(1)}MB, now starting at offset ${cdStart}`);
+
+    // Safety limit: don't expand more than 500MB
+    if (fullCD.length > 500 * 1024 * 1024) {
+      console.warn(`⚠️  CD Recovery: Reached 500MB limit, stopping expansion`);
+      break;
+    }
+  }
+
+  // Step 4: Find the start of the CD in our buffer and parse from there
+  const finalCDPositions = findCDSignatures(fullCD);
+  if (finalCDPositions.length === 0) {
+    console.error(`❌ CD Recovery: No CD signatures found in final buffer`);
+    throw new Error("No CD signatures found in expanded buffer");
+  }
+
+  const cdStartOffset = finalCDPositions[0];
+  console.log(`🔧 CD Recovery: CD starts at buffer offset ${cdStartOffset} (${(cdStartOffset / 1024 / 1024).toFixed(1)}MB into buffer)`);
+  console.log(`🔧 CD Recovery: Parsing ${((fullCD.length - cdStartOffset) / 1024 / 1024).toFixed(1)}MB Central Directory (${finalCDPositions.length} total signatures)...`);
+
+  const cdBuffer = fullCD.subarray(cdStartOffset);
+  const entries = parseCentralDirectory(cdBuffer);
+  console.log(`✅ CD Recovery: Successfully parsed ${entries.length} entries from Central Directory`);
+
+  return entries;
+}
+
 // -------------------- Utility helpers --------------------
 
 function verifyGzipMagicBytes(bytes: Uint8Array): boolean {
@@ -445,6 +625,10 @@ function okMessage<T extends object>(m: T) {
 function errMessage(id: string, error: unknown) {
   const msg = error instanceof Error ? error.message : String(error);
   okMessage<ErrorResp>({ type: "error", id, error: msg });
+}
+
+function progressMessage(id: string, message: string) {
+  okMessage<InitializeProgress>({ type: "initializeProgress", id, message });
 }
 
 // Wrap provider bytes into a ReadableStream by fetching in windows.
@@ -518,20 +702,81 @@ async function loadFromProvider(id: string, provider: BytesProvider) {
   state.entries = null;
   state.entriesByPath.clear();
 
-  // 1) Tail window → EOCD(/ZIP64) → central directory location
-  const tailLen = Math.min(1024 * 1024, state.fileSize); // 1MB
-  const tailStart = Math.max(0, state.fileSize - tailLen); // Ensure we don't go negative
+  progressMessage(id, "Loading ZIP file metadata...");
 
-  const tail = await provider.read(tailStart, tailLen);
-  const { cdOffset, cdSize } = parseCentralDirectoryLocator(
-    tail,
-    state.fileSize,
-    tailStart,
-  );
+  // Try progressively larger tail windows starting at 1MB
+  let tailLen = 1024 * 1024; // Start at 1MB
+  const maxTailLen = Math.min(64 * 1024 * 1024, state.fileSize); // Cap at 64MB
+  let tail: Uint8Array | null = null;
+  let tailStart = 0;
+  let cdOffset = 0;
+  let cdSize = 0;
+  let eocdFound = false;
+  let attemptCount = 0;
 
-  // 2) Read central directory
-  const central = await provider.read(cdOffset, cdSize);
-  const allEntries = parseCentralDirectory(central);
+  while (tailLen <= maxTailLen) {
+    attemptCount++;
+    tailStart = Math.max(0, state.fileSize - tailLen);
+
+    console.log(`📖 ZIP: Attempt ${attemptCount}: Reading ${(tailLen / 1024 / 1024).toFixed(1)}MB tail from offset ${tailStart}...`);
+    tail = await provider.read(tailStart, tailLen);
+
+    try {
+      const result = parseCentralDirectoryLocator(tail, state.fileSize, tailStart);
+      cdOffset = result.cdOffset;
+      cdSize = result.cdSize;
+      eocdFound = true;
+      console.log(`✅ ZIP: Found EOCD in ${(tailLen / 1024 / 1024).toFixed(1)}MB tail`);
+      break;
+    } catch (error) {
+      // EOCD not found in this window
+      if (tailLen >= maxTailLen) {
+        // We've reached the max, break and try CD recovery
+        console.warn(`⚠️  ZIP: EOCD not found after searching ${(tailLen / 1024 / 1024).toFixed(1)}MB`);
+        break;
+      }
+
+      // Expand the window
+      const nextTailLen = Math.min(tailLen * 2, maxTailLen);
+      if (nextTailLen > 1024 * 1024) {
+        // Only show this message if we're expanding beyond initial 1MB
+        progressMessage(id, "Searching for file listing in ZIP file...");
+      }
+      console.log(`🔍 ZIP: EOCD not found, expanding search to ${(nextTailLen / 1024 / 1024).toFixed(1)}MB...`);
+      tailLen = nextTailLen;
+    }
+  }
+
+  let allEntries: ZipEntryInternal[];
+  let needsRecoveryConfirmation = false;
+
+  if (eocdFound && tail) {
+    // Success via standard path
+    console.log(`📖 ZIP: Reading ${(cdSize / 1024 / 1024).toFixed(1)}MB Central Directory from offset ${cdOffset}...`);
+    const central = await provider.read(cdOffset, cdSize);
+    allEntries = parseCentralDirectory(central);
+    console.log(`✅ ZIP: Successfully parsed ${allEntries.length} entries via standard method`);
+  } else if (tail) {
+    // EOCD not found even with max tail - try CD recovery
+    progressMessage(id, "Malformed ZIP file? Attempting index recovery...");
+    console.warn(`🔄 ZIP: Falling back to CD recovery mode...`);
+
+    try {
+      allEntries = await scanForCentralDirectory(
+        provider,
+        tail,
+        tailStart,
+        state.fileSize,
+      );
+      needsRecoveryConfirmation = true;
+    } catch (recoveryError) {
+      const recoveryMsg = recoveryError instanceof Error ? recoveryError.message : String(recoveryError);
+      console.error(`❌ ZIP: CD recovery failed: ${recoveryMsg}`);
+      throw recoveryError;
+    }
+  } else {
+    throw new Error("Failed to read ZIP file tail");
+  }
 
   // Filter out __MACOSX paths (macOS metadata files)
   const entries = allEntries.filter((e) => !e.path.startsWith("__MACOSX"));
@@ -541,12 +786,27 @@ async function loadFromProvider(id: string, provider: BytesProvider) {
     entries.forEach((e) => (e.path = e.path.substring("renamed_".length)));
   }
 
-  // 4) Index entries
+  // Index entries
   state.entries = entries;
   state.entriesByPath.clear();
   for (const e of entries) state.entriesByPath.set(e.path, e);
 
-  okMessage<InitializeComplete>({ type: "initializeComplete", id });
+  // If recovery was used, emit cdScanningComplete and wait for user confirmation
+  if (needsRecoveryConfirmation) {
+    // Store the ID so we can use it when user confirms
+    state.pendingInitId = id;
+    okMessage({
+      type: "cdScanningComplete",
+      id,
+      entriesCount: entries.length,
+    });
+    // Don't emit initializeComplete yet - wait for proceedWithRecovery message
+  } else {
+    okMessage<InitializeComplete>({
+      type: "initializeComplete",
+      id,
+    });
+  }
 }
 
 async function loadFromMessage(msg: InitFromSourceMsg) {
@@ -596,6 +856,28 @@ async function onGetEntries(msg: GetEntriesMsg) {
     });
   } catch (e) {
     errMessage(id, e);
+  }
+}
+
+async function onProceedWithRecovery(msg: ProceedWithRecoveryMsg) {
+  try {
+    // User confirmed they want to proceed with recovered entries
+    // Use the stored ID from the original initialize request
+    const id = state.pendingInitId;
+    if (!id) {
+      throw new Error("No pending initialization to proceed with");
+    }
+
+    // Clear the pending ID
+    state.pendingInitId = null;
+
+    // Now emit the initializeComplete that we held back
+    okMessage<InitializeComplete>({
+      type: "initializeComplete",
+      id,
+    });
+  } catch (e) {
+    errMessage(msg.id, e);
   }
 }
 
@@ -722,19 +1004,22 @@ async function onReadFileChunked(msg: ReadFileChunkedMsg) {
 
 // -------------------- Dispatch --------------------
 
-type InMsg = InitFromSourceMsg | GetEntriesMsg | ReadFileChunkedMsg;
+type InMsg = InitFromSourceMsg | GetEntriesMsg | ProceedWithRecoveryMsg | ReadFileChunkedMsg;
 
 self.addEventListener("message", (ev: MessageEvent<InMsg>) => {
   const msg = ev.data;
   switch (msg.type) {
     case "initialize":
-      void loadFromMessage(msg);
+      loadFromMessage(msg).catch((e) => errMessage(msg.id, e));
       break;
     case "getEntries":
-      void onGetEntries(msg);
+      onGetEntries(msg).catch((e) => errMessage(msg.id, e));
+      break;
+    case "proceedWithRecovery":
+      onProceedWithRecovery(msg).catch((e) => errMessage(msg.id, e));
       break;
     case "readFileChunked":
-      void onReadFileChunked(msg);
+      onReadFileChunked(msg).catch((e) => errMessage(msg.id, e));
       break;
     default: {
       const id = ((msg as Record<string, unknown>).id as string) ?? "unknown";
@@ -1120,14 +1405,13 @@ class SendSafelyProvider implements BytesProvider {
     return dec;
   }
 
-  private logCacheStats() {
-    const total = this.cacheHits + this.cacheMisses;
-    if (total === 0) return;
-
-    const hitRate = ((this.cacheHits / total) * 100).toFixed(1);
-    const cacheSize = this.decLRU.size();
-    console.log(`📊 Cache stats: ${this.cacheHits} hits, ${this.cacheMisses} misses, ${hitRate}% hit rate, ${cacheSize} chunks cached`);
-  }
+  // Commented out - unused method
+  // private logCacheStats() {
+  //   const total = this.cacheHits + this.cacheMisses;
+  //   if (total === 0) return;
+  //   const hitRate = ((this.cacheHits / total) * 100).toFixed(1);
+  //   console.log(`📊 Cache stats: ${this.cacheHits} hits, ${this.cacheMisses} misses, ${hitRate}% hit rate`);
+  // }
 
   private async ensureUrlsFor(targetPart: number) {
     if (this.urls.has(targetPart)) {

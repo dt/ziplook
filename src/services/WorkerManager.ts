@@ -99,6 +99,11 @@ export class WorkerManager implements IWorkerManager {
     await this.sendMessage({ type: "init" });
   }
 
+  async proceedWithRecovery(): Promise<void> {
+    // User confirmed they want to proceed with recovered ZIP entries
+    await this.sendMessage({ type: "proceedWithRecovery" });
+  }
+
   async loadSingleStackFile(filePath: string): Promise<void> {
     // Trigger loading of a single stack file
     await this.sendMessage({ type: "loadSingleStackFile", filePath });
@@ -428,6 +433,12 @@ export class WorkerManager implements IWorkerManager {
         this.options.onFileList?.(
           message.entries as ZipEntryMeta[],
           message.totalFiles as number,
+        );
+        break;
+
+      case "cdScanningComplete":
+        this.options.onCdScanningComplete?.(
+          message.entriesCount as number,
         );
         break;
 

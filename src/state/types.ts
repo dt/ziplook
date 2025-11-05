@@ -202,6 +202,7 @@ export interface IWorkerManager {
   loadZipFile(file: File): Promise<ZipEntryMeta[]>;
   loadZipDataFromSendSafely(config: SendSafelyConfig): Promise<ZipEntryMeta[]>;
   initializeWorkers(): Promise<void>;
+  proceedWithRecovery(): Promise<void>;
   destroy(): void;
 
   // Database operations
@@ -248,7 +249,11 @@ export interface IWorkerManager {
 export interface IWorkerManagerCallbacks {
   // Stage progression callbacks
   onLoadingStage?: (stage: string, message: string) => void;
-  onFileList?: (entries: ZipEntryMeta[], totalFiles: number) => void;
+  onFileList?: (
+    entries: ZipEntryMeta[],
+    totalFiles: number,
+  ) => void;
+  onCdScanningComplete?: (entriesCount: number) => void;
   onTableAdded?: (table: TableData) => void;
   onSendStackFileToIframe?: (path: string, content: string, name?: string) => void;
   onStackProcessingComplete?: (stackFilesCount: number) => void;

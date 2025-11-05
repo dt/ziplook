@@ -33,6 +33,8 @@ interface WorkerResponse {
   entries?: unknown;
   bytes?: unknown;
   done?: boolean;
+  recoveryUsed?: boolean;
+  entriesCount?: number;
 }
 
 // Pending request handler
@@ -199,7 +201,7 @@ async function loadZipFromFile(file: File): Promise<void> {
       message: "Loading zip file...",
     });
 
-    const zipEntries = await loadZipDataFromFile(file);
+    const { entries: zipEntries } = await loadZipDataFromFile(file);
 
     // Stage 2: Scanning files
     notify({
@@ -258,7 +260,7 @@ async function loadZipFile(zipData: Uint8Array): Promise<void> {
       message: "Loading zip file...",
     });
 
-    const zipEntries = await loadZipData(zipData);
+    const { entries: zipEntries } = await loadZipData(zipData);
 
     // Stage 2: Scanning files
     notify({
@@ -332,7 +334,7 @@ async function loadZipFileFromSendSafely(
       message: "Connecting to SendSafely...",
     });
 
-    const zipEntries = await loadZipDataFromSendSafely(sendSafelyConfig);
+    const { entries: zipEntries } = await loadZipDataFromSendSafely(sendSafelyConfig);
 
     // Stage 2: Scanning files
     notify({
@@ -379,28 +381,44 @@ async function loadZipFileFromSendSafely(
 }
 
 // Load zip data from File object into zip worker
-async function loadZipDataFromFile(file: File): Promise<ZipEntryMeta[]> {
+async function loadZipDataFromFile(file: File): Promise<{
+  entries: ZipEntryMeta[];
+}> {
   if (!zipWorker) throw new Error("Zip worker not initialized");
 
   // First initialize the zip worker with File object
+  // If recovery is needed, we'll get cdScanningComplete notification
   await new Promise<void>((resolve, reject) => {
     const id = generateId();
-    const timeout = setTimeout(
+    let timeout: NodeJS.Timeout | null = setTimeout(
       () => reject(new Error("Zip initialization timeout")),
-      30000,
+      60000,
     );
 
     pendingRequests.set(id, {
       resolve: (response: WorkerResponse) => {
-        clearTimeout(timeout);
-        if (response.type === "initializeComplete") {
+        if (response.type === "cdScanningComplete") {
+          // Clear timeout - we're waiting on user now, not on loading
+          if (timeout) {
+            clearTimeout(timeout);
+            timeout = null;
+          }
+          // Forward notification to main thread and keep waiting
+          notify({
+            type: "cdScanningComplete",
+            entriesCount: response.entriesCount,
+          });
+          // Don't resolve yet - keep waiting for initializeComplete
+        } else if (response.type === "initializeComplete") {
+          if (timeout) clearTimeout(timeout);
           resolve();
         } else if (response.type === "error") {
+          if (timeout) clearTimeout(timeout);
           reject(new Error(response.error || "Failed to initialize zip"));
         }
       },
       reject: (error: Error) => {
-        clearTimeout(timeout);
+        if (timeout) clearTimeout(timeout);
         reject(error);
       },
     });
@@ -413,7 +431,7 @@ async function loadZipDataFromFile(file: File): Promise<ZipEntryMeta[]> {
   });
 
   // Then get the entries
-  return new Promise((resolve, reject) => {
+  const entries = await new Promise<ZipEntryMeta[]>((resolve, reject) => {
     const id = generateId();
     const timeout = setTimeout(
       () => reject(new Error("Get entries timeout")),
@@ -440,31 +458,51 @@ async function loadZipDataFromFile(file: File): Promise<ZipEntryMeta[]> {
       id,
     });
   });
+
+  return {
+    entries,
+  };
 }
 
 // Load zip data from buffer into zip worker
-async function loadZipData(zipData: Uint8Array): Promise<ZipEntryMeta[]> {
+async function loadZipData(zipData: Uint8Array): Promise<{
+  entries: ZipEntryMeta[];
+}> {
   if (!zipWorker) throw new Error("Zip worker not initialized");
 
   // First initialize the zip worker
+  // If recovery is needed, we'll get cdScanningComplete notification
   await new Promise<void>((resolve, reject) => {
     const id = generateId();
-    const timeout = setTimeout(
+    let timeout: NodeJS.Timeout | null = setTimeout(
       () => reject(new Error("Zip initialization timeout")),
-      30000,
+      60000,
     );
 
     pendingRequests.set(id, {
       resolve: (response: WorkerResponse) => {
-        clearTimeout(timeout);
-        if (response.type === "initializeComplete") {
+        if (response.type === "cdScanningComplete") {
+          // Clear timeout - we're waiting on user now, not on loading
+          if (timeout) {
+            clearTimeout(timeout);
+            timeout = null;
+          }
+          // Forward notification to main thread and keep waiting
+          notify({
+            type: "cdScanningComplete",
+            entriesCount: response.entriesCount,
+          });
+          // Don't resolve yet - keep waiting for initializeComplete
+        } else if (response.type === "initializeComplete") {
+          if (timeout) clearTimeout(timeout);
           resolve();
         } else if (response.type === "error") {
+          if (timeout) clearTimeout(timeout);
           reject(new Error(response.error || "Failed to initialize zip"));
         }
       },
       reject: (error: Error) => {
-        clearTimeout(timeout);
+        if (timeout) clearTimeout(timeout);
         reject(error);
       },
     });
@@ -480,7 +518,7 @@ async function loadZipData(zipData: Uint8Array): Promise<ZipEntryMeta[]> {
   });
 
   // Then get the entries
-  return new Promise((resolve, reject) => {
+  const entries = await new Promise<ZipEntryMeta[]>((resolve, reject) => {
     const id = generateId();
     const timeout = setTimeout(
       () => reject(new Error("Get entries timeout")),
@@ -507,35 +545,56 @@ async function loadZipData(zipData: Uint8Array): Promise<ZipEntryMeta[]> {
       id,
     });
   });
+
+  return {
+    entries,
+  };
 }
 
 // Load zip data from SendSafely into zip worker
 async function loadZipDataFromSendSafely(
   sendSafelyConfig: SendSafelyConfig,
-): Promise<ZipEntryMeta[]> {
+): Promise<{
+  entries: ZipEntryMeta[];
+}> {
   if (!zipWorker) throw new Error("Zip worker not initialized");
 
   // First initialize the zip worker with SendSafely config
+  // If recovery is needed, we'll get cdScanningComplete notification
+  // and wait for main thread to send proceedWithRecovery
   await new Promise<void>((resolve, reject) => {
     const id = generateId();
-    const timeout = setTimeout(
+    let timeout: NodeJS.Timeout | null = setTimeout(
       () => reject(new Error("SendSafely initialization timeout")),
-      30000,
+      60000,
     );
 
     pendingRequests.set(id, {
       resolve: (response: WorkerResponse) => {
-        clearTimeout(timeout);
-        if (response.type === "initializeComplete") {
+        if (response.type === "cdScanningComplete") {
+          // Clear timeout - we're waiting on user now, not on loading
+          if (timeout) {
+            clearTimeout(timeout);
+            timeout = null;
+          }
+          // Forward notification to main thread and keep waiting
+          notify({
+            type: "cdScanningComplete",
+            entriesCount: response.entriesCount,
+          });
+          // Don't resolve yet - keep waiting for initializeComplete
+        } else if (response.type === "initializeComplete") {
+          if (timeout) clearTimeout(timeout);
           resolve();
         } else if (response.type === "error") {
+          if (timeout) clearTimeout(timeout);
           reject(
             new Error(response.error || "Failed to initialize SendSafely zip"),
           );
         }
       },
       reject: (error: Error) => {
-        clearTimeout(timeout);
+        if (timeout) clearTimeout(timeout);
         reject(error);
       },
     });
@@ -548,7 +607,7 @@ async function loadZipDataFromSendSafely(
   });
 
   // Then get the entries
-  return new Promise((resolve, reject) => {
+  const entries = await new Promise<ZipEntryMeta[]>((resolve, reject) => {
     const id = generateId();
     const timeout = setTimeout(
       () => reject(new Error("Get entries timeout")),
@@ -575,6 +634,10 @@ async function loadZipDataFromSendSafely(
       id,
     });
   });
+
+  return {
+    entries,
+  };
 }
 
 // Legacy functions removed - workers now receive file listings directly
@@ -875,6 +938,23 @@ function handleWorkerMessage(fromWorker: string, event: MessageEvent) {
   if (message.id && pendingRequests.has(message.id)) {
     const request = pendingRequests.get(message.id)!;
 
+    // Handle progress messages - forward as notification but keep request pending
+    if (message.type === "initializeProgress") {
+      notify({
+        type: "loadingStage",
+        stage: "reading-zip",
+        message: message.message,
+      });
+      return; // Don't resolve the request, keep it pending
+    }
+
+    // Handle cdScanningComplete - keep request pending for initializeComplete
+    if (message.type === "cdScanningComplete") {
+      // Call the resolve handler but DON'T delete the pending request
+      request.resolve(message);
+      return; // Keep waiting for initializeComplete
+    }
+
     if (message.type === "error") {
       pendingRequests.delete(message.id);
       request.reject(new Error(message.error));
@@ -977,6 +1057,18 @@ self.onmessage = async (event: MessageEvent<Command>) => {
     if (command.type === "loadSingleStackFile") {
       await loadSingleStackFile(command.filePath as string);
       self.postMessage({ type: "response", id: command.id, success: true });
+      return;
+    }
+
+    if (command.type === "proceedWithRecovery") {
+      // Forward to zip worker
+      if (zipWorker) {
+        zipWorker.postMessage({
+          type: "proceedWithRecovery",
+          id: command.id,
+        });
+      }
+      // Don't send response yet - zip worker will send initializeComplete
       return;
     }
 
