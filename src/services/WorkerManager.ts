@@ -354,6 +354,9 @@ export class WorkerManager implements IWorkerManager {
           message.chunkProgress as
             | { current: number; total: number; percentage: number }
             | undefined,
+          message.fileProgress as
+            | { current: number; total: number; percentage: number }
+            | undefined,
         );
         break;
 

@@ -94,13 +94,11 @@ function TablesView() {
 
         if (justLoaded || rowCountJustBecameZero) {
           // This table just became empty
-          console.log(`Table ${table.name} just loaded with 0 rows - delaying move to empty section`);
           newRecentlyEmpty.set(table.name, now);
           hasChanges = true;
 
           // Set timeout to remove from recently empty after 3 seconds
           setTimeout(() => {
-            console.log(`Moving ${table.name} to empty section after 3s delay`);
             setRecentlyEmptyTables((prev) => {
               const next = new Map(prev);
               next.delete(table.name);
@@ -632,6 +630,12 @@ function TablesView() {
                                 )}
                               </div>
                             )}
+                            {/* File progress (multi-node tables) */}
+                            {table.fileProgress && (
+                              <div className="file-progress-text">
+                                Loading file {table.fileProgress.current} of {table.fileProgress.total}
+                              </div>
+                            )}
                             {/* Chunk progress bar */}
                             {table.chunkProgress && (
                               <div className="chunk-progress-bar">
@@ -755,6 +759,12 @@ function TablesView() {
                             {formatFileSize(table.size || 0)}
                           </span>
                         )}
+                      </div>
+                    )}
+                    {/* File progress (multi-node tables) */}
+                    {table.fileProgress && (
+                      <div className="file-progress-text">
+                        Loading file {table.fileProgress.current} of {table.fileProgress.total}
                       </div>
                     )}
                     {table.chunkProgress && (

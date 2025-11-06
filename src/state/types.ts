@@ -74,6 +74,12 @@ export interface TableMeta {
     total: number;
     percentage: number;
   };
+  fileProgress?: {
+    // For multi-node tables loading multiple files
+    current: number;
+    total: number;
+    percentage: number;
+  };
   nodeFiles?: Array<{
     // For multi-node tables
     path: string;
@@ -282,6 +288,11 @@ export interface IWorkerManagerCallbacks {
     rowCount?: number,
     error?: string,
     chunkProgress?: {
+      current: number;
+      total: number;
+      percentage: number;
+    },
+    fileProgress?: {
       current: number;
       total: number;
       percentage: number;

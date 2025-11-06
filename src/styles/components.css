@@ -2026,6 +2026,14 @@
   }
 }
 
+/* File progress text for multi-node tables */
+.file-progress-text {
+  font-size: 10px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  font-style: italic;
+}
+
 /* Chunk progress bar for large file loading */
 .chunk-progress-bar {
   position: relative;

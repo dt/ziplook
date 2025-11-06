@@ -542,6 +542,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
               total: number;
               percentage: number;
             },
+            fileProgress?: {
+              current: number;
+              total: number;
+              percentage: number;
+            },
           ) => {
             if (!mounted) return;
 
@@ -556,6 +561,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 if (chunkProgress) {
                   updates.chunkProgress = chunkProgress;
                 }
+                // Add file progress if provided
+                if (fileProgress) {
+                  updates.fileProgress = fileProgress;
+                }
                 break;
               case "completed":
                 updates.loading = false;
@@ -565,6 +574,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 }
                 updates.deferred = false;
                 updates.chunkProgress = undefined; // Clear chunk progress
+                updates.fileProgress = undefined; // Clear file progress
                 updates.isError = false; // Clear error flag since we successfully loaded
                 break;
               case "error":

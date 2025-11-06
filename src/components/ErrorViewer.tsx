@@ -8,8 +8,8 @@ interface ErrorViewerProps {
   tableName: string;
   fullTableName?: string;
   isPreLoadError?: boolean;
-  errorFiles?: Array<{ path: string; nodeId?: number; size?: number; isError: boolean }>;
-  availableFiles?: Array<{ path: string; nodeId?: number; size?: number; isError: boolean }>;
+  errorFiles?: Array<{ path: string; nodeId: number; size: number; isError: boolean }>;
+  availableFiles?: Array<{ path: string; nodeId: number; size: number; isError: boolean }>;
 }
 
 function ErrorViewer({

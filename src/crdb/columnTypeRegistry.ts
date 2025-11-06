@@ -50,7 +50,13 @@ export const COLUMN_TYPE_HINTS: ColumnTypeHint[] = [
     description: "Mixed timestamp formats",
   },
 
-  // crdb_internal.kv_node_status - tables with complex JSON that break CSV sniffing
+  // Node IDs should be INTEGER (32-bit) across all tables
+  {
+    table: "crdb_internal.node_build_info",
+    column: "node_id",
+    duckdbType: "INTEGER",
+    description: "Node ID as 32-bit integer",
+  },
   {
     table: "crdb_internal.kv_node_status",
     column: "node_id",

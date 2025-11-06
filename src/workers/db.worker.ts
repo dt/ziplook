@@ -224,7 +224,7 @@ function generateCsvReadSql(options: CsvReadOptions): string {
   // Add debug_node column for multi-node tables (per-node data like node_queries)
   // Skip debug_node for single-file tables (cluster-wide data like cluster_settings)
   const selectClause = nodeId !== undefined
-    ? `SELECT ${nodeId} AS debug_node, * FROM read_csv('${fileName}', ${csvParams})`
+    ? `SELECT CAST(${nodeId} AS INTEGER) AS debug_node, * FROM read_csv('${fileName}', ${csvParams})`
     : `SELECT * FROM read_csv('${fileName}', ${csvParams})`;
 
   if (operation === 'create') {
@@ -270,7 +270,7 @@ async function loadLargeFileIncrementally(
       FROM information_schema.tables
       WHERE table_name = '${tableName}' AND table_schema = 'main'
     `);
-    tableExists = checkResult.toArray()[0].count > 0;
+    tableExists = Number(checkResult.toArray()[0].count) > 0;
   } else {
     // Drop table if exists (only for non-multi-node tables)
     await conn.query(`DROP TABLE IF EXISTS ${quotedTableName}`);
@@ -482,18 +482,18 @@ async function loadLargeFileIncrementally(
     const countBeforeResult = await conn.query(
       `SELECT COUNT(*) as count FROM ${quotedTableName} WHERE debug_node != ${nodeId}`,
     );
-    const countBefore = countBeforeResult.toArray()[0].count;
+    const countBefore = Number(countBeforeResult.toArray()[0].count);
     const countAfterResult = await conn.query(
       `SELECT COUNT(*) as count FROM ${quotedTableName}`,
     );
-    const countAfter = countAfterResult.toArray()[0].count;
+    const countAfter = Number(countAfterResult.toArray()[0].count);
     finalRowCount = countAfter - countBefore;
   } else {
     // For CREATE operations or single-node tables, get total count
     const countResult = await conn.query(
       `SELECT COUNT(*) as count FROM ${quotedTableName}`,
     );
-    finalRowCount = countResult.toArray()[0].count;
+    finalRowCount = Number(countResult.toArray()[0].count);
   }
 
   console.log(`✅ Successfully loaded large table with ${finalRowCount} rows`);
@@ -798,8 +798,24 @@ async function startTableLoading(message: StartTableLoadingMessage) {
 }
 
 async function loadSingleTableFromMessage(message: LoadSingleTableMessage) {
-  const { table } = message;
-  await loadSingleTable(table);
+  const { table, id } = message;
+  try {
+    await loadSingleTable(table);
+    // Send success response
+    sendResponse(message, {
+      type: "loadSingleTableComplete",
+      id,
+      success: true,
+    });
+  } catch (error) {
+    // Send error response
+    sendResponse(message, {
+      type: "loadSingleTableComplete",
+      id,
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
 }
 
 interface TableInfo {
@@ -852,20 +868,75 @@ async function loadSingleTable(table: TableInfo) {
       size,
     });
 
-    // Handle multi-node tables
+    // Handle multi-node tables with sliding window parallel loading
     if (nodeFiles && nodeFiles.length > 0) {
-
       let totalRowCount = 0;
-      for (const nodeFile of nodeFiles) {
-        // Skip error files - don't try to load them into DuckDB
-        if (nodeFile.isError) {
-          continue;
+      let filesProcessed = 0;
+      const totalFiles = nodeFiles.filter(f => !f.isError).length;
+      const validFiles = nodeFiles.filter(f => !f.isError);
+
+      // Sliding window: limit by file count AND byte size
+      const MAX_QUEUED_FILES = 20; // Max files in-flight
+      const MAX_QUEUED_BYTES = 8 * 1024 * 1024; // Max 8MB of compressed data in-flight
+      const pendingPromises: Array<Promise<{ nodeFile: typeof validFiles[0], response: any }>> = [];
+      let nextFileIndex = 0;
+      let queuedBytes = 0;
+
+      // Fill initial window (stop when either limit is reached)
+      while (
+        nextFileIndex < validFiles.length &&
+        pendingPromises.length < MAX_QUEUED_FILES &&
+        queuedBytes < MAX_QUEUED_BYTES
+      ) {
+        const nodeFile = validFiles[nextFileIndex];
+        pendingPromises.push(
+          sendMessageToZipWorker({
+            type: "readFileChunked",
+            path: nodeFile.path,
+          }).then(response => ({ nodeFile, response }))
+        );
+        queuedBytes += nodeFile.size;
+        nextFileIndex++;
+      }
+
+      // Process files as they complete, maintaining the window
+      while (pendingPromises.length > 0) {
+        // Wait for first promise to complete (FIFO order)
+        const { nodeFile, response: fileResponse } = await pendingPromises.shift()!;
+
+        filesProcessed++;
+        queuedBytes -= nodeFile.size; // Remove completed file from queue size
+
+        // Queue more files to maintain thresholds (stop when either limit is reached)
+        while (
+          nextFileIndex < validFiles.length &&
+          pendingPromises.length < MAX_QUEUED_FILES &&
+          queuedBytes < MAX_QUEUED_BYTES
+        ) {
+          const nextFile = validFiles[nextFileIndex];
+          pendingPromises.push(
+            sendMessageToZipWorker({
+              type: "readFileChunked",
+              path: nextFile.path,
+            }).then(response => ({ nodeFile: nextFile, response }))
+          );
+          queuedBytes += nextFile.size;
+          nextFileIndex++;
         }
 
-        // Request file from zip worker
-        const fileResponse = await sendMessageToZipWorker({
-          type: "readFileChunked",
-          path: nodeFile.path,
+        // Send progress update
+        self.postMessage({
+          type: "tableLoadProgress",
+          tableName,
+          status: "loading",
+          nodeId,
+          originalName,
+          isError,
+          fileProgress: {
+            current: filesProcessed,
+            total: totalFiles,
+            percentage: Math.round((filesProcessed / totalFiles) * 100),
+          },
         });
 
         if (!fileResponse.success) {
@@ -897,7 +968,7 @@ async function loadSingleTable(table: TableInfo) {
           );
           totalRowCount += rowCount;
         } else {
-          // Load from text
+          // Load from text - DuckDB operations are sequential, but zip worker stays busy
           const rowCount = await loadTableFromText(
             tableName,
             text,
@@ -931,7 +1002,7 @@ async function loadSingleTable(table: TableInfo) {
       const countResult = await conn.query(
         `SELECT COUNT(*) as count FROM ${quotedTableName}`,
       );
-      const rowCount = countResult.toArray()[0].count;
+      const rowCount = Number(countResult.toArray()[0].count);
 
       self.postMessage({
         type: "tableLoadProgress",
@@ -1053,7 +1124,7 @@ async function loadTableFromText(
     const countResult = await conn.query(
       `SELECT COUNT(*) as count FROM ${quotedTableName}`,
     );
-    return countResult.toArray()[0].count;
+    return Number(countResult.toArray()[0].count);
   }
 
   try {
@@ -1102,7 +1173,7 @@ async function loadTableFromText(
         FROM information_schema.tables
         WHERE table_name = '${tableName}' AND table_schema = 'main'
       `);
-      tableExists = checkResult.toArray()[0].count > 0;
+      tableExists = Number(checkResult.toArray()[0].count) > 0;
     }
 
     // Create table from CSV with auto-detection or explicit types
@@ -1232,7 +1303,7 @@ async function loadTableFromText(
       const countResult = await conn.query(
         `SELECT COUNT(*) as count FROM ${quotedTableName}`,
       );
-      count = countResult.toArray()[0].count;
+      count = Number(countResult.toArray()[0].count);
     }
 
     loadedTables.add(tableName);
