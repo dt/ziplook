@@ -1593,7 +1593,10 @@ class EncryptionInfo$Type extends MessageType<EncryptionInfo> {
             let [fieldNo, wireType] = reader.tag();
             switch (fieldNo) {
                 case 1:
-                    key = reader.string();
+                    // Read as bytes first, then try to decode as UTF-8 with replacement chars
+                    const keyBytes = reader.bytes();
+                    const decoder = new TextDecoder('utf-8', { fatal: false });
+                    key = decoder.decode(keyBytes);
                     break;
                 case 2:
                     val = reader.bytes();

@@ -365,7 +365,7 @@ function TablesView() {
     if (table.isError) {
       const baseName = table.originalName || table.name;
       const errorFiles = table.nodeFiles?.filter(f => f.isError) ||
-        [{ path: table.sourceFile, nodeId: table.nodeId, size: table.size, isError: true }];
+        [{ path: table.sourceFile, nodeId: table.nodeId ?? 0, size: table.size ?? 0, isError: true }];
       const availableFiles = table.nodeFiles?.filter(f => !f.isError) || [];
 
       dispatch({

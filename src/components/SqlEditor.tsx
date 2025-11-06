@@ -96,6 +96,27 @@ function SqlEditor({ tab }: SqlEditorProps) {
       return <span className="sql-cell-hex">{displayValue}</span>;
     }
 
+    // Check for DistSQL diagram URLs (check first 1KB, but replace in full string)
+    const sampleText = strValue.substring(0, 1024);
+    if (sampleText.includes('cockroachdb.github.io/distsqlplan/decode.html')) {
+      // Run replacement on the full string to capture the entire URL
+      const urlMatch = strValue.match(/"(https:\/\/cockroachdb\.github\.io\/distsqlplan\/decode\.html#[^"]+)"/);
+      if (urlMatch) {
+        const url = urlMatch[1];
+        return (
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="sql-cell-link"
+            style={{ color: '#0066cc', textDecoration: 'underline' }}
+          >
+            Diagram
+          </a>
+        );
+      }
+    }
+
     // Check if it's JSON (from decoded protobuf or other sources)
     if (strValue.startsWith("{") || strValue.startsWith("[")) {
       try {

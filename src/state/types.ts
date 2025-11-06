@@ -38,8 +38,8 @@ export type ViewerTab =
       tableName: string; // Display name (e.g., "crdb_internal.node_build_info")
       fullTableName?: string; // Full table name for loading (e.g., "crdb_internal.node_build_info_by_node")
       isPreLoadError?: boolean; // true for .err.txt files, undefined for DuckDB load errors
-      errorFiles?: Array<{ path: string; nodeId?: number; size?: number; isError: boolean }>;
-      availableFiles?: Array<{ path: string; nodeId?: number; size?: number; isError: boolean }>;
+      errorFiles?: Array<{ path: string; nodeId: number; size: number; isError: boolean }>;
+      availableFiles?: Array<{ path: string; nodeId: number; size: number; isError: boolean }>;
     }
   | {
       kind: "search";

@@ -151,10 +151,10 @@ function createFallbackJson(hexValue: string): string {
 }
 
 // Main preprocessing function - transforms keys in place
-export function preprocessCSV(
+export async function preprocessCSV(
   content: string,
   options: PreprocessOptions,
-): string {
+): Promise<string> {
   const delimiter = options.delimiter || "\t";
   const decoder = options.protoDecoder || protoDecoder; // Use provided decoder or fallback to global
   const { headers, rows } = parseDelimited(content, delimiter);
@@ -194,15 +194,10 @@ export function preprocessCSV(
 
     // Check for proto columns
     if (options.decodeProtos) {
-      if (
-        columnName === "config" ||
-        columnName === "descriptor" ||
-        columnName === "payload" ||
-        columnName === "progress" ||
-        columnName === "value"
-      ) {
-        const mapping = findProtoType(options.tableName, header);
-        protoColumns.set(index, mapping?.protoType || null);
+      const mapping = findProtoType(options.tableName, header);
+      if (mapping) {
+        protoColumns.set(index, mapping.protoType);
+        console.log(`📋 Proto mapping: ${options.tableName}.${header} -> ${mapping.protoType}`);
       }
     }
   });
@@ -214,8 +209,8 @@ export function preprocessCSV(
 
   // Process rows - transform values in place
 
-  const processedRows = rows.map((row) => {
-    return row.map((value, colIndex) => {
+  const processedRows = await Promise.all(rows.map(async (row, rowIndex) => {
+    return Promise.all(row.map(async (value, colIndex) => {
       // Transform key columns
       if (keyColumns.has(colIndex)) {
         // Handle null/empty differently from \x (which is a valid empty key)
@@ -230,15 +225,51 @@ export function preprocessCSV(
       if (protoType !== undefined && options.decodeProtos) {
         // Handle dynamic proto type resolution for job_info table
         if (protoType === "dynamic:job_info" && infoKeyColumnIndex >= 0) {
-          const infoKey = row[infoKeyColumnIndex];
+          const infoKey = row[infoKeyColumnIndex]?.trim();
           if (infoKey === "legacy_payload") {
             protoType = "cockroach.sql.jobs.jobspb.Payload";
           } else if (infoKey === "legacy_progress") {
             protoType = "cockroach.sql.jobs.jobspb.Progress";
-          } else {
-            // Unknown info_key type - use fallback JSON wrapper
+          } else if (infoKey?.includes("cockroach.sql.jobs.jobspb.TraceData")) {
+            // Handle TraceData specially
+            if (infoKey.includes(".binpb#_final")) {
+              // This is the final chunk - try to decode, but silently fail to hex wrapper
+              protoType = "cockroach.sql.jobs.jobspb.TraceData";
+            } else {
+              // This is a partial chunk - go straight to hex wrapper without trying to decode
+              if (value && value !== "\\N" && value !== "NULL") {
+                return createFallbackJson(value);
+              }
+              return value;
+            }
+          } else if (
+            infoKey?.startsWith("~dsp-diag-url-") ||
+            infoKey?.startsWith("~node-processor-progress-")
+          ) {
+            // These info_key types contain string values, not protobuf
+            // If hex-encoded, decode and wrap in JSON
             if (value && value !== "\\N" && value !== "NULL") {
-              return createFallbackJson(value);
+              if (value.startsWith("\\x")) {
+                return createFallbackJson(value);
+              }
+              // If it's already a plain string, wrap it in JSON for consistency
+              return JSON.stringify({ value: value });
+            }
+            return value;
+          } else {
+            // Unknown info_key type
+            if (value && value !== "\\N" && value !== "NULL") {
+              // Only warn and use fallback for hex-encoded values
+              if (value.startsWith("\\x")) {
+                const rowData = headers.map((h, i) => `${h}=${row[i]?.substring(0, 50)}${row[i]?.length > 50 ? '...' : ''}`).join(', ');
+                console.warn(
+                  `⚠️ Unknown job_info.info_key type "${infoKey}" with hex value:\n` +
+                  `   Row ${rowIndex + 1}: {${rowData}}`
+                );
+                return createFallbackJson(value);
+              }
+              // If it's not hex, it's probably already a string - return as-is
+              return value;
             }
             return value;
           }
@@ -254,9 +285,10 @@ export function preprocessCSV(
           // If we have an explicit proto mapping, decode it
           if (protoType && protoType !== "dynamic:job_info") {
             const currentColumnName = headers[colIndex];
+            const isTraceData = protoType === "cockroach.sql.jobs.jobspb.TraceData";
             try {
               const bytes = hexToBytes(value);
-              const decoded = decoder.decode(bytes, protoType);
+              const decoded = await decoder.decodeAsync(bytes, protoType);
 
               // Don't use fallback for job_info - if the specific proto fails, leave as hex
               // The fallback was incorrectly decoding Progress data as SpanConfig
@@ -265,11 +297,56 @@ export function preprocessCSV(
                 // Return as compact JSON string
                 return JSON.stringify(decoded.decoded);
               } else {
-                console.warn(`❌ Proto decode failed for ${currentColumnName}:`, decoded.error);
+                // Decoding failed - use fallback
+                const hexSample = value.substring(0, 100) + (value.length > 100 ? '...' : '');
+                const rowData = headers.map((h, i) => `${h}=${row[i]?.substring(0, 50)}${row[i]?.length > 50 ? '...' : ''}`).join(', ');
+
+                if (isTraceData) {
+                  // TraceData decode failures - log to understand why
+                  console.warn(
+                    `⚠️ TraceData decode failed for ${currentColumnName}:\n` +
+                    `   Row ${rowIndex + 1}: {${rowData}}\n` +
+                    `   Hex (first 100 chars): ${hexSample}\n` +
+                    `   Error: ${decoded.error}`
+                  );
+                } else {
+                  // Show more details for debugging for other proto types
+                  console.warn(
+                    `❌ Proto decode failed for ${currentColumnName} (${protoType}):\n` +
+                    `   Row ${rowIndex + 1}: {${rowData}}\n` +
+                    `   Hex (first 100 chars): ${hexSample}\n` +
+                    `   Error details:\n${decoded.error}`
+                  );
+                }
+                // Return hex-wrapped JSON for all failed decodes
+                return createFallbackJson(value);
               }
             } catch (err) {
-              console.warn(`❌ Proto decode exception for ${currentColumnName}:`, err);
-              // Don't let protobuf errors stop processing of subsequent rows
+              // Decode exception - use fallback
+              const hexSample = value.substring(0, 100) + (value.length > 100 ? '...' : '');
+              const rowData = headers.map((h, i) => `${h}=${row[i]?.substring(0, 50)}${row[i]?.length > 50 ? '...' : ''}`).join(', ');
+              const errorDetails = err instanceof Error
+                ? `${err.name}: ${err.message}\n${err.stack}`
+                : String(err);
+
+              if (isTraceData) {
+                // TraceData decode exceptions - log to understand why
+                console.warn(
+                  `⚠️ TraceData decode exception for ${currentColumnName}:\n` +
+                  `   Row ${rowIndex + 1}: {${rowData}}\n` +
+                  `   Hex (first 100 chars): ${hexSample}\n` +
+                  `   Exception: ${errorDetails}`
+                );
+              } else {
+                console.warn(
+                  `❌ Proto decode exception for ${currentColumnName} (${protoType}):\n` +
+                  `   Row ${rowIndex + 1}: {${rowData}}\n` +
+                  `   Hex (first 100 chars): ${hexSample}\n` +
+                  `   Error details:\n${errorDetails}`
+                );
+              }
+              // Return hex-wrapped JSON for all exceptions
+              return createFallbackJson(value);
             }
           }
         }
@@ -318,8 +395,8 @@ export function preprocessCSV(
       }
 
       return value;
-    });
-  });
+    }));
+  }));
 
   // Reconstruct the CSV with transformed values
   const processedLines = [

@@ -255,9 +255,16 @@ function peekType(b: Uint8Array): TypeValue {
 }
 
 // DecodeVarintDescending - exact implementation from Go
-function decodeVarintDescending(b: Uint8Array): [Uint8Array, number, Error?] {
+function decodeVarintDescending(b: Uint8Array): [Uint8Array, number | bigint, Error?] {
   const [leftover, v, err] = decodeVarintAscending(b);
-  return [leftover, ~v, err];
+  if (err) return [leftover, v, err];
+
+  // Handle both number and bigint
+  if (typeof v === 'bigint') {
+    return [leftover, ~v, err];
+  } else {
+    return [leftover, ~v, err];
+  }
 }
 
 function decodeUnsafeStringAscending(
@@ -463,15 +470,16 @@ function decodeDurationAscending(
 
   // Basic duration formatting - convert nanos to a readable format
   // This is a simplified version of Go's duration.Decode and StringNanos
-  const totalNanos = sortNanos;
-  const totalSeconds = Math.floor(totalNanos / 1000000000);
-  const remainingNanos = totalNanos % 1000000000;
+  // Handle both number and bigint
+  const totalNanos = typeof sortNanos === 'bigint' ? sortNanos : BigInt(sortNanos);
+  const totalSeconds = totalNanos / 1000000000n;
+  const remainingNanos = totalNanos % 1000000000n;
 
   let result = "";
-  if (months !== 0) result += `${months}mon `;
-  if (days !== 0) result += `${days}d `;
-  if (totalSeconds !== 0) result += `${totalSeconds}s `;
-  if (remainingNanos !== 0) result += `${remainingNanos}ns`;
+  if (months !== 0 && months !== 0n) result += `${months}mon `;
+  if (days !== 0 && days !== 0n) result += `${days}d `;
+  if (totalSeconds !== 0n) result += `${totalSeconds}s `;
+  if (remainingNanos !== 0n) result += `${remainingNanos}ns`;
 
   if (result === "") result = "0s";
 
@@ -500,15 +508,16 @@ function decodeDurationDescending(
   if (err3) return [b3, "", err3];
 
   // Basic duration formatting (same as ascending after decoding)
-  const totalNanos = sortNanos;
-  const totalSeconds = Math.floor(totalNanos / 1000000000);
-  const remainingNanos = totalNanos % 1000000000;
+  // Handle both number and bigint
+  const totalNanos = typeof sortNanos === 'bigint' ? sortNanos : BigInt(sortNanos);
+  const totalSeconds = totalNanos / 1000000000n;
+  const remainingNanos = totalNanos % 1000000000n;
 
   let result = "";
-  if (months !== 0) result += `${months}mon `;
-  if (days !== 0) result += `${days}d `;
-  if (totalSeconds !== 0) result += `${totalSeconds}s `;
-  if (remainingNanos !== 0) result += `${remainingNanos}ns`;
+  if (months !== 0 && months !== 0n) result += `${months}mon `;
+  if (days !== 0 && days !== 0n) result += `${days}d `;
+  if (totalSeconds !== 0n) result += `${totalSeconds}s `;
+  if (remainingNanos !== 0n) result += `${remainingNanos}ns`;
 
   if (result === "") result = "0s";
 
@@ -534,9 +543,16 @@ function decodeUint64Ascending(b: Uint8Array): [Uint8Array, number, Error?] {
 }
 
 // DecodeUvarintDescending - exact implementation from Go
-function decodeUvarintDescending(b: Uint8Array): [Uint8Array, number, Error?] {
+function decodeUvarintDescending(b: Uint8Array): [Uint8Array, number | bigint, Error?] {
   const [leftover, v, err] = decodeUvarintAscending(b);
-  return [leftover, ~v, err];
+  if (err) return [leftover, v, err];
+
+  // Handle both number and bigint
+  if (typeof v === 'bigint') {
+    return [leftover, ~v, err];
+  } else {
+    return [leftover, ~v, err];
+  }
 }
 
 // BitArray decoding functions - basic implementation
@@ -725,6 +741,7 @@ function prettyPrintFirstValue(
           ? decodeVarintDescending(b)
           : decodeVarintAscending(b);
       if (err) return [b, "", err];
+      // Handle both number and bigint - toString() works for both
       return [remaining, intVal.toString(), undefined];
     }
 
@@ -793,8 +810,12 @@ function prettyPrintFirstValue(
       const finalSec = dir === Direction.Descending ? ~sec : sec;
       const finalNsec = dir === Direction.Descending ? ~nsec : nsec;
 
+      // Convert to number for Date calculation (timestamps should fit in safe integer range)
+      const secNum = typeof finalSec === 'bigint' ? Number(finalSec) : finalSec;
+      const nsecNum = typeof finalNsec === 'bigint' ? Number(finalNsec) : finalNsec;
+
       // Create JavaScript Date from unix timestamp
-      const date = new Date(finalSec * 1000 + finalNsec / 1000000);
+      const date = new Date(secNum * 1000 + nsecNum / 1000000);
       return [remaining2, date.toISOString(), undefined];
     }
 
@@ -989,7 +1010,8 @@ function prettyPrintValue(
 }
 
 // DecodeUvarintAscending - exact implementation from Go
-function decodeUvarintAscending(b: Uint8Array): [Uint8Array, number, Error?] {
+// Returns bigint for large integers to preserve precision
+function decodeUvarintAscending(b: Uint8Array): [Uint8Array, number | bigint, Error?] {
   if (b.length === 0) {
     return [
       new Uint8Array(),
@@ -1023,18 +1045,23 @@ function decodeUvarintAscending(b: Uint8Array): [Uint8Array, number, Error?] {
     ];
   }
 
-  let v = 0;
-  // It is faster to range over the elements in a slice than to index
-  // into the slice on each loop iteration.
+  // Use BigInt for large integers to avoid precision loss
+  let v = 0n;
   for (let i = 0; i < length; i++) {
-    v = (v << 8) | remaining[i];
+    v = (v << 8n) | BigInt(remaining[i]);
   }
 
-  return [remaining.slice(length), v, undefined];
+  // Convert to number if it fits safely, otherwise return as bigint
+  if (v <= BigInt(Number.MAX_SAFE_INTEGER)) {
+    return [remaining.slice(length), Number(v), undefined];
+  } else {
+    return [remaining.slice(length), v, undefined];
+  }
 }
 
 // DecodeVarintAscending - exact implementation from Go
-function decodeVarintAscending(b: Uint8Array): [Uint8Array, number, Error?] {
+// Returns bigint for large integers to preserve precision
+function decodeVarintAscending(b: Uint8Array): [Uint8Array, number | bigint, Error?] {
   if (b.length === 0) {
     return [
       new Uint8Array(),
@@ -1057,15 +1084,23 @@ function decodeVarintAscending(b: Uint8Array): [Uint8Array, number, Error?] {
       ];
     }
 
-    let v = 0;
+    // Use BigInt for large negative integers
+    let v = 0n;
     // Use the ones-complement of each encoded byte in order to build
     // up a positive number, then take the ones-complement again to
     // arrive at our negative value.
     for (let i = 0; i < length; i++) {
-      v = (v << 8) | (~remB[i] & 0xff);
+      v = (v << 8n) | BigInt(~remB[i] & 0xff);
     }
 
-    return [remB.slice(length), ~v, undefined];
+    const result = ~v;
+
+    // Convert to number if it fits safely
+    if (result >= BigInt(Number.MIN_SAFE_INTEGER) && result <= BigInt(Number.MAX_SAFE_INTEGER)) {
+      return [remB.slice(length), Number(result), undefined];
+    } else {
+      return [remB.slice(length), result, undefined];
+    }
   }
 
   // For positive numbers, delegate to DecodeUvarintAscending
@@ -1074,15 +1109,7 @@ function decodeVarintAscending(b: Uint8Array): [Uint8Array, number, Error?] {
     return [remaining, 0, err];
   }
 
-  // Check for overflow (JavaScript numbers are safe up to 2^53)
-  if (uv > Number.MAX_SAFE_INTEGER) {
-    return [
-      new Uint8Array(),
-      0,
-      new Error(`varint ${uv} overflows safe integer`),
-    ];
-  }
-
+  // uv is already number or bigint from decodeUvarintAscending
   return [remaining, uv, undefined];
 }
 
@@ -1325,8 +1352,10 @@ function decodeShortKey(bytes: Uint8Array): DecodedKey | null {
     if (err1) throw err1;
     pos = bytes.length - remaining1.length;
 
-    const tableName = SYSTEM_TABLES[tableId] || `Table${tableId}`;
-    parts.push({ type: "table", value: tableId, raw: tableName });
+    // Convert to number for table/index IDs (they should always be small enough)
+    const tableIdNum = typeof tableId === 'bigint' ? Number(tableId) : tableId;
+    const tableName = SYSTEM_TABLES[tableIdNum] || `Table${tableIdNum}`;
+    parts.push({ type: "table", value: tableIdNum, raw: tableName });
 
     if (pos < bytes.length && bytes[pos] === 0x13) {
       pos++;
@@ -1335,7 +1364,8 @@ function decodeShortKey(bytes: Uint8Array): DecodedKey | null {
       );
       if (err2) throw err2;
       pos = bytes.length - remaining2.length;
-      parts.push({ type: "index", value: indexId });
+      const indexIdNum = typeof indexId === 'bigint' ? Number(indexId) : indexId;
+      parts.push({ type: "index", value: indexIdNum });
 
       while (pos < bytes.length && bytes[pos] === 0x12) {
         pos++;

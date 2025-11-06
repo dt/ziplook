@@ -321,7 +321,7 @@ async function loadLargeFileIncrementally(
           if (needsPreprocessing) {
             console.log(`🔧 Preprocessing chunk ${chunkNumber + 1}...`);
             try {
-              processedContent = preprocessCSV(contentForProcessing, {
+              processedContent = await preprocessCSV(contentForProcessing, {
                 tableName: nameForPreprocessing,
                 delimiter,
                 decodeKeys: true,
@@ -420,7 +420,7 @@ async function loadLargeFileIncrementally(
     );
     if (needsPreprocessing) {
       try {
-        processedContent = preprocessCSV(remainder, {
+        processedContent = await preprocessCSV(remainder, {
           tableName: nameForPreprocessing,
           delimiter,
           decodeKeys: true,
@@ -1141,7 +1141,7 @@ async function loadTableFromText(
 
     if (needsPreprocessing) {
       try {
-        processedContent = preprocessCSV(content, {
+        processedContent = await preprocessCSV(content, {
           tableName: nameForPreprocessing, // Use original name for column mapping
           delimiter,
           decodeKeys: true,

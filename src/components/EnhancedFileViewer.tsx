@@ -25,8 +25,8 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
 
   // Binary detection state
   const [binaryDetected, setBinaryDetected] = useState(false);
-  const [binaryReason, setBinaryReason] = useState<string>("");
-  const [fileType, setFileType] = useState<string>("");
+  const [_binaryReason, setBinaryReason] = useState<string>("");
+  const [_fileType, setFileType] = useState<string>("");
   const [userOverrideBinary, setUserOverrideBinary] = useState(false);
 
   // Filter state
@@ -170,7 +170,7 @@ function EnhancedFileViewer({ tab }: FileViewerProps) {
           }
 
           // Prompt user for save location
-          const handle = await window.showSaveFilePicker({
+          const handle = await (window as any).showSaveFilePicker({
             suggestedName: fileEntry.name,
           });
 

@@ -4,7 +4,7 @@ import { prettyKey } from "./prettyKey";
 import { ZoneConfig } from "./pb/config/zonepb/zone";
 import { SpanConfig } from "./pb/roachpb/span_config";
 import { Descriptor } from "./pb/sql/catalog/descpb/structured";
-import { Payload, Progress } from "./pb/jobs/jobspb/jobs";
+import { Payload, Progress, TraceData } from "./pb/jobs/jobspb/jobs";
 import type { JsonValue } from "@protobuf-ts/runtime";
 
 // TODO: Add other types as we generate them
@@ -24,6 +24,7 @@ const DECODERS = {
   "cockroach.sql.sqlbase.Descriptor": Descriptor,
   "cockroach.sql.jobs.jobspb.Payload": Payload,
   "cockroach.sql.jobs.jobspb.Progress": Progress,
+  "cockroach.sql.jobs.jobspb.TraceData": TraceData,
   // TODO: Add remaining types as we generate them:
    // "cockroach.roachpb.Lease": Lease,
    // "cockroach.kv.kvserver.storagepb.RangeLogEvent": RangeLogEvent,
@@ -67,7 +68,80 @@ export class ProtoDecoder {
     }
   }
 
+  async decodeAsync(data: Uint8Array, typeName?: string): Promise<DecodedProto> {
+    if (!typeName) {
+      return {
+        raw: data,
+        decoded: null,
+        error: "No type specified for decoding",
+      };
+    }
+
+    const decoder = DECODERS[typeName as keyof typeof DECODERS];
+    if (!decoder) {
+      return {
+        raw: data,
+        decoded: null,
+        error: `No decoder available for type: ${typeName}`,
+      };
+    }
+
+    try {
+      let protoData = data;
+
+      // Check for gzip compression (magic bytes: 0x1f 0x8b)
+      if (data.length >= 2 && data[0] === 0x1f && data[1] === 0x8b) {
+        try {
+          // Decompress using browser's DecompressionStream
+          const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('gzip'));
+          const decompressed = await new Response(stream).arrayBuffer();
+          protoData = new Uint8Array(decompressed);
+        } catch (decompError) {
+          return {
+            raw: data,
+            decoded: null,
+            error: `Failed to decompress gzip data: ${decompError instanceof Error ? decompError.message : String(decompError)}`,
+          };
+        }
+      }
+
+      // Use the generated decoder with protobuf-ts API
+      const message = decoder.fromBinary(protoData);
+
+      // Convert to JSON without default values, then transform
+      const jsonWithoutDefaults = messageToJsonWithoutDefaults(decoder, message);
+      const transformed = this.transformMessage(jsonWithoutDefaults);
+
+      return {
+        raw: data,
+        decoded: transformed,
+        typeName,
+      };
+    } catch (error) {
+      // Capture more details about the error
+      const errorMessage = error instanceof Error
+        ? `${error.name}: ${error.message}\n${error.stack}`
+        : String(error);
+
+      return {
+        raw: data,
+        decoded: null,
+        error: `Failed to decode as ${typeName}: ${errorMessage}`,
+      };
+    }
+  }
+
   decode(data: Uint8Array, typeName?: string): DecodedProto {
+    // Synchronous wrapper that throws if async decompression is needed
+    // Check for gzip compression (magic bytes: 0x1f 0x8b)
+    if (data.length >= 2 && data[0] === 0x1f && data[1] === 0x8b) {
+      return {
+        raw: data,
+        decoded: null,
+        error: `Data is gzip-compressed - use decodeAsync instead`,
+      };
+    }
+
     if (!typeName) {
       return {
         raw: data,
@@ -99,10 +173,15 @@ export class ProtoDecoder {
         typeName,
       };
     } catch (error) {
+      // Capture more details about the error
+      const errorMessage = error instanceof Error
+        ? `${error.name}: ${error.message}\n${error.stack}`
+        : String(error);
+
       return {
         raw: data,
         decoded: null,
-        error: `Failed to decode as ${typeName}: ${error}`,
+        error: `Failed to decode as ${typeName}: ${errorMessage}`,
       };
     }
   }
