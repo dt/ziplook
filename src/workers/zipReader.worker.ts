@@ -453,10 +453,47 @@ function findCDSignatures(buf: Uint8Array): number[] {
 
 /**
  * Extract local header offset from a CD entry at the given position
+ * Handles ZIP64 extended fields
  */
 function getCDLocalHeaderOffset(buf: Uint8Array, cdPos: number): number {
   const view = dv(buf);
-  return view.getUint32(cdPos + 42, true);
+
+  // Read 32-bit offset
+  const lfhOffset = view.getUint32(cdPos + 42, true);
+
+  // If not a ZIP64 sentinel, return it directly
+  if (lfhOffset !== 0xffffffff) {
+    return lfhOffset >>> 0;
+  }
+
+  // It's ZIP64 - need to parse the extra field
+  const nameLen = view.getUint16(cdPos + 28, true);
+  const extraLen = view.getUint16(cdPos + 30, true);
+
+  if (cdPos + 46 + nameLen + extraLen > buf.length) {
+    // Can't read extra field, return sentinel
+    return lfhOffset >>> 0;
+  }
+
+  const extraBytes = buf.subarray(cdPos + 46 + nameLen, cdPos + 46 + nameLen + extraLen);
+
+  // Also check if compressed/uncompressed sizes are sentinels
+  const compSize = view.getUint32(cdPos + 20, true);
+  const uncompSize = view.getUint32(cdPos + 24, true);
+
+  const zip64Info = parseZip64ExtraField(
+    extraBytes,
+    uncompSize === 0xffffffff,
+    compSize === 0xffffffff,
+    lfhOffset === 0xffffffff,
+  );
+
+  if (zip64Info && zip64Info.localHeaderOffset !== undefined) {
+    return zip64Info.localHeaderOffset;
+  }
+
+  // Couldn't parse ZIP64, return original
+  return lfhOffset >>> 0;
 }
 
 /**
@@ -474,11 +511,18 @@ async function validateCDEntries(
     return false;
   }
 
+  const fileSize = provider.size();
   console.log(`🔍 CD Recovery: Validating ${toCheck.length} CD entries by checking their local header offsets...`);
   let validCount = 0;
   for (let i = 0; i < toCheck.length; i++) {
     const cdPos = toCheck[i];
     const lfhOffset = getCDLocalHeaderOffset(buf, cdPos);
+
+    // Check if offset is within file bounds
+    if (lfhOffset < 0 || lfhOffset >= fileSize) {
+      console.log(`  ✗ CD entry ${i + 1}/${toCheck.length}: Offset ${lfhOffset} out of bounds (file size: ${fileSize})`);
+      continue;
+    }
 
     // Read the first 4 bytes at that offset to check for LFH signature
     try {
@@ -508,96 +552,148 @@ async function validateCDEntries(
 }
 
 /**
- * Attempt to recover the Central Directory by scanning for CD entries and expanding backward
+ * Attempt to recover the Central Directory by scanning for CD entries backward through file
+ * Uses streaming approach to minimize memory usage
  */
 async function scanForCentralDirectory(
   provider: BytesProvider,
-  initialTail: Uint8Array,
-  initialTailStart: number,
   fileSize: number,
 ): Promise<ZipEntryInternal[]> {
   console.log(`📂 CD Recovery: Starting recovery process...`);
   console.log(`📂 CD Recovery: File size: ${(fileSize / 1024 / 1024).toFixed(1)}MB`);
-  console.log(`📂 CD Recovery: Initial tail: ${(initialTail.length / 1024 / 1024).toFixed(1)}MB starting at offset ${initialTailStart}`);
 
-  // Step 1: Find CD signatures in the initial tail
-  console.log(`🔍 CD Recovery: Scanning tail for Central Directory signatures...`);
-  const cdPositions = findCDSignatures(initialTail);
-  console.log(`📊 CD Recovery: Found ${cdPositions.length} potential CD entries in tail`);
+  const CHUNK_SIZE = 512 * 1024; // 512KB chunks
+  const MAX_SEARCH = 64 * 1024 * 1024; // Search up to 64MB from EOF
+  const GAP_LIMIT = 256 * 1024; // 256KB - max possible CD entry is ~192KB (46 + 3*65535 bytes)
 
-  if (cdPositions.length === 0) {
-    console.error(`❌ CD Recovery: No Central Directory entries found in tail - file may be severely corrupted`);
-    throw new Error("No Central Directory entries found in tail - file may be severely corrupted");
-  }
+  const allEntries: ZipEntryInternal[] = [];
+  let remainder = new Uint8Array(0);
+  let firstCDFileOffset: number | null = null;
+  let lastCDFileOffset: number | null = null;
+  let validatedCount = 0;
+  let hasFoundAnyCDs = false;
 
-  // Step 2: Validate by checking local header offsets
-  const isValid = await validateCDEntries(provider, initialTail, cdPositions);
-  if (!isValid) {
-    console.error(`❌ CD Recovery: Found CD signatures but they don't point to valid local file headers - file may be corrupted`);
-    throw new Error("Found CD signatures but they don't point to valid local file headers - file may be corrupted");
-  }
+  // Start from end of file and work backward
+  let currentEnd = fileSize;
+  let searchedBytes = 0;
 
-  console.log("✅ CD Recovery: CD entries validated! Expanding backward to find full Central Directory...");
+  console.log(`🔍 CD Recovery: Scanning backward from EOF...`);
 
-  // Step 3: Expand backward to find the start of the CD
-  let cdStart = initialTailStart;
-  let fullCD = initialTail;
-  let expansionCount = 0;
+  while (searchedBytes < MAX_SEARCH) {
+    const chunkSize = Math.min(CHUNK_SIZE, currentEnd);
+    const chunkStart = currentEnd - chunkSize;
 
-  // Expand in 10MB chunks until we stop seeing CD entries near the beginning
-  const chunkSize = 10 * 1024 * 1024;
-  while (cdStart > 0) {
-    expansionCount++;
-    const readSize = Math.min(chunkSize, cdStart);
-    const newStart = cdStart - readSize;
+    console.log(`   Reading ${(chunkSize / 1024 / 1024).toFixed(1)}MB from offset ${chunkStart}...`);
+    const chunk = await provider.read(chunkStart, chunkSize);
 
-    console.log(`⬅️  CD Recovery: Expansion ${expansionCount}: Reading ${(readSize / 1024 / 1024).toFixed(1)}MB from offset ${newStart}...`);
-    const chunk = await provider.read(newStart, readSize);
+    // Combine chunk with remainder from previous iteration
+    let workingBuffer: Uint8Array;
+    let workingBufferStart: number;
+    if (remainder.length > 0) {
+      workingBuffer = new Uint8Array(chunk.length + remainder.length);
+      workingBuffer.set(chunk, 0);
+      workingBuffer.set(remainder, chunk.length);
+      workingBufferStart = chunkStart;
+      console.log(`   Working buffer: ${(workingBuffer.length / 1024 / 1024).toFixed(2)}MB (${(chunk.length / 1024 / 1024).toFixed(2)}MB chunk + ${(remainder.length / 1024).toFixed(1)}KB remainder)`);
+    } else {
+      workingBuffer = chunk;
+      workingBufferStart = chunkStart;
+    }
 
-    // Check if this chunk contains CD entries near its end
-    const chunkCDPositions = findCDSignatures(chunk);
-    console.log(`   Found ${chunkCDPositions.length} CD entries in this chunk`);
+    // Scan for CDs in working buffer
+    const cdPositions = findCDSignatures(workingBuffer);
+    let firstCDOffsetInBuffer: number | null = null;
 
-    const hasCDNearEnd = chunkCDPositions.some(pos => pos > chunk.length - 1000);
+    if (cdPositions.length > 0) {
+      firstCDOffsetInBuffer = cdPositions[0];
+      console.log(`   Found ${cdPositions.length} CDs, first at buffer offset ${firstCDOffsetInBuffer} (${(firstCDOffsetInBuffer / 1024).toFixed(1)}KB into buffer)`);
 
-    if (!hasCDNearEnd) {
-      // No CD entries near the end of this chunk, we've gone too far back
-      console.log(`🛑 CD Recovery: No CD entries near end of chunk - CD starts at offset ${cdStart}`);
+      // Validate on first discovery
+      if (!hasFoundAnyCDs) {
+        const toValidate = Math.min(5, cdPositions.length);
+        const isValid = await validateCDEntries(provider, workingBuffer, cdPositions, toValidate);
+        if (!isValid) {
+          console.warn(`⚠️  CD signatures found but validation failed, continuing search...`);
+          currentEnd = chunkStart;
+          searchedBytes += chunkSize;
+          remainder = new Uint8Array(0);
+          continue;
+        }
+        hasFoundAnyCDs = true;
+        validatedCount = toValidate; // Mark these as validated to avoid re-validating
+      }
+
+      // Parse all CDs in this buffer
+      const cdBuffer = workingBuffer.subarray(firstCDOffsetInBuffer);
+      const entries = parseCentralDirectory(cdBuffer);
+      console.log(`   Parsed ${entries.length} entries from this buffer`);
+
+      // Track first and last CD file offsets for logging
+      if (entries.length > 0) {
+        const absoluteCDStart = workingBufferStart + firstCDOffsetInBuffer;
+        if (lastCDFileOffset === null) {
+          lastCDFileOffset = absoluteCDStart; // First iteration = last CD we'll see (working backward)
+        }
+        firstCDFileOffset = absoluteCDStart; // Keep updating as we go backward
+
+        allEntries.push(...entries);
+      }
+
+      // Validate a few entries as we go
+      if (validatedCount < 5 && entries.length > 0) {
+        const toValidate = Math.min(5 - validatedCount, entries.length);
+        console.log(`   Validating ${toValidate} entries...`);
+        const adjustedPositions = cdPositions.slice(0, toValidate).map(pos => pos - firstCDOffsetInBuffer!);
+        const isValid = await validateCDEntries(provider, cdBuffer, adjustedPositions, toValidate);
+        if (!isValid) {
+          throw new Error("CD validation failed during streaming parse");
+        }
+        validatedCount += toValidate;
+      }
+    }
+
+    // Determine offset for remainder/gap check
+    // If we haven't found any CDs yet in this buffer, use buffer size (continue with entire buffer as remainder)
+    // If we found CDs, use the first CD offset
+    const gapOrRemainderOffset = firstCDOffsetInBuffer ?? workingBuffer.length;
+
+    // If we've found CDs and the gap is large, we're done
+    if (hasFoundAnyCDs && gapOrRemainderOffset > GAP_LIMIT) {
+      console.log(`🛑 CD Recovery: Gap of ${(gapOrRemainderOffset / 1024).toFixed(1)}KB before first CD - all CDs found, stopping`);
       break;
     }
 
-    // Prepend this chunk to our CD buffer
-    const newCD = new Uint8Array(chunk.length + fullCD.length);
-    newCD.set(chunk, 0);
-    newCD.set(fullCD, chunk.length);
-    fullCD = newCD;
-    cdStart = newStart;
+    // If we haven't found any CDs yet and reached the search limit, fail
+    if (!hasFoundAnyCDs && searchedBytes + chunkSize >= MAX_SEARCH) {
+      throw new Error(`No Central Directory entries found in last ${(MAX_SEARCH / 1024 / 1024).toFixed(1)}MB - file may be severely corrupted`);
+    }
 
-    console.log(`📈 CD Recovery: Expanded CD buffer to ${(fullCD.length / 1024 / 1024).toFixed(1)}MB, now starting at offset ${cdStart}`);
-
-    // Safety limit: don't expand more than 500MB
-    if (fullCD.length > 500 * 1024 * 1024) {
-      console.warn(`⚠️  CD Recovery: Reached 500MB limit, stopping expansion`);
+    // Move to next chunk backward
+    if (chunkStart === 0) {
+      console.log(`🛑 CD Recovery: Reached start of file`);
       break;
     }
+
+    // Prepare remainder for next iteration (potential split CD entry)
+    remainder = new Uint8Array(workingBuffer.subarray(0, gapOrRemainderOffset));
+    console.log(`   Remainder: ${remainder.length} bytes before first CD (or entire buffer if no CDs found yet)`);
+
+    currentEnd = chunkStart;
+    searchedBytes += chunkSize;
   }
 
-  // Step 4: Find the start of the CD in our buffer and parse from there
-  const finalCDPositions = findCDSignatures(fullCD);
-  if (finalCDPositions.length === 0) {
-    console.error(`❌ CD Recovery: No CD signatures found in final buffer`);
-    throw new Error("No CD signatures found in expanded buffer");
+  // Log statistics
+  const bytesAfterLastCD = fileSize - (lastCDFileOffset ?? fileSize);
+  console.log(`📊 CD Recovery: Found ${allEntries.length} total entries`);
+  console.log(`📊 CD Recovery: First CD at offset ${firstCDFileOffset ?? 'unknown'}`);
+  console.log(`📊 CD Recovery: Last CD at offset ${lastCDFileOffset ?? 'unknown'}`);
+  console.log(`📊 CD Recovery: ${bytesAfterLastCD} bytes after last CD entry`);
+
+  if (allEntries.length === 0) {
+    throw new Error("No entries parsed during CD recovery");
   }
 
-  const cdStartOffset = finalCDPositions[0];
-  console.log(`🔧 CD Recovery: CD starts at buffer offset ${cdStartOffset} (${(cdStartOffset / 1024 / 1024).toFixed(1)}MB into buffer)`);
-  console.log(`🔧 CD Recovery: Parsing ${((fullCD.length - cdStartOffset) / 1024 / 1024).toFixed(1)}MB Central Directory (${finalCDPositions.length} total signatures)...`);
-
-  const cdBuffer = fullCD.subarray(cdStartOffset);
-  const entries = parseCentralDirectory(cdBuffer);
-  console.log(`✅ CD Recovery: Successfully parsed ${entries.length} entries from Central Directory`);
-
-  return entries;
+  return allEntries;
 }
 
 // -------------------- Utility helpers --------------------
@@ -704,21 +800,21 @@ async function loadFromProvider(id: string, provider: BytesProvider) {
 
   progressMessage(id, "Loading ZIP file metadata...");
 
-  // Try progressively larger tail windows starting at 1MB
-  let tailLen = 1024 * 1024; // Start at 1MB
-  const maxTailLen = Math.min(64 * 1024 * 1024, state.fileSize); // Cap at 64MB
+  // Try to find EOCD: first check last 10KB, then last 4MB
+  // EOCD should be within last ~64KB (22 bytes + max 65535 byte comment)
+  // but we allow 4MB for malformed ZIPs with extra trailing data
+  const eocdSearchSizes = [10 * 1024, 4 * 1024 * 1024]; // 10KB, 4MB
   let tail: Uint8Array | null = null;
   let tailStart = 0;
   let cdOffset = 0;
   let cdSize = 0;
   let eocdFound = false;
-  let attemptCount = 0;
 
-  while (tailLen <= maxTailLen) {
-    attemptCount++;
+  for (const searchSize of eocdSearchSizes) {
+    const tailLen = Math.min(searchSize, state.fileSize);
     tailStart = Math.max(0, state.fileSize - tailLen);
 
-    console.log(`📖 ZIP: Attempt ${attemptCount}: Reading ${(tailLen / 1024 / 1024).toFixed(1)}MB tail from offset ${tailStart}...`);
+    console.log(`📖 ZIP: Searching for EOCD in last ${(tailLen / 1024).toFixed(1)}KB from offset ${tailStart}...`);
     tail = await provider.read(tailStart, tailLen);
 
     try {
@@ -726,25 +822,15 @@ async function loadFromProvider(id: string, provider: BytesProvider) {
       cdOffset = result.cdOffset;
       cdSize = result.cdSize;
       eocdFound = true;
-      console.log(`✅ ZIP: Found EOCD in ${(tailLen / 1024 / 1024).toFixed(1)}MB tail`);
+      console.log(`✅ ZIP: Found EOCD in ${(tailLen / 1024).toFixed(1)}KB tail`);
       break;
     } catch (error) {
-      // EOCD not found in this window
-      if (tailLen >= maxTailLen) {
-        // We've reached the max, break and try CD recovery
-        console.warn(`⚠️  ZIP: EOCD not found after searching ${(tailLen / 1024 / 1024).toFixed(1)}MB`);
-        break;
-      }
-
-      // Expand the window
-      const nextTailLen = Math.min(tailLen * 2, maxTailLen);
-      if (nextTailLen > 1024 * 1024) {
-        // Only show this message if we're expanding beyond initial 1MB
-        progressMessage(id, "Searching for file listing in ZIP file...");
-      }
-      console.log(`🔍 ZIP: EOCD not found, expanding search to ${(nextTailLen / 1024 / 1024).toFixed(1)}MB...`);
-      tailLen = nextTailLen;
+      console.log(`🔍 ZIP: EOCD not found in ${(tailLen / 1024).toFixed(1)}KB tail`);
     }
+  }
+
+  if (!eocdFound) {
+    console.warn(`⚠️  ZIP: EOCD not found in standard locations, will try CD recovery`);
   }
 
   let allEntries: ZipEntryInternal[];
@@ -756,26 +842,19 @@ async function loadFromProvider(id: string, provider: BytesProvider) {
     const central = await provider.read(cdOffset, cdSize);
     allEntries = parseCentralDirectory(central);
     console.log(`✅ ZIP: Successfully parsed ${allEntries.length} entries via standard method`);
-  } else if (tail) {
-    // EOCD not found even with max tail - try CD recovery
+  } else {
+    // EOCD not found - try CD recovery
     progressMessage(id, "Malformed ZIP file? Attempting index recovery...");
     console.warn(`🔄 ZIP: Falling back to CD recovery mode...`);
 
     try {
-      allEntries = await scanForCentralDirectory(
-        provider,
-        tail,
-        tailStart,
-        state.fileSize,
-      );
+      allEntries = await scanForCentralDirectory(provider, state.fileSize);
       needsRecoveryConfirmation = true;
     } catch (recoveryError) {
       const recoveryMsg = recoveryError instanceof Error ? recoveryError.message : String(recoveryError);
       console.error(`❌ ZIP: CD recovery failed: ${recoveryMsg}`);
       throw recoveryError;
     }
-  } else {
-    throw new Error("Failed to read ZIP file tail");
   }
 
   // Filter out __MACOSX paths (macOS metadata files)
