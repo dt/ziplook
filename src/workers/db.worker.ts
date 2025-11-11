@@ -4,9 +4,11 @@
  */
 
 import * as duckdb from "@duckdb/duckdb-wasm";
-import { preprocessCSV, shouldPreprocess } from "../crdb/csvPreprocessor";
-import { getTableTypeHints } from "../crdb/columnTypeRegistry";
+import { shouldPreprocess } from "../crdb/csvPreprocessor";
 import { protoDecoder } from "../crdb/protoDecoder";
+import { generateCsvReadSql } from "../crdb/csvUtils";
+import { preprocessAndLoadInBatches } from "../crdb/batchProcessor";
+import { getTableTypeHints } from "../crdb/columnTypeRegistry";
 
 import mvpWasmUrl from "@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm?url";
 import mvpWorkerUrl from "@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url";
@@ -23,7 +25,7 @@ interface RoutedMessage {
   bytes?: string | Uint8Array;
   done?: boolean;
   success?: boolean;
-  result?: { text: string };
+  result?: { text?: string; rawBytes?: Uint8Array };
   [key: string]: unknown;
 }
 
@@ -165,7 +167,7 @@ interface ReadFileCompleteResponse {
   type: "readFileComplete";
   id: string;
   success: boolean;
-  result?: { text: string };
+  result?: { text?: string; rawBytes?: Uint8Array };
   error?: string;
 }
 
@@ -181,66 +183,12 @@ const loadedTables = new Set<string>();
 let currentLoadingId: string | null = null;
 let shouldStop = false;
 
-// Helper to generate CSV read SQL with consistent parameters
-interface CsvReadOptions {
-  fileName: string;
-  tableName: string;
-  delimiter: string;
-  operation: 'create' | 'insert';
-  nodeId?: number;
-  typeHints?: Map<string, string>;
-  headers?: string[];
-}
-
-function generateCsvReadSql(options: CsvReadOptions): string {
-  const { fileName, tableName, delimiter, operation, nodeId, typeHints, headers } = options;
-  const quotedTableName = `"${tableName}"`;
-
-  // Build column specification if we have type hints and headers
-  let columnsClause = '';
-  if (typeHints && typeHints.size > 0 && headers && headers.length > 0) {
-    // Build column definitions with type hints for ALL columns
-    const columnDefs = headers.map((header) => {
-      const hint = typeHints.get(header.toLowerCase());
-      const columnType = hint || "VARCHAR";
-      return `'${header}': '${columnType}'`;
-    });
-    columnsClause = `columns={${columnDefs.join(', ')}}, auto_detect=false,`;
-  }
-  // If no type hints, don't set auto_detect at all - let DuckDB infer types from the data
-
-  // Common CSV parameters for all TSV files from CockroachDB debug zip
-  const csvParams = `
-    delim='${delimiter}',
-    header=true,
-    ${columnsClause}
-    nullstr='NULL',
-    quote='"',
-    escape='"',
-    sample_size=-1,
-    max_line_size=10485760
-  `;
-
-  // Add debug_node column for multi-node tables (per-node data like node_queries)
-  // Skip debug_node for single-file tables (cluster-wide data like cluster_settings)
-  const selectClause = nodeId !== undefined
-    ? `SELECT CAST(${nodeId} AS INTEGER) AS debug_node, * FROM read_csv('${fileName}', ${csvParams})`
-    : `SELECT * FROM read_csv('${fileName}', ${csvParams})`;
-
-  if (operation === 'create') {
-    return `CREATE TABLE ${quotedTableName} AS ${selectClause}`;
-  } else {
-    return `INSERT INTO ${quotedTableName} ${selectClause}`;
-  }
-}
-
 // Process very large files incrementally by loading directly into DuckDB
-async function loadLargeFileIncrementally(
+async function loadFileIncrementally(
   data: Uint8Array,
   decoder: TextDecoder,
   tableName: string,
   delimiter: string,
-  nameForPreprocessing: string,
   nodeId?: number,
   sourcePath?: string,
 ): Promise<number> {
@@ -248,7 +196,7 @@ async function loadLargeFileIncrementally(
     throw new Error("DuckDB not initialized");
   }
 
-  const chunkSize = 50 * 1024 * 1024; // 50MB chunks
+  const chunkSize = 10 * 1024 * 1024; // 10MB chunks - same as batch processor
   const totalSize = data.length;
   let offset = 0;
   let remainder = "";
@@ -256,7 +204,6 @@ async function loadLargeFileIncrementally(
   let headers: string[] = [];
 
   const totalChunks = Math.ceil(totalSize / chunkSize);
-  console.log(`📊 Loading large file incrementally in ${totalChunks} chunks`);
 
   // Use quoted table name to preserve dots
   const quotedTableName = `"${tableName}"`;
@@ -284,107 +231,156 @@ async function loadLargeFileIncrementally(
     const chunkText = decoder.decode(chunk, { stream: end < totalSize });
     const fullText = remainder + chunkText;
 
-    // Split by lines and process complete lines
-    const lines = fullText.split("\n");
+    // Find complete CSV rows (handling quoted fields that may contain newlines)
+    const completeRows: string[] = [];
+    let currentRowStart = 0;
+    let inQuotes = false;
+    let lastCompleteRowEnd = 0;
 
-    // Keep the last potentially incomplete line as remainder for next chunk
-    remainder = end < totalSize ? lines.pop() || "" : "";
+    for (let i = 0; i < fullText.length; i++) {
+      const char = fullText[i];
 
-    if (lines.length > 0) {
-      // Reconstruct this chunk's content with complete lines
-      const chunkContent = lines.join("\n");
+      if (char === '"') {
+        // Check if this is an escaped quote (doubled "")
+        if (i + 1 < fullText.length && fullText[i + 1] === '"') {
+          i++; // Skip the next quote
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === '\n' && !inQuotes) {
+        // Found end of a complete CSV row
+        const row = fullText.substring(currentRowStart, i);
+        // Only trim the trailing \r if present, not all whitespace
+        const trimmedRow = row.endsWith('\r') ? row.slice(0, -1) : row;
+        if (trimmedRow) {
+          completeRows.push(trimmedRow);
+        }
+        lastCompleteRowEnd = i + 1;
+        currentRowStart = i + 1;
+      }
+    }
+
+    // Keep any incomplete row as remainder for next chunk
+    // But only if we're not at the end of the file
+    if (end < totalSize) {
+      remainder = fullText.substring(lastCompleteRowEnd);
+      // Debug: warn if remainder is getting very large (indicates a very long line)
+      if (remainder.length > 1024 * 1024) { // 1MB
+        console.warn(`⚠️ Large remainder at chunk ${chunkNumber}: ${remainder.length} bytes (likely a very long CSV row)`);
+      }
+    } else {
+      // At end of file - process any remaining content as a complete row
+      if (lastCompleteRowEnd < fullText.length) {
+        const row = fullText.substring(lastCompleteRowEnd);
+        const trimmedRow = row.endsWith('\r') ? row.slice(0, -1) : row;
+        if (trimmedRow) {
+          completeRows.push(trimmedRow);
+        }
+      }
+      remainder = "";
+    }
+
+    if (completeRows.length > 0) {
+      // Reconstruct this chunk's content with complete rows
+      const chunkContent = completeRows.join("\n");
 
       if (chunkContent.trim()) {
         // Extract headers from first chunk
         if (chunkNumber === 0) {
-          headers = lines[0].split(delimiter);
-          console.log(`📋 Headers: ${headers.join(", ")}`);
+          headers = completeRows[0].split(delimiter);
         }
 
-        // Determine which lines are data (skip header on first chunk)
-        const dataLines = chunkNumber === 0 ? lines.slice(1) : lines;
+        // Determine which rows are data (skip header on first chunk)
+        const dataRows = chunkNumber === 0 ? completeRows.slice(1) : completeRows;
 
-        if (dataLines.length > 0) {
+        // Process even if no data rows - we need to create an empty table
+        if (dataRows.length > 0 || (chunkNumber === 0 && !tableExists)) {
           // Create content with headers for processing
           const contentForProcessing = [
             headers.join(delimiter),
-            ...dataLines,
+            ...dataRows,
           ].join("\n");
 
           let processedContent = contentForProcessing;
 
-          // Apply preprocessing if needed
+          // Apply preprocessing if needed using batch processor
           const needsPreprocessing = shouldPreprocess(
-            nameForPreprocessing,
+            tableName,
             contentForProcessing,
           );
+
           if (needsPreprocessing) {
-            console.log(`🔧 Preprocessing chunk ${chunkNumber + 1}...`);
-            try {
-              processedContent = await preprocessCSV(contentForProcessing, {
-                tableName: nameForPreprocessing,
-                delimiter,
-                decodeKeys: true,
-                decodeProtos: true,
-                protoDecoder: protoDecoder,
-              });
-            } catch (err) {
-              console.warn(
-                `⚠️ Preprocessing failed for chunk ${chunkNumber + 1}:`,
-                err,
-              );
-            }
+            // Use the batch processor for this chunk
+            // Note: This will handle the chunk's data in smaller batches internally
+            await preprocessAndLoadInBatches(contentForProcessing, {
+              tableName,
+              delimiter,
+              decodeKeys: true,
+              decodeProtos: protoDecoder ? true : false,
+              protoDecoder: protoDecoder || undefined,
+              conn,
+              db,
+              sourcePath,
+              nodeId: chunkNumber === 0 && !tableExists ? nodeId : undefined,
+              forceInsert: chunkNumber > 0 || tableExists, // Force INSERT mode for chunks after the first
+            });
+            // The batch processor successfully loaded the data
+            chunkNumber++;
+            offset = end;
+            continue;
           }
 
           // Register this chunk as a temporary file
           const chunkFileName = `${tableName}_chunk_${chunkNumber}.txt`;
           await db.registerFileText(chunkFileName, processedContent);
 
-          // Load this chunk into the table
-          if (chunkNumber === 0 && !tableExists) {
-            // First chunk and table doesn't exist - create table
-            const sql = generateCsvReadSql({
-              fileName: chunkFileName,
-              tableName,
-              delimiter,
-              operation: 'create',
-              nodeId,
-            });
-            try {
-              await conn.query(sql);
-            } catch (error) {
-              const pathContext = sourcePath ? ` (source: ${sourcePath})` : '';
-              const enhancedError = error instanceof Error
-                ? new Error(`${error.message}${pathContext}`)
-                : new Error(`Unknown error${pathContext}`);
-              if (error instanceof Error) enhancedError.stack = error.stack;
-              throw enhancedError;
+          try {
+            // Load this chunk into the table
+            if (chunkNumber === 0 && !tableExists) {
+              // First chunk and table doesn't exist - create table
+              const typeHints = getTableTypeHints(tableName);
+              const sql = generateCsvReadSql({
+                fileName: chunkFileName,
+                tableName,
+                delimiter,
+                operation: 'create',
+                nodeId,
+                typeHints: typeHints.size > 0 ? typeHints : undefined,
+                headers,
+              });
+              try {
+                await conn.query(sql);
+              } catch (error) {
+                const pathContext = sourcePath ? ` (source: ${sourcePath})` : '';
+                const enhancedError = error instanceof Error
+                  ? new Error(`${error.message}${pathContext}`)
+                  : new Error(`Unknown error${pathContext}`);
+                if (error instanceof Error) enhancedError.stack = error.stack;
+                throw enhancedError;
+              }
+            } else {
+              // Subsequent chunks or table exists - insert data
+              const sql = generateCsvReadSql({
+                fileName: chunkFileName,
+                tableName,
+                delimiter,
+                operation: 'insert',
+                nodeId,
+              });
+              try {
+                await conn.query(sql);
+              } catch (error) {
+                const pathContext = sourcePath ? ` (source: ${sourcePath})` : '';
+                const enhancedError = error instanceof Error
+                  ? new Error(`${error.message}${pathContext}`)
+                  : new Error(`Unknown error${pathContext}`);
+                if (error instanceof Error) enhancedError.stack = error.stack;
+                throw enhancedError;
+              }
             }
-            console.log(
-              `📊 Created table from first chunk (${dataLines.length} data rows)`,
-            );
-          } else {
-            // Subsequent chunks or table exists - insert data
-            const sql = generateCsvReadSql({
-              fileName: chunkFileName,
-              tableName,
-              delimiter,
-              operation: 'insert',
-              nodeId,
-            });
-            try {
-              await conn.query(sql);
-            } catch (error) {
-              const pathContext = sourcePath ? ` (source: ${sourcePath})` : '';
-              const enhancedError = error instanceof Error
-                ? new Error(`${error.message}${pathContext}`)
-                : new Error(`Unknown error${pathContext}`);
-              if (error instanceof Error) enhancedError.stack = error.stack;
-              throw enhancedError;
-            }
-            console.log(
-              `📊 Inserted ${dataLines.length} rows from chunk ${chunkNumber + 1}`,
-            );
+          } finally {
+            // Always clean up the chunk file, whether load succeeded or failed
+            await db.dropFile(chunkFileName);
           }
 
           chunkNumber++;
@@ -400,7 +396,7 @@ async function loadLargeFileIncrementally(
               percentage: Math.round((chunkNumber / totalChunks) * 100),
             },
             nodeId: undefined, // We don't have nodeId in this context
-            originalName: nameForPreprocessing,
+            originalName: tableName,
             isError: false,
           });
         }
@@ -412,70 +408,84 @@ async function loadLargeFileIncrementally(
 
   // Handle any remaining content
   if (remainder.trim()) {
-    let processedContent = remainder;
+    // Always include headers for the final chunk
+    let processedContent = [headers.join(delimiter), remainder].join("\n");
 
     const needsPreprocessing = shouldPreprocess(
-      nameForPreprocessing,
-      remainder,
+      tableName,
+      processedContent,
     );
     if (needsPreprocessing) {
-      try {
-        processedContent = await preprocessCSV(remainder, {
-          tableName: nameForPreprocessing,
-          delimiter,
-          decodeKeys: true,
-          decodeProtos: true,
-          protoDecoder: protoDecoder,
-        });
-      } catch (err) {
-        console.warn(`⚠️ Preprocessing failed for final chunk:`, err);
-      }
-    }
-
-    const chunkFileName = `${tableName}_final.txt`;
-    await db.registerFileText(chunkFileName, processedContent);
-
-    const operation = (chunkNumber === 0 && !tableExists) ? 'create' : 'insert';
-    const sql = generateCsvReadSql({
-      fileName: chunkFileName,
-      tableName,
-      delimiter,
-      operation,
-      nodeId,
-    });
-
-    try {
-      await conn.query(sql);
-    } catch (error) {
-      const pathContext = sourcePath ? ` (source: ${sourcePath})` : '';
-      const enhancedError = error instanceof Error
-        ? new Error(`${error.message}${pathContext}`)
-        : new Error(`Unknown error${pathContext}`);
-      if (error instanceof Error) enhancedError.stack = error.stack;
-      throw enhancedError;
-    }
-
-    // Send final progress update if we processed a final chunk
-    if (remainder.trim()) {
-      chunkNumber++;
-      self.postMessage({
-        type: "tableLoadProgress",
+      // Use batch processor for remainder (already has headers)
+      await preprocessAndLoadInBatches(processedContent, {
         tableName,
-        status: "loading",
-        chunkProgress: {
-          current: chunkNumber,
-          total: totalChunks,
-          percentage: 100, // Final chunk completes the loading
-        },
-        nodeId: undefined,
-        originalName: nameForPreprocessing,
-        isError: false,
+        delimiter,
+        decodeKeys: true,
+        decodeProtos: protoDecoder ? true : false,
+        protoDecoder: protoDecoder || undefined,
+        conn,
+        db,
+        sourcePath,
+        nodeId: !tableExists ? nodeId : undefined,
       });
+      // Already loaded by batch processor - need to get final count
+      // Jump to the counting logic at the end
+    } else {
+      const chunkFileName = `${tableName}_final.txt`;
+      await db.registerFileText(chunkFileName, processedContent);
+
+      try {
+        const operation = (chunkNumber === 0 && !tableExists) ? 'create' : 'insert';
+        const typeHints = operation === 'create' ? getTableTypeHints(tableName) : undefined;
+        const sql = generateCsvReadSql({
+          fileName: chunkFileName,
+          tableName,
+          delimiter,
+          operation,
+          nodeId,
+          typeHints: typeHints && typeHints.size > 0 ? typeHints : undefined,
+          headers: operation === 'create' ? headers : undefined,
+        });
+
+        try {
+          await conn.query(sql);
+        } catch (error) {
+          const pathContext = sourcePath ? ` (source: ${sourcePath})` : '';
+          const enhancedError = error instanceof Error
+            ? new Error(`${error.message}${pathContext}`)
+            : new Error(`Unknown error${pathContext}`);
+          if (error instanceof Error) enhancedError.stack = error.stack;
+          throw enhancedError;
+        }
+
+        // Send final progress update if we processed a final chunk
+        if (remainder.trim()) {
+          chunkNumber++;
+          self.postMessage({
+            type: "tableLoadProgress",
+            tableName,
+            status: "loading",
+            chunkProgress: {
+              current: chunkNumber,
+              total: totalChunks,
+              percentage: 100, // Final chunk completes the loading
+            },
+            nodeId: undefined,
+            originalName: tableName,
+            isError: false,
+          });
+        }
+      } finally {
+        // Always clean up the final chunk file, whether load succeeded or failed
+        await db.dropFile(chunkFileName);
+      }
     }
   }
 
-  // Get final row count
+  // Get final row count from the table we just loaded
+  // We only get here if all loading succeeded, so the table MUST exist
   let finalRowCount: number;
+
   if (nodeId !== undefined && tableExists) {
     // For multi-node INSERT operations, return only rows added (not total)
     // Count from the processed data
@@ -496,7 +506,6 @@ async function loadLargeFileIncrementally(
     finalRowCount = Number(countResult.toArray()[0].count);
   }
 
-  console.log(`✅ Successfully loaded large table with ${finalRowCount} rows`);
   loadedTables.add(tableName);
   return finalRowCount;
 }
@@ -599,44 +608,14 @@ function handleRoutedMessage(message: RoutedMessage) {
           offset += chunk.length;
         }
 
-        let totalText: string;
-        const decoder = new TextDecoder();
-
-        // For very large files, skip creating huge strings and load incrementally
-        if (totalLength > 200 * 1024 * 1024) {
-          // 200MB threshold
-          console.log(
-            `📄 Large file detected (${(totalLength / (1000 * 1000)).toFixed(1)}MB), will handle incrementally`, // Decimal display
-          );
-          totalText = "LARGE_FILE_PLACEHOLDER"; // Signal to use incremental loading
-        } else {
-          // Decode the complete data as text for smaller files
-          try {
-            totalText = decoder.decode(combined);
-          } catch (error) {
-            if (
-              error instanceof RangeError &&
-              error.message.includes("Invalid string length")
-            ) {
-              throw new Error(
-                `File is too large to process (${(totalLength / (1024 * 1024 * 1024)).toFixed(2)}GB). JavaScript string limitations exceeded.`,
-              );
-            }
-            throw error;
-          }
-        }
-
-        // For large files, include raw bytes in the response
-        const result: { text: string; rawBytes?: Uint8Array } = { text: totalText };
-        if (totalText === "LARGE_FILE_PLACEHOLDER") {
-          result.rawBytes = combined;
-        }
-
+        // Always pass raw bytes for incremental processing
         request.resolve({
           type: "readFileComplete",
           id: message.id,
           success: true,
-          result,
+          result: {
+            rawBytes: combined
+          },
         });
       }
     }
@@ -943,42 +922,21 @@ async function loadSingleTable(table: TableInfo) {
           throw new Error(`Failed to read file ${nodeFile.path} from node ${nodeFile.nodeId}: ${fileResponse.error}`);
         }
 
-        if (!fileResponse.result?.text) {
-          throw new Error(`No content found in file ${nodeFile.path} from node ${nodeFile.nodeId}`);
+        // Always use incremental loading with raw bytes
+        const rawBytes = fileResponse.result?.rawBytes;
+        if (!rawBytes) {
+          throw new Error(`Raw bytes not available for processing: ${nodeFile.path}`);
         }
 
-        const text = fileResponse.result.text;
-
-        // Check if this is a large file that needs incremental loading
-        if (text === "LARGE_FILE_PLACEHOLDER") {
-          console.log(`🔄 Loading large file ${nodeFile.path} from node ${nodeFile.nodeId} incrementally...`);
-          const rawBytes = (fileResponse.result as { rawBytes?: Uint8Array })?.rawBytes;
-          if (!rawBytes) {
-            throw new Error(`Raw bytes not available for large file processing: ${nodeFile.path}`);
-          }
-
-          const rowCount = await loadLargeFileIncrementally(
+        const rowCount = await loadFileIncrementally(
             rawBytes,
             new TextDecoder(),
             tableName,
             "\t",
-            originalName || tableName,
             nodeFile.nodeId,
             nodeFile.path,
           );
           totalRowCount += rowCount;
-        } else {
-          // Load from text - DuckDB operations are sequential, but zip worker stays busy
-          const rowCount = await loadTableFromText(
-            tableName,
-            text,
-            "\t",
-            originalName,
-            nodeFile.nodeId,
-            nodeFile.path,
-          );
-          totalRowCount += rowCount;
-        }
       }
 
       self.postMessage({
@@ -1029,28 +987,18 @@ async function loadSingleTable(table: TableInfo) {
       throw new Error(`Failed to read file from zip: ${path} - ${fileResponse.error || "Unknown error"}`);
     }
 
-    if (!fileResponse.result?.text) {
-      throw new Error(`No content found in file: ${path}`);
+    // Always use incremental loading with raw bytes
+    const rawBytes = fileResponse.result?.rawBytes;
+    if (!rawBytes) {
+      throw new Error(`Raw bytes not available for processing: ${path}`);
     }
 
-    const text = fileResponse.result.text;
-
-    // Check if this is a large file that needs incremental loading
-    if (text === "LARGE_FILE_PLACEHOLDER") {
-      console.log(`🔄 Loading large table ${tableName} from ${path} incrementally...`);
-      // Get the raw bytes from the response
-      const rawBytes = (fileResponse.result as { rawBytes?: Uint8Array })?.rawBytes;
-      if (!rawBytes) {
-        throw new Error(`Raw bytes not available for large file processing: ${path}`);
-      }
-
-      // Load directly using incremental approach
-      const rowCount = await loadLargeFileIncrementally(
+    // Load using incremental approach
+    const rowCount = await loadFileIncrementally(
         rawBytes,
         new TextDecoder(),
         tableName,
         "\t",
-        originalName || tableName,
         nodeId,
         path,
       );
@@ -1065,28 +1013,6 @@ async function loadSingleTable(table: TableInfo) {
         originalName,
         isError,
       });
-      return;
-    }
-
-    // Load table using DuckDB logic (from duckdb.ts)
-    const rowCount = await loadTableFromText(
-      tableName,
-      text,
-      "\t",
-      originalName,
-      nodeId,
-      path,
-    );
-
-    self.postMessage({
-      type: "tableLoadProgress",
-      tableName,
-      status: "completed",
-      rowCount,
-      nodeId,
-      originalName,
-      isError,
-    });
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
@@ -1105,224 +1031,6 @@ async function loadSingleTable(table: TableInfo) {
   }
 }
 
-async function loadTableFromText(
-  tableName: string,
-  content: string,
-  delimiter: string = "\t",
-  originalName?: string,
-  nodeId?: number,
-  sourcePath?: string,
-): Promise<number> {
-  if (!conn || !db) {
-    throw new Error("DuckDB not initialized");
-  }
-
-  // For multi-node tables, don't skip if already loaded - we're adding more data
-  if (loadedTables.has(tableName) && nodeId === undefined) {
-    // Get and return existing row count (only for non-multi-node tables)
-    const quotedTableName = `"${tableName}"`;
-    const countResult = await conn.query(
-      `SELECT COUNT(*) as count FROM ${quotedTableName}`,
-    );
-    return Number(countResult.toArray()[0].count);
-  }
-
-  try {
-    // Use quoted table name to preserve dots
-    const quotedTableName = `"${tableName}"`;
-
-    // Check if we should preprocess this table
-    let processedContent = content;
-    let usePreprocessed = false;
-
-    // Use original table name for preprocessing detection, but processed name for proto mapping
-    const nameForPreprocessing = originalName || tableName;
-    const needsPreprocessing = shouldPreprocess(nameForPreprocessing, content);
-
-    if (needsPreprocessing) {
-      try {
-        processedContent = await preprocessCSV(content, {
-          tableName: nameForPreprocessing, // Use original name for column mapping
-          delimiter,
-          decodeKeys: true,
-          decodeProtos: protoDecoder ? true : false, // Only enable if we have a decoder
-          protoDecoder: protoDecoder || undefined, // Use worker-specific decoder
-        });
-        usePreprocessed = true;
-      } catch (err) {
-        console.warn(`❌ Preprocessing failed for ${tableName}:`, err);
-        processedContent = content;
-      }
-    }
-
-    // Create table from CSV/TSV content
-    // First, register the content as a virtual file
-    // Use the source path if available for better error messages, otherwise fall back to sanitized table name
-    const fileBaseName = sourcePath || tableName.replace(/[^a-zA-Z0-9_]/g, "_");
-    await db.registerFileText(`${fileBaseName}`, processedContent);
-
-    // Check if we have type hints for this table
-    const typeHints = getTableTypeHints(tableName);
-
-    // Check if table already exists (for multi-node tables)
-    let tableExists = false;
-    if (nodeId !== undefined) {
-      // Use catalog query to avoid error logging
-      const checkResult = await conn.query(`
-        SELECT COUNT(*) as count
-        FROM information_schema.tables
-        WHERE table_name = '${tableName}' AND table_schema = 'main'
-      `);
-      tableExists = Number(checkResult.toArray()[0].count) > 0;
-    }
-
-    // Create table from CSV with auto-detection or explicit types
-    try {
-      // Drop table if exists (only for non-multi-node or first load)
-      if (!tableExists && nodeId === undefined) {
-        await conn.query(`DROP TABLE IF EXISTS ${quotedTableName}`);
-      }
-
-      // Parse headers if we have type hints
-      const headers = typeHints.size > 0
-        ? processedContent.split("\n")[0].split(delimiter)
-        : undefined;
-
-      const sql = generateCsvReadSql({
-        fileName: fileBaseName,
-        tableName,
-        delimiter,
-        operation: tableExists ? 'insert' : 'create',
-        nodeId,
-        typeHints,
-        headers,
-      });
-
-      await conn.query(sql);
-    } catch (parseError: unknown) {
-      const error =
-        parseError instanceof Error
-          ? parseError
-          : new Error(String(parseError));
-
-      // Add source path context to error message
-      const pathContext = sourcePath ? ` (source: ${sourcePath})` : '';
-      const enhancedError = new Error(`${error.message}${pathContext}`);
-      enhancedError.stack = error.stack;
-
-      // If preprocessing caused issues or CSV sniffing failed, try with original content
-      if (
-        usePreprocessed &&
-        (error.message?.includes("sniffing file") ||
-          error.message?.includes("Error when sniffing file"))
-      ) {
-        try {
-          // Re-register with original content
-          await db.registerFileText(`${fileBaseName}`, content);
-
-          const sql = generateCsvReadSql({
-            fileName: fileBaseName,
-            tableName,
-            delimiter,
-            operation: tableExists ? 'insert' : 'create',
-            nodeId,
-          });
-
-          await conn.query(sql);
-          // Retry succeeded, continue with normal flow
-        } catch (retryError: unknown) {
-          // If retry also fails, throw enhanced error with path
-          throw enhancedError;
-        }
-      } else if (
-        error.message?.includes("Error when sniffing file") ||
-        error.message?.includes("not possible to automatically detect") ||
-        error.message?.includes("Could not convert string") ||
-        error.message?.includes("Conversion Error: CSV Error")
-      ) {
-        // Some files have such complex data that DuckDB can't auto-detect them
-        // Try with very explicit parameters and treat everything as VARCHAR
-        const pathInfo = sourcePath ? ` from ${sourcePath}` : '';
-        console.warn(
-          `⚠️ CSV auto-detect failed for table ${tableName}${pathInfo}, attempting fallback with VARCHAR columns`,
-        );
-        console.warn(`   Source file: ${sourcePath || 'unknown'}`);
-        console.warn(`   DuckDB internal error (above) can be ignored if fallback succeeds`);
-
-        // Parse headers manually and build type map with VARCHAR fallback
-        const lines = content.split("\n");
-        const headerLine = lines[0];
-        const headers = headerLine.split(delimiter);
-
-        // Build a type hints map with VARCHAR as default for any missing hints
-        const fallbackTypeHints = new Map<string, string>();
-        headers.forEach(header => {
-          const hint = typeHints.get(header.toLowerCase());
-          fallbackTypeHints.set(header.toLowerCase(), hint || "VARCHAR");
-        });
-
-        const fallbackSql = generateCsvReadSql({
-          fileName: fileBaseName,
-          tableName,
-          delimiter,
-          operation: tableExists ? 'insert' : 'create',
-          nodeId,
-          typeHints: fallbackTypeHints,
-          headers,
-        });
-
-        try {
-          await conn.query(fallbackSql);
-          console.log(`✅ Fallback succeeded for ${tableName}${pathInfo}`);
-        } catch (fallbackError: unknown) {
-          const fallbackErr =
-            fallbackError instanceof Error
-              ? fallbackError
-              : new Error(String(fallbackError));
-          console.error(
-            `❌ Even fallback failed for ${tableName}${pathInfo}:`,
-            fallbackErr.message,
-          );
-          throw enhancedError; // Throw enhanced error with path context
-        }
-      } else {
-        throw enhancedError;
-      }
-    }
-
-    // Get row count
-    let count: number;
-    if (nodeId !== undefined && tableExists) {
-      // For multi-node INSERT operations, count rows we just added
-      // We can't easily get this from DuckDB, so parse the content
-      const lines = content.split('\n');
-      // First line is header, rest are data (excluding empty last line)
-      count = lines.filter((line, idx) => idx > 0 && line.trim()).length;
-    } else {
-      // For CREATE operations or single-node tables, get total count
-      const countResult = await conn.query(
-        `SELECT COUNT(*) as count FROM ${quotedTableName}`,
-      );
-      count = Number(countResult.toArray()[0].count);
-    }
-
-    loadedTables.add(tableName);
-    return count;
-  } catch (error) {
-    const errorContext = originalName ? ` (original: ${originalName})` : '';
-    const nodeContext = nodeId !== undefined ? ` on node ${nodeId}` : '';
-    const pathContext = sourcePath ? ` from ${sourcePath}` : '';
-    console.error(`Failed to load table ${tableName}${errorContext}${nodeContext}${pathContext}:`, error);
-
-    // Enhance error with full context before re-throwing
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const enhancedError = new Error(`${errorMessage}${pathContext}`);
-    if (error instanceof Error) {
-      enhancedError.stack = error.stack;
-    }
-    throw enhancedError;
-  }
-}
 
 function rewriteQuery(sql: string): string {
   // Convert schema.table references to quoted table names since tables are stored with dots

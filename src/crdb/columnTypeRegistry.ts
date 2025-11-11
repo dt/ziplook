@@ -144,19 +144,10 @@ export function findColumnTypeHint(
 // Get all type hints for a table
 export function getTableTypeHints(tableName: string): Map<string, string> {
   const hints = new Map<string, string>();
-  const normalizedTable = tableName
-    .toLowerCase()
-    .replace(/^\d+_/, "")
-    .replace(/^.*\./, "")
-    .replace(/^.*\//, ""); // Remove path prefix like 'debug/'
+  const normalizedTable = tableName.toLowerCase();
 
   COLUMN_TYPE_HINTS.forEach((hint) => {
-    const hintTable = hint.table.toLowerCase().replace(/^.*\./, "");
-    if (
-      hintTable === normalizedTable ||
-      hint.table.toLowerCase() === `crdb_internal.${normalizedTable}` ||
-      hint.table.toLowerCase() === `system.${normalizedTable}`
-    ) {
+    if (hint.table.toLowerCase() === normalizedTable) {
       hints.set(hint.column.toLowerCase(), hint.duckdbType);
     }
   });

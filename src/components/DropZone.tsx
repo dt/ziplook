@@ -72,11 +72,8 @@ interface SendSafelyModalProps {
   setLoading: (loading: boolean) => void;
   loadingMessage: string;
   setLoadingMessage: (message: string) => void;
-  recoveryEntriesCount: number | null;
-  setRecoveryEntriesCount: (count: number | null) => void;
   fileLoading: boolean;
   setFileLoading: (loading: boolean) => void;
-  waitForWorkers: () => Promise<import("../state/types").IWorkerManager>;
 }
 
 function SendSafelyModalContent({
@@ -104,11 +101,8 @@ function SendSafelyModalContent({
   setLoading,
   loadingMessage,
   setLoadingMessage,
-  recoveryEntriesCount,
-  setRecoveryEntriesCount,
   fileLoading,
   setFileLoading,
-  waitForWorkers,
 }: SendSafelyModalProps) {
   const [showOtherFiles, setShowOtherFiles] = useState(false);
   const [forceStep1, setForceStep1] = useState(false);
@@ -872,7 +866,7 @@ function SendSafelyModalContent({
             </div>
           </div>
 
-          {fileLoading && recoveryEntriesCount === null && (
+          {fileLoading && (
             <div style={{ textAlign: "center", padding: "20px" }}>
               <span className="loading-spinner-small" />
               <div
@@ -883,66 +877,6 @@ function SendSafelyModalContent({
                 }}
               >
                 {loadingMessage || "Loading ZIP file metadata..."}
-              </div>
-            </div>
-          )}
-
-          {recoveryEntriesCount !== null && (
-            <div style={{ padding: "20px" }}>
-              <div
-                style={{
-                  textAlign: "center",
-                  marginBottom: "16px",
-                  fontSize: "24px",
-                }}
-              >
-                ⚠️
-              </div>
-              <div
-                style={{
-                  marginBottom: "12px",
-                  fontSize: "13px",
-                  fontWeight: "bold",
-                  color: "var(--accent-warning)",
-                  textAlign: "center",
-                }}
-              >
-                Zip file appears malformed or truncated
-              </div>
-              <div
-                style={{
-                  marginBottom: "20px",
-                  fontSize: "12px",
-                  color: "var(--text-muted)",
-                  textAlign: "center",
-                }}
-              >
-                File listing for {recoveryEntriesCount.toLocaleString()}{" "}
-                files was decoded, but could be incomplete
-              </div>
-              <div style={{ display: "flex", justifyContent: "center" }}>
-                <button
-                  onClick={async () => {
-                    // User confirmed - clear recovery warning and tell ZIP worker to proceed
-                    setRecoveryEntriesCount(null);
-                    const workerManager = await waitForWorkers();
-                    await workerManager.proceedWithRecovery();
-                    // ZIP worker will emit initializeComplete and continue with normal flow
-                    // Modal will close when we transition to table-loading stage
-                  }}
-                  style={{
-                    padding: "10px 24px",
-                    backgroundColor: "var(--accent-primary)",
-                    color: "#fff",
-                    border: "none",
-                    borderRadius: "4px",
-                    cursor: "pointer",
-                    fontSize: "13px",
-                    fontWeight: "500",
-                  }}
-                >
-                  Proceed
-                </button>
               </div>
             </div>
           )}
@@ -1022,8 +956,7 @@ function DropZone() {
   const [modalDismissable, setModalDismissable] = useState(false);
   const [fileLoading, setFileLoading] = useState(false);
 
-  // CD recovery warning state - shown in modal when recovery is used
-  const [recoveryEntriesCount, setRecoveryEntriesCount] = useState<number | null>(null);
+  // CD recovery warning state is now in global state (not local)
 
   // Single function to close the SendSafely modal
   const closeSendSafelyModal = useCallback(() => {
@@ -1033,7 +966,7 @@ function DropZone() {
     setPackageError(null);
     setPackageLoading(false);
     setFileLoading(false);
-    setRecoveryEntriesCount(null);
+    // Note: don't reset recoveryInfo - it persists to show banner after modal closes
   }, []);
 
   // Debug page state
@@ -1175,10 +1108,11 @@ function DropZone() {
           closeSendSafelyModal();
         }
       },
-      onCdScanningComplete: (entriesCount: number) => {
-        // ZIP recovery was used - show warning in modal
-        // Keep fileLoading = true so we stay in step 4
-        setRecoveryEntriesCount(entriesCount);
+      onCdScanningComplete: async (entriesCount: number) => {
+        // ZIP recovery was used - store info for banner and auto-proceed
+        dispatch({ type: "SET_RECOVERY_INFO", recoveryInfo: {entriesCount} });
+        const workerManager = await waitForWorkers();
+        await workerManager.proceedWithRecovery();
       },
       onSendStackFileToIframe: (path: string, content: string, name?: string) => {
         // Detect mode based on file path
@@ -1542,6 +1476,11 @@ function DropZone() {
             }
 
             // Stack data is now sent directly by controller via onSendStackDataToIframe callback
+          },
+          onCdScanningComplete: async (entriesCount: number) => {
+            // ZIP recovery was used - store info for banner and auto-proceed
+            dispatch({ type: "SET_RECOVERY_INFO", recoveryInfo: {entriesCount} });
+            await workerManager.proceedWithRecovery();
           },
           onSendStackFileToIframe: (path: string, content: string, name?: string) => {
             // Detect mode based on file path
@@ -1982,7 +1921,7 @@ function DropZone() {
             justifyContent: "center",
           }}
           onClick={() => {
-            if (modalDismissable && recoveryEntriesCount === null) {
+            if (modalDismissable) {
               closeSendSafelyModal();
             }
           }}
@@ -2045,20 +1984,16 @@ function DropZone() {
                   </button>
                   <button
                     onClick={() => {
-                      // Don't allow closing modal while recovery warning is shown
-                      if (recoveryEntriesCount === null) {
-                        closeSendSafelyModal();
-                      }
+                      closeSendSafelyModal();
                     }}
                     style={{
                       background: "transparent",
                       border: "none",
                       color: "var(--text-secondary)",
                       fontSize: "18px",
-                      cursor: recoveryEntriesCount === null ? "pointer" : "not-allowed",
+                      cursor: "pointer",
                       padding: "0 4px",
                       lineHeight: "1",
-                      opacity: recoveryEntriesCount === null ? 1 : 0.5,
                     }}
                   >
                     ×
@@ -2249,11 +2184,8 @@ function DropZone() {
                 setLoading={setLoading}
                 loadingMessage={loadingMessage}
                 setLoadingMessage={setLoadingMessage}
-                recoveryEntriesCount={recoveryEntriesCount}
-                setRecoveryEntriesCount={setRecoveryEntriesCount}
                 fileLoading={fileLoading}
                 setFileLoading={setFileLoading}
-                waitForWorkers={waitForWorkers}
               />
             )}
           </div>

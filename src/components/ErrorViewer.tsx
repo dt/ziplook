@@ -24,6 +24,7 @@ function ErrorViewer({
 }: ErrorViewerProps) {
   const { state, dispatch } = useApp();
   const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const handleViewFile = (filePath?: string) => {
     const pathToOpen = filePath || sourceFile;
@@ -47,6 +48,7 @@ function ErrorViewer({
     const tableNameForLoading = fullTableName || tableName;
 
     setIsLoading(true);
+    setLoadError(null); // Clear any previous error
     try {
       // Load the table with only the non-error files
       await state.workerManager.loadSingleTable({
@@ -75,7 +77,8 @@ function ErrorViewer({
       }, 100);
     } catch (err) {
       console.error("Failed to load available data:", err);
-      alert(`Failed to load data: ${err instanceof Error ? err.message : String(err)}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setLoadError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -170,6 +173,13 @@ function ErrorViewer({
               >
                 {isLoading ? "Loading..." : `Load Available Data (${availableFiles.length} nodes, ${formatSize(totalSize)})`}
               </button>
+
+              {loadError && (
+                <div style={{ marginTop: "16px", padding: "12px", backgroundColor: "var(--error-bg, #3c1f1f)", border: "1px solid var(--error-border, #f44336)", borderRadius: "4px" }}>
+                  <h4 style={{ margin: "0 0 8px 0", color: "var(--error-color, #f44336)" }}>Failed to Load Data</h4>
+                  <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: "0.9em" }}>{loadError}</pre>
+                </div>
+              )}
             </div>
           )}
         </div>

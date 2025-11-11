@@ -2,6 +2,7 @@ import { protoDecoder, ProtoDecoder } from "./protoDecoder";
 import { prettyKey } from "./prettyKey";
 import { findProtoType } from "./protoRegistry";
 
+
 // Utility function to try replacing a value with its pretty key representation
 function tryReplaceWithPrettyKey(value: string): string {
   if (!value || typeof value !== "string") {
@@ -295,7 +296,9 @@ export async function preprocessCSV(
 
               if (decoded.decoded && !decoded.error) {
                 // Return as compact JSON string
-                return JSON.stringify(decoded.decoded);
+                const jsonStr = JSON.stringify(decoded.decoded);
+
+                return jsonStr;
               } else {
                 // Decoding failed - use fallback
                 const hexSample = value.substring(0, 100) + (value.length > 100 ? '...' : '');
@@ -410,20 +413,26 @@ export async function preprocessCSV(
 // Check if preprocessing would be beneficial for this table
 export function shouldPreprocess(tableName: string, content: string): boolean {
   const normalizedName = tableName.toLowerCase();
-  
+
   // Check for known CRDB system tables with proto/hex data
+  // Use full table names
   const knownTables = [
-    "span_config", // matches span_configurations, span_configs, etc.
-    "zones",
-    "descriptor",
-    "jobs",
-    "job_info",
-    "lease",
-    "rangelog",
-    "replication_stats",
+    "system.span_configurations",
+    "system.span_configs",
+    "system.span_config",
+    "system.zones",
+    "system.descriptor",
+    "system.jobs",
+    "system.job_info",
+    "system.lease",
+    "system.rangelog",
+    "system.replication_stats",
+    // Also check for _by_node versions
+    "system.jobs_by_node",
+    "system.job_info_by_node",
   ];
 
-  const isKnownTable = knownTables.some((t) => normalizedName.includes(t));
+  const isKnownTable = knownTables.some((t) => normalizedName === t);
   if (isKnownTable) {
     return true;
   }

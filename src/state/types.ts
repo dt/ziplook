@@ -337,4 +337,5 @@ export interface AppState {
   } | null; // Current indexing progress
   indexingRuleDescription?: string; // Description of the rule used for indexing (e.g., "*.log")
   fileStatuses?: FileIndexStatus[]; // Real-time file status updates from indexing worker
+  recoveryInfo?: { entriesCount: number } | null; // Info about malformed zip recovery
 }

@@ -144,22 +144,14 @@ export function findProtoType(
   tableName: string,
   columnName: string,
 ): ProtoColumnMapping | null {
-  // Normalize names (remove file extensions and schema prefixes)
-  let normalizedTable = tableName.toLowerCase();
-
-  // Remove file extensions like .txt
-  normalizedTable = normalizedTable.replace(/\.(txt|csv|tsv)$/, "");
-
-  // Remove path prefixes like 'debug/'
-  normalizedTable = normalizedTable.replace(/^.*\//, "");
-
+  // Just lowercase and match directly - table names should be the full DuckDB names
+  const normalizedTable = tableName.toLowerCase();
   const normalizedColumn = columnName.toLowerCase();
 
   return (
     PROTO_COLUMN_MAPPINGS.find(
       (mapping) =>
-        (mapping.table.toLowerCase() === normalizedTable ||
-          mapping.table.toLowerCase() === `system.${normalizedTable}`) &&
+        mapping.table.toLowerCase() === normalizedTable &&
         mapping.column.toLowerCase() === normalizedColumn,
     ) || null
   );

@@ -253,6 +253,53 @@ function AppContent() {
 
   return (
     <>
+      {/* Malformed zip recovery banner */}
+      {state.recoveryInfo && (
+        <div
+          style={{
+            position: "fixed",
+            top: "16px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            backgroundColor: "var(--bg-secondary)",
+            border: "1px solid var(--accent-warning)",
+            borderRadius: "8px",
+            padding: "12px 16px",
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+            zIndex: 1000,
+            maxWidth: "600px",
+          }}
+        >
+          <div style={{ fontSize: "20px" }}>⚠️</div>
+          <div style={{ flex: 1, fontSize: "13px" }}>
+            <strong style={{ color: "var(--accent-warning)" }}>
+              Zip file appears malformed or truncated
+            </strong>
+            <div style={{ color: "var(--text-muted)", marginTop: "4px" }}>
+              File listing for {state.recoveryInfo.entriesCount.toLocaleString()} files was decoded, but could be incomplete
+            </div>
+          </div>
+          <button
+            onClick={() => dispatch({ type: "SET_RECOVERY_INFO", recoveryInfo: null })}
+            style={{
+              padding: "6px 12px",
+              backgroundColor: "transparent",
+              color: "var(--text-primary)",
+              border: "1px solid var(--border-color)",
+              borderRadius: "4px",
+              cursor: "pointer",
+              fontSize: "12px",
+              fontWeight: "500",
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       <div
         className={`app-container ${
           !sidebarVisible || isStackgazerActive ? "sidebar-collapsed" : ""

@@ -58,6 +58,10 @@ export type AppAction =
   | {
       type: "SET_FILE_STATUSES";
       fileStatuses: import("./types").FileIndexStatus[];
+    }
+  | {
+      type: "SET_RECOVERY_INFO";
+      recoveryInfo: { entriesCount: number } | null;
     };
 
 const initialState: AppState = {
@@ -436,6 +440,13 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         fileStatuses: action.fileStatuses,
+      };
+    }
+
+    case "SET_RECOVERY_INFO": {
+      return {
+        ...state,
+        recoveryInfo: action.recoveryInfo,
       };
     }
 
