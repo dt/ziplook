@@ -1,14 +1,14 @@
 import { prettyKey } from "./prettyKey";
+import type { JsonValue } from "@protobuf-ts/runtime";
 
-// Import generated protobuf types
+// Import the comprehensive type registry
+import { TYPE_REGISTRY, TYPE_MAP } from "./protoTypeRegistry";
+
+// Import specific types we need for the DECODERS map
 import { ZoneConfig } from "./pb/config/zonepb/zone";
 import { SpanConfig } from "./pb/roachpb/span_config";
 import { Descriptor } from "./pb/sql/catalog/descpb/structured";
 import { Payload, Progress, TraceData } from "./pb/jobs/jobspb/jobs";
-import type { JsonValue } from "@protobuf-ts/runtime";
-
-// TODO: Add other types as we generate them
-// import { Lease } from "./pb/roachpb/data";
 
 export interface DecodedProto {
   raw: Uint8Array;
@@ -18,27 +18,30 @@ export interface DecodedProto {
 }
 
 // Type map for static decoders - mapping from CRDB type names to generated decoders
-const DECODERS = {
+// These are the types we primarily use for direct decoding
+const PRIMARY_DECODERS = {
   "cockroach.config.zonepb.ZoneConfig": ZoneConfig,
   "cockroach.roachpb.SpanConfig": SpanConfig,
   "cockroach.sql.sqlbase.Descriptor": Descriptor,
   "cockroach.sql.jobs.jobspb.Payload": Payload,
   "cockroach.sql.jobs.jobspb.Progress": Progress,
   "cockroach.sql.jobs.jobspb.TraceData": TraceData,
-  // TODO: Add remaining types as we generate them:
-   // "cockroach.roachpb.Lease": Lease,
-   // "cockroach.kv.kvserver.storagepb.RangeLogEvent": RangeLogEvent,
-   // "cockroach.roachpb.ReplicationStatsReport": ReplicationStatsReport,
 } as const;
+
+// Use TYPE_MAP for all decoders (includes everything)
+const DECODERS = TYPE_MAP;
 
 // Helper function to convert protobuf message to JSON without defaults
 // This handles the union type issue by using generics
 function messageToJsonWithoutDefaults<T>(
-  decoder: { toJson(message: T, options: { emitDefaultValues: boolean }): JsonValue },
+  decoder: { toJson(message: T, options: { emitDefaultValues: boolean; typeRegistry?: IMessageType<any>[] }): JsonValue },
   message: T
 ): unknown {
   try {
-    return decoder.toJson(message, { emitDefaultValues: false });
+    return decoder.toJson(message, {
+      emitDefaultValues: false,
+      typeRegistry: TYPE_REGISTRY
+    });
   } catch {
     return message;
   }
@@ -77,7 +80,7 @@ export class ProtoDecoder {
       };
     }
 
-    const decoder = DECODERS[typeName as keyof typeof DECODERS];
+    const decoder = DECODERS.get(typeName);
     if (!decoder) {
       return {
         raw: data,
@@ -150,7 +153,7 @@ export class ProtoDecoder {
       };
     }
 
-    const decoder = DECODERS[typeName as keyof typeof DECODERS];
+    const decoder = DECODERS.get(typeName);
     if (!decoder) {
       return {
         raw: data,
@@ -377,7 +380,7 @@ export class ProtoDecoder {
   }
 
   getAvailableTypes(): string[] {
-    return Object.keys(DECODERS);
+    return Array.from(DECODERS.keys());
   }
 }
 

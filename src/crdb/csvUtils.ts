@@ -35,6 +35,7 @@ export function generateCsvReadSql(options: CsvReadOptions): string {
     quote = '"',
     escape = '"',
     header = true,
+    nullstr = ['NULL', '\\N'],
     max_line_size = 33554432${columnsClause}
   `;
 

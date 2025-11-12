@@ -112,6 +112,22 @@ function parseDelimited(
 }
 
 // Convert hex string to Uint8Array
+// Decompress gzipped data using browser's native DecompressionStream
+async function decompressGzip(bytes: Uint8Array): Promise<Uint8Array> {
+  const stream = new Response(bytes).body;
+  if (!stream) throw new Error("Failed to create stream from bytes");
+
+  const decompressedStream = stream.pipeThrough(new DecompressionStream("gzip"));
+  const response = new Response(decompressedStream);
+  const buffer = await response.arrayBuffer();
+  return new Uint8Array(buffer);
+}
+
+// Check if data is gzipped (starts with gzip magic number 0x1f8b)
+function isGzipped(bytes: Uint8Array): boolean {
+  return bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+}
+
 function hexToBytes(hex: string): Uint8Array {
   // Remove \x prefix if present
   hex = hex.replace(/^\\x/i, "");
@@ -232,17 +248,8 @@ export async function preprocessCSV(
           } else if (infoKey === "legacy_progress") {
             protoType = "cockroach.sql.jobs.jobspb.Progress";
           } else if (infoKey?.includes("cockroach.sql.jobs.jobspb.TraceData")) {
-            // Handle TraceData specially
-            if (infoKey.includes(".binpb#_final")) {
-              // This is the final chunk - try to decode, but silently fail to hex wrapper
-              protoType = "cockroach.sql.jobs.jobspb.TraceData";
-            } else {
-              // This is a partial chunk - go straight to hex wrapper without trying to decode
-              if (value && value !== "\\N" && value !== "NULL") {
-                return createFallbackJson(value);
-              }
-              return value;
-            }
+            // Handle all TraceData entries, including those with #_final suffix
+            protoType = "cockroach.sql.jobs.jobspb.TraceData";
           } else if (
             infoKey?.startsWith("~dsp-diag-url-") ||
             infoKey?.startsWith("~node-processor-progress-")
@@ -288,7 +295,13 @@ export async function preprocessCSV(
             const currentColumnName = headers[colIndex];
             const isTraceData = protoType === "cockroach.sql.jobs.jobspb.TraceData";
             try {
-              const bytes = hexToBytes(value);
+              let bytes = hexToBytes(value);
+
+              // Check if TraceData is gzipped and decompress if needed
+              if (isTraceData && isGzipped(bytes)) {
+                bytes = await decompressGzip(bytes);
+              }
+
               const decoded = await decoder.decodeAsync(bytes, protoType);
 
               // Don't use fallback for job_info - if the specific proto fails, leave as hex
@@ -304,15 +317,7 @@ export async function preprocessCSV(
                 const hexSample = value.substring(0, 100) + (value.length > 100 ? '...' : '');
                 const rowData = headers.map((h, i) => `${h}=${row[i]?.substring(0, 50)}${row[i]?.length > 50 ? '...' : ''}`).join(', ');
 
-                if (isTraceData) {
-                  // TraceData decode failures - log to understand why
-                  console.warn(
-                    `⚠️ TraceData decode failed for ${currentColumnName}:\n` +
-                    `   Row ${rowIndex + 1}: {${rowData}}\n` +
-                    `   Hex (first 100 chars): ${hexSample}\n` +
-                    `   Error: ${decoded.error}`
-                  );
-                } else {
+                if (!isTraceData) {
                   // Show more details for debugging for other proto types
                   console.warn(
                     `❌ Proto decode failed for ${currentColumnName} (${protoType}):\n` +
@@ -332,15 +337,7 @@ export async function preprocessCSV(
                 ? `${err.name}: ${err.message}\n${err.stack}`
                 : String(err);
 
-              if (isTraceData) {
-                // TraceData decode exceptions - log to understand why
-                console.warn(
-                  `⚠️ TraceData decode exception for ${currentColumnName}:\n` +
-                  `   Row ${rowIndex + 1}: {${rowData}}\n` +
-                  `   Hex (first 100 chars): ${hexSample}\n` +
-                  `   Exception: ${errorDetails}`
-                );
-              } else {
+              if (!isTraceData) {
                 console.warn(
                   `❌ Proto decode exception for ${currentColumnName} (${protoType}):\n` +
                   `   Row ${rowIndex + 1}: {${rowData}}\n` +

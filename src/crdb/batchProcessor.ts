@@ -26,6 +26,22 @@ interface BatchProcessOptions {
 const BATCH_SIZE_ROWS = 10000; // Max rows per batch
 const BATCH_SIZE_BYTES = 10 * 1024 * 1024; // 10MB per batch
 
+// Decompress gzipped data using browser's native DecompressionStream
+async function decompressGzip(bytes: Uint8Array): Promise<Uint8Array> {
+  const stream = new Response(bytes).body;
+  if (!stream) throw new Error("Failed to create stream from bytes");
+
+  const decompressedStream = stream.pipeThrough(new DecompressionStream("gzip"));
+  const response = new Response(decompressedStream);
+  const buffer = await response.arrayBuffer();
+  return new Uint8Array(buffer);
+}
+
+// Check if data is gzipped (starts with gzip magic number 0x1f8b)
+function isGzipped(bytes: Uint8Array): boolean {
+  return bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+}
+
 // Parse a CSV line handling quoted fields
 function parseCSVLine(line: string, delimiter: string): string[] {
   const result: string[] = [];
@@ -143,6 +159,9 @@ async function processRow(
             protoType = "cockroach.sql.jobs.jobspb.Payload";
           } else if (infoKey === "legacy_progress") {
             protoType = "cockroach.sql.jobs.jobspb.Progress";
+          } else if (infoKey?.includes("cockroach.sql.jobs.jobspb.TraceData")) {
+            // Handle all TraceData entries, including those with #_final suffix
+            protoType = "cockroach.sql.jobs.jobspb.TraceData";
           } else {
             // Unknown type - use fallback
             if (value && value !== "\\N" && value !== "NULL") {
@@ -161,7 +180,13 @@ async function processRow(
           // Decode proto
           if (protoType && protoType !== "dynamic:job_info") {
             try {
-              const bytes = hexToBytes(value);
+              let bytes = hexToBytes(value);
+
+              // Check if TraceData is gzipped and decompress if needed
+              if (protoType === "cockroach.sql.jobs.jobspb.TraceData" && isGzipped(bytes)) {
+                bytes = await decompressGzip(bytes);
+              }
+
               const decoded = await options.protoDecoder.decodeAsync(bytes, protoType);
 
               if (decoded.decoded && !decoded.error) {
@@ -179,7 +204,9 @@ async function processRow(
               }
             } catch (e) {
               // Fall back to hex on decode error
-              console.warn(`Proto decode error for row ${rowIndex + 1}, column ${headers[colIndex]}:`, e);
+              if (protoType !== "cockroach.sql.jobs.jobspb.TraceData") {
+                console.warn(`Proto decode error for row ${rowIndex + 1}, column ${headers[colIndex]}:`, e);
+              }
             }
           }
 
@@ -336,7 +363,7 @@ export async function preprocessAndLoadInBatches(
           tableName,
           delimiter,
           operation,
-          nodeId: tableCreated ? undefined : nodeId, // Only use nodeId on first create
+          nodeId, // Always pass nodeId for both CREATE and INSERT
           typeHints,
           headers: !tableCreated ? headers : undefined,
         });
@@ -376,7 +403,7 @@ export async function preprocessAndLoadInBatches(
         tableName,
         delimiter,
         operation,
-        nodeId: tableCreated ? undefined : nodeId,
+        nodeId, // Always pass nodeId for both CREATE and INSERT
         typeHints,
         headers: !tableCreated ? headers : undefined,
       });

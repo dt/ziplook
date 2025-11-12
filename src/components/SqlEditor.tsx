@@ -42,6 +42,7 @@ function SqlEditor({ tab }: SqlEditorProps) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const tableRef = useRef<HTMLTableElement | null>(null);
   const floatingButtonRef = useRef<HTMLButtonElement | null>(null);
+  const hasMarkedCustom = useRef(false);
 
   // Calculate editor height based on content
   const calculateEditorHeight = useCallback(() => {
@@ -337,6 +338,21 @@ function SqlEditor({ tab }: SqlEditorProps) {
       },
     });
 
+    // Mark as custom query on first keydown
+    editor.onKeyDown(() => {
+      if (!hasMarkedCustom.current && !tab.isCustomQuery) {
+        hasMarkedCustom.current = true;
+        // Mark immediately on keydown (before content changes)
+        dispatch({
+          type: "UPDATE_TAB",
+          id: tab.id,
+          updates: {
+            isCustomQuery: true,
+          },
+        });
+      }
+    });
+
     // Focus the editor
     editor.focus();
   };
@@ -358,12 +374,19 @@ function SqlEditor({ tab }: SqlEditorProps) {
     wasLoading.current = tab.isLoading;
   }, [tab.query, tab.isLoading, runQuery]);
 
+  // Reset hasMarkedCustom when switching tabs or when tab is already custom
+  useEffect(() => {
+    hasMarkedCustom.current = tab.isCustomQuery || false;
+  }, [tab.id, tab.isCustomQuery]);
+
   // Update tab when query changes
   useEffect(() => {
     if (query !== lastNotifiedQuery.current) {
       const sourceTable = tab.sourceTable;
-      const isCustom = !isDefaultTableQuery(query, sourceTable);
-      const newTitle = generateQueryTitle(query, sourceTable);
+      // The act of editing makes it custom, not the content
+      const isCustom = true;
+      // Generate custom title (not just the table name)
+      const newTitle = generateQueryTitle(query, undefined); // Pass undefined to force custom title format
 
       dispatch({
         type: "UPDATE_TAB",
@@ -506,10 +529,13 @@ function SqlEditor({ tab }: SqlEditorProps) {
             className="sql-table-wrapper"
             onMouseLeave={(e) => {
               // Only hide button if we're leaving the wrapper entirely
-              const relatedTarget = e.relatedTarget as HTMLElement;
-              if (!relatedTarget ||
-                  (!relatedTarget.closest('.sql-table-wrapper') &&
-                   !relatedTarget.classList.contains('sql-row-details-button'))) {
+              const relatedTarget = e.relatedTarget as HTMLElement | null;
+              // Keep visible only if moving to an element within wrapper or to the button
+              const shouldKeepVisible = relatedTarget instanceof HTMLElement &&
+                                        (relatedTarget.closest('.sql-table-wrapper') !== null ||
+                                         relatedTarget.classList.contains('sql-row-details-button'));
+
+              if (!shouldKeepVisible) {
                 if (floatingButtonRef.current) {
                   floatingButtonRef.current.style.display = 'none';
                 }

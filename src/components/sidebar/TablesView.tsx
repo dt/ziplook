@@ -459,9 +459,8 @@ function TablesView() {
 
     // Always create the tab immediately
     const query = `SELECT * FROM ${table.name} LIMIT 100`;
-    const tabId = existingTab?.id || `sql-${table.name}`;
-    const shouldCreateNewTab = existingTab && existingTab.kind === "sql" && existingTab.isCustomQuery;
-    const finalTabId = shouldCreateNewTab ? `sql-${table.name}-${Date.now()}` : tabId;
+    // Only reuse ID if we found a non-custom tab, otherwise create new ID
+    const finalTabId = existingTab ? existingTab.id : `sql-${table.name}-${Date.now()}`;
 
     // Open tab immediately (even if table needs loading)
     dispatch({
@@ -639,7 +638,7 @@ function TablesView() {
                                 {(table.isError || (table.loaded && table.nodeFiles && table.nodeFiles.some(f => f.isError))) && (
                                   <span className="status-icon">
                                     ⚠️
-                                    {table.nodeFiles && table.nodeFiles.length > 1 && ` ${table.nodeFiles.filter(f => f.isError).length}/${table.nodeFiles.length}`}
+                                    {table.nodeFiles && table.nodeFiles.length > 1 && ` ${table.nodeFiles.filter(f => !f.isError).length}/${table.nodeFiles.length}`}
                                   </span>
                                 )}
                                 {table.loadError && (
@@ -770,7 +769,7 @@ function TablesView() {
                         {(table.isError || (table.loaded && table.nodeFiles && table.nodeFiles.some(f => f.isError))) && (
                           <span className="status-icon">
                             ⚠️
-                            {table.nodeFiles && table.nodeFiles.length > 1 && ` ${table.nodeFiles.filter(f => f.isError).length}/${table.nodeFiles.length}`}
+                            {table.nodeFiles && table.nodeFiles.length > 1 && ` ${table.nodeFiles.filter(f => !f.isError).length}/${table.nodeFiles.length}`}
                           </span>
                         )}
                         {table.loadError && (

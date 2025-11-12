@@ -321,7 +321,7 @@ async function loadFileIncrementally(
               conn,
               db,
               sourcePath,
-              nodeId: chunkNumber === 0 && !tableExists ? nodeId : undefined,
+              nodeId, // Always pass nodeId for both CREATE and INSERT operations
               forceInsert: chunkNumber > 0 || tableExists, // Force INSERT mode for chunks after the first
             });
             // The batch processor successfully loaded the data
@@ -426,7 +426,7 @@ async function loadFileIncrementally(
         conn,
         db,
         sourcePath,
-        nodeId: !tableExists ? nodeId : undefined,
+        nodeId, // Always pass nodeId for both CREATE and INSERT operations
       });
       // Already loaded by batch processor - need to get final count
       // Jump to the counting logic at the end

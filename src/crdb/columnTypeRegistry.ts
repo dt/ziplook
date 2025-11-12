@@ -144,10 +144,22 @@ export function findColumnTypeHint(
 // Get all type hints for a table
 export function getTableTypeHints(tableName: string): Map<string, string> {
   const hints = new Map<string, string>();
-  const normalizedTable = tableName.toLowerCase();
+  const normalizedTable = tableName
+    .toLowerCase()
+    .replace(/^\d+_/, "") // Remove numeric prefix like "143_"
+    .replace(/_by_node$/, ""); // Remove _by_node suffix for multi-node tables
 
   COLUMN_TYPE_HINTS.forEach((hint) => {
-    if (hint.table.toLowerCase() === normalizedTable) {
+    const hintTable = hint.table.toLowerCase().replace(/^.*\./, "");
+    const tableWithoutSchema = normalizedTable.replace(/^.*\./, "");
+
+    // Match by table name, with or without schema prefix
+    if (
+      hintTable === tableWithoutSchema ||
+      hint.table.toLowerCase() === normalizedTable ||
+      hint.table.toLowerCase() === `crdb_internal.${tableWithoutSchema}` ||
+      hint.table.toLowerCase() === `system.${tableWithoutSchema}`
+    ) {
       hints.set(hint.column.toLowerCase(), hint.duckdbType);
     }
   });
