@@ -14,6 +14,7 @@ let schemaCache: SchemaCache | null = null;
 let workerManager: WorkerManager | null = null;
 let updateInProgress: Promise<SchemaCache | null> | null = null;
 let isMonacoSetup = false;
+let schemaCacheUpdateTimer: NodeJS.Timeout | null = null;
 
 export function setWorkerManager(manager: WorkerManager) {
   workerManager = manager;
@@ -101,6 +102,35 @@ async function updateSchemaCache() {
   } finally {
     updateInProgress = null;
   }
+}
+
+// Helper function to properly detect SQL identifiers at cursor position
+function getWordAtPosition(line: string, column: number): { startColumn: number; endColumn: number; word: string } {
+  // SQL identifiers can contain alphanumeric, underscore, and dot for qualified names
+  const sqlIdentifierPattern = /[a-zA-Z_][a-zA-Z0-9_.]*/g;
+
+  // Find all matches in the line
+  let match;
+  while ((match = sqlIdentifierPattern.exec(line)) !== null) {
+    const start = match.index + 1; // Convert to 1-based column
+    const end = start + match[0].length;
+
+    // Check if cursor is within this identifier
+    if (column >= start && column <= end) {
+      return {
+        startColumn: start,
+        endColumn: end,
+        word: match[0]
+      };
+    }
+  }
+
+  // If no identifier found, return empty word at cursor position
+  return {
+    startColumn: column,
+    endColumn: column,
+    word: ''
+  };
 }
 
 // SQL Context Extraction
@@ -714,7 +744,11 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
   monaco.languages.registerCompletionItemProvider("duckdb-sql", {
     triggerCharacters: [".", " ", "(", ","],
 
-    async provideCompletionItems(model, position, _context, _token) {
+    async provideCompletionItems(model, position, context, token) {
+      // Store the original text and position to detect changes
+      const originalText = model.getValue();
+      const originalOffset = model.getOffsetAt(position);
+
       // Only update schema cache if it doesn't exist (first time setup)
       // Cache is valid for 5 minutes to avoid constant refreshing during typing
       if (!schemaCache) {
@@ -724,12 +758,23 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
         await updateSchemaCache();
       }
 
+      // Check if the text changed while we were updating cache
+      if (token.isCancellationRequested) {
+        return { suggestions: [] };
+      }
+
+      const currentText = model.getValue();
+      if (currentText !== originalText) {
+        // Text changed while we were processing, abort
+        return { suggestions: [] };
+      }
+
       if (!schemaCache) {
         return { suggestions: [] };
       }
 
-      const fullText = model.getValue();
-      const offset = model.getOffsetAt(position);
+      const fullText = currentText;
+      const offset = originalOffset;
       const ctx = extractContext(fullText, offset);
 
       // // console.log('Full query:', fullText);
@@ -743,12 +788,15 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
         endColumn: position.column,
       });
 
-      const word = model.getWordUntilPosition(position);
+      // Custom word detection that handles SQL identifiers properly
+      const line = model.getLineContent(position.lineNumber);
+      const wordInfo = getWordAtPosition(line, position.column);
+
       const range = {
         startLineNumber: position.lineNumber,
         endLineNumber: position.lineNumber,
-        startColumn: word.startColumn,
-        endColumn: word.endColumn,
+        startColumn: wordInfo.startColumn,
+        endColumn: wordInfo.endColumn,
       };
 
       const suggestions: languages.CompletionItem[] = [];
@@ -894,7 +942,7 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
         }
 
         // Check if user is typing a table/alias prefix
-        const currentWordLower = word.word.toLowerCase();
+        const currentWordLower = wordInfo.word.toLowerCase();
         const isTypingTablePrefix = activeTables.some((t) => {
           const short = t.split(".").pop()?.toLowerCase() || t.toLowerCase();
           const aliases = tableToAliases.get(t) || [];
@@ -1052,4 +1100,16 @@ export async function setupDuckDBLanguage(monaco: Monaco) {
 
 export async function refreshSchemaCache() {
   return updateSchemaCache();
+}
+
+// Debounced version for use during typing
+function requestSchemaCacheUpdate() {
+  if (schemaCacheUpdateTimer) {
+    clearTimeout(schemaCacheUpdateTimer);
+  }
+
+  schemaCacheUpdateTimer = setTimeout(async () => {
+    await updateSchemaCache();
+    schemaCacheUpdateTimer = null;
+  }, 500); // Wait 500ms after typing stops before updating
 }

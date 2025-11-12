@@ -71,10 +71,53 @@ function TablesView() {
   const tables = Object.values(state.tables);
   const elementRefs = useRef<Map<string, HTMLElement>>(new Map());
   const previousTablesRef = useRef<Map<string, { loaded: boolean; rowCount?: number }>>(new Map());
+  const [loadingTabsMap, setLoadingTabsMap] = useState<Map<string, string>>(new Map()); // tableName -> tabId
 
   // Throttled debug logging - starts after 10s, then every 10s
   const lastDebugLogTime = useRef<number>(0);
   const debugLogStartTime = useRef<number>(Date.now());
+
+  // Watch for table loading completion and update corresponding tabs
+  useEffect(() => {
+    loadingTabsMap.forEach((tabId, tableName) => {
+      const table = tables.find(t => t.name === tableName);
+
+      if (table && !table.loading) {
+        // Table finished loading (either success or error)
+        if (table.loadError) {
+          // Replace with error tab if loading failed
+          dispatch({
+            type: "REPLACE_TAB",
+            id: tabId,
+            newTab: {
+              kind: "error",
+              id: tabId,
+              title: `Error: ${table.originalName || table.name}`,
+              error: table.loadError,
+              sourceFile: table.sourceFile,
+              tableName: table.originalName || table.name,
+            },
+          });
+        } else if (table.loaded) {
+          // Update the tab's loading state when done successfully
+          dispatch({
+            type: "UPDATE_TAB",
+            id: tabId,
+            updates: {
+              isLoading: false,
+            },
+          });
+        }
+
+        // Remove from tracking map
+        setLoadingTabsMap(prev => {
+          const next = new Map(prev);
+          next.delete(tableName);
+          return next;
+        });
+      }
+    });
+  }, [tables, loadingTabsMap, dispatch]);
 
   // Track when tables become empty and delay their movement to empty section
   useEffect(() => {
@@ -303,12 +346,12 @@ function TablesView() {
   // }, [navigation.setItems, customQueryTabs, regularClusterTables, emptyClusterTables, sortedNodeGroups, collapsedSections]);
 
   const loadDeferredTable = useCallback(
-    async (table: (typeof tables)[0]) => {
-      if (loadingTables.has(table.name)) return;
+    async (table: (typeof tables)[0]): Promise<{ success: boolean; error?: string }> => {
+      if (loadingTables.has(table.name)) return { success: true }; // Already loading
 
       if (!state.workerManager) {
         console.error("WorkerManager not available");
-        return;
+        return { success: false, error: "WorkerManager not available" };
       }
 
       setLoadingTables((prev) => new Set([...prev, table.name]));
@@ -336,9 +379,12 @@ function TablesView() {
           nodeFiles: table.nodeFiles,
         });
 
-        // The table progress will be updated via the WorkerManager callbacks
-        // which are handled in AppContext
+        // loadSingleTable succeeds even if table is only partially loaded
+        // The actual error status is set asynchronously via callbacks
+        // We'll handle this in the caller by checking the table state
+        return { success: true };
       } catch (err) {
+        // This catch block handles complete failures (table not created at all)
         console.error(`Failed to load deferred table ${table.name}:`, err);
         const errorMessage = err instanceof Error ? err.message : String(err);
         dispatch({
@@ -349,6 +395,7 @@ function TablesView() {
             loadError: errorMessage,
           },
         });
+        return { success: false, error: errorMessage };
       } finally {
         setLoadingTables((prev) => {
           const next = new Set(prev);
@@ -410,60 +457,35 @@ function TablesView() {
         !tab.isCustomQuery,
     );
 
-    // If table is deferred and not loaded, load it first
-    if (table.deferred && !table.loaded && !table.loading) {
-      await loadDeferredTable(table);
-      // After loading, open the SQL tab
-      setTimeout(() => {
-        const query = `SELECT * FROM ${table.name} LIMIT 100`;
-        dispatch({
-          type: "OPEN_TAB",
-          tab: {
-            kind: "sql",
-            id: existingTab ? existingTab.id : `sql-${table.name}`,
-            title: table.name,
-            query,
-            sourceTable: table.name,
-            isCustomQuery: false,
-          },
-        });
-      }, 100);
-    } else if (table.loaded) {
-      // Table is already loaded
-      const query = `SELECT * FROM ${table.name} LIMIT 100`;
+    // Always create the tab immediately
+    const query = `SELECT * FROM ${table.name} LIMIT 100`;
+    const tabId = existingTab?.id || `sql-${table.name}`;
+    const shouldCreateNewTab = existingTab && existingTab.kind === "sql" && existingTab.isCustomQuery;
+    const finalTabId = shouldCreateNewTab ? `sql-${table.name}-${Date.now()}` : tabId;
 
-      if (
-        existingTab &&
-        existingTab.kind === "sql" &&
-        existingTab.isCustomQuery
-      ) {
-        // Existing tab has been modified, create a new one
-        const newId = `sql-${table.name}-${Date.now()}`;
-        dispatch({
-          type: "OPEN_TAB",
-          tab: {
-            kind: "sql",
-            id: newId,
-            title: table.name,
-            query,
-            sourceTable: table.name,
-            isCustomQuery: false,
-          },
-        });
-      } else {
-        // Open or switch to existing tab
-        dispatch({
-          type: "OPEN_TAB",
-          tab: {
-            kind: "sql",
-            id: existingTab ? existingTab.id : `sql-${table.name}`,
-            title: table.name,
-            query,
-            sourceTable: table.name,
-            isCustomQuery: false,
-          },
-        });
-      }
+    // Open tab immediately (even if table needs loading)
+    dispatch({
+      type: "OPEN_TAB",
+      tab: {
+        kind: "sql",
+        id: finalTabId,
+        title: table.name,
+        query,
+        sourceTable: table.name,
+        isCustomQuery: false,
+        isLoading: table.deferred && !table.loaded, // Add loading state
+      },
+    });
+
+    // If table is deferred and not loaded, load it in the background
+    if (table.deferred && !table.loaded && !table.loading) {
+      // Track this loading tab so we can update it when loading completes
+      setLoadingTabsMap(prev => new Map(prev).set(table.name, finalTabId));
+
+      // Start loading the table in the background
+      loadDeferredTable(table).catch((err) => {
+        console.error(`Error initiating table load for ${table.name}:`, err);
+      });
     }
   };
 

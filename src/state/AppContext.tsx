@@ -12,7 +12,7 @@ import { setWorkerManager } from "../services/monacoConfig";
 
 export type AppAction =
   | { type: "SET_ZIP"; name: string; size: number; entries: ZipEntryMeta[] }
-  | { type: "OPEN_TAB"; tab: ViewerTab }
+  | { type: "OPEN_TAB"; tab: ViewerTab; focusTab?: boolean }
   | { type: "OPEN_NEW_FILE_TAB"; fileId: string; fileName: string }
   | { type: "OPEN_PPROF_TAB"; fileId: string; fileName: string }
   | {
@@ -24,6 +24,7 @@ export type AppAction =
   | { type: "CLOSE_TAB"; id: string }
   | { type: "SET_ACTIVE_TAB"; id: string }
   | { type: "UPDATE_TAB"; id: string; updates: Partial<ViewerTab> }
+  | { type: "REPLACE_TAB"; id: string; newTab: ViewerTab }
   | {
       type: "CACHE_FILE";
       id: string;
@@ -95,12 +96,15 @@ function appReducer(state: AppState, action: AppAction): AppState {
     }
 
     case "OPEN_TAB": {
+      // Default focusTab to true for backward compatibility
+      const shouldFocus = action.focusTab !== false;
+
       // First check for exact ID match
       const existingTabById = state.openTabs.find(
         (t) => t.id === action.tab.id,
       );
       if (existingTabById) {
-        // If the action has a line number, update the tab; otherwise just activate
+        // If the action has a line number, update the tab; otherwise just activate if focusing
         if (action.tab.kind === "file" && action.tab.lineNumber) {
           const updatedTab = { ...action.tab };
           const updatedTabs = state.openTabs.map((tab) =>
@@ -109,10 +113,13 @@ function appReducer(state: AppState, action: AppAction): AppState {
           return {
             ...state,
             openTabs: updatedTabs,
-            activeTabId: action.tab.id,
+            activeTabId: shouldFocus ? action.tab.id : state.activeTabId,
           };
         }
-        return { ...state, activeTabId: action.tab.id };
+        return {
+          ...state,
+          activeTabId: shouldFocus ? action.tab.id : state.activeTabId
+        };
       }
 
       // For file tabs, check if a tab with the same fileId already exists
@@ -138,11 +145,14 @@ function appReducer(state: AppState, action: AppAction): AppState {
             return {
               ...state,
               openTabs: updatedTabs,
-              activeTabId: existingFileTab.id,
+              activeTabId: shouldFocus ? existingFileTab.id : state.activeTabId,
             };
           }
-          // Otherwise just activate the existing tab
-          return { ...state, activeTabId: existingFileTab.id };
+          // Otherwise just activate the existing tab if focusing
+          return {
+            ...state,
+            activeTabId: shouldFocus ? existingFileTab.id : state.activeTabId
+          };
         }
       }
 
@@ -154,7 +164,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         openTabs: [...state.openTabs, tabToAdd],
-        activeTabId: action.tab.id,
+        activeTabId: shouldFocus ? action.tab.id : state.activeTabId,
       };
     }
 
@@ -293,6 +303,16 @@ function appReducer(state: AppState, action: AppAction): AppState {
         ...newTabs[tabIndex],
         ...action.updates,
       } as ViewerTab;
+
+      return { ...state, openTabs: newTabs };
+    }
+
+    case "REPLACE_TAB": {
+      const tabIndex = state.openTabs.findIndex((t) => t.id === action.id);
+      if (tabIndex === -1) return state;
+
+      const newTabs = [...state.openTabs];
+      newTabs[tabIndex] = action.newTab;
 
       return { ...state, openTabs: newTabs };
     }

@@ -28,6 +28,8 @@ export type ViewerTab =
       query: string;
       isCustomQuery?: boolean;
       sourceTable?: string;
+      isLoading?: boolean;
+      loadError?: string;
     }
   | {
       kind: "error";

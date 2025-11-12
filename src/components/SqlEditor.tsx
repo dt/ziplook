@@ -36,6 +36,7 @@ function SqlEditor({ tab }: SqlEditorProps) {
   const [modalContent, setModalContent] = useState<{ columnName: string; value: string }[]>([]);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const hasAutoRun = useRef(false);
+  const wasLoading = useRef(tab.isLoading);
   const lastNotifiedQuery = useRef(tab.query);
   const monacoRef = useRef<Monaco | null>(null);
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
@@ -81,9 +82,10 @@ function SqlEditor({ tab }: SqlEditorProps) {
   // Copy text to clipboard with pretty-printing for JSON
   const copyToClipboard = useCallback(async (text: string, fieldName: string) => {
     try {
-      // Pretty-print JSON if applicable
+      // Pretty-print JSON if applicable (but only for values under 2MB)
       let textToCopy = text;
-      if (text && (text.startsWith('{') || text.startsWith('['))) {
+      const MAX_PRETTY_PRINT_SIZE = 2 * 1024 * 1024; // 2MB
+      if (text && text.length < MAX_PRETTY_PRINT_SIZE && (text.startsWith('{') || text.startsWith('['))) {
         try {
           const parsed = JSON.parse(text);
           textToCopy = JSON.stringify(parsed, null, 2);
@@ -167,7 +169,9 @@ function SqlEditor({ tab }: SqlEditorProps) {
     }
 
     // Check if it's JSON (from decoded protobuf or other sources)
-    if (strValue.startsWith("{") || strValue.startsWith("[")) {
+    // Only attempt to parse/pretty-print if under 2MB
+    const MAX_PRETTY_PRINT_SIZE = 2 * 1024 * 1024; // 2MB
+    if (strValue.length < MAX_PRETTY_PRINT_SIZE && (strValue.startsWith("{") || strValue.startsWith("["))) {
       try {
         const parsed = JSON.parse(strValue);
         const prettyJson = JSON.stringify(parsed, null, 2);
@@ -223,7 +227,8 @@ function SqlEditor({ tab }: SqlEditorProps) {
 
     // Check if it's JSON or regular text that needs truncation
     let needsTruncation = false;
-    if (strValue.startsWith("{") || strValue.startsWith("[")) {
+    const MAX_PRETTY_PRINT_SIZE = 2 * 1024 * 1024; // 2MB
+    if (strValue.length < MAX_PRETTY_PRINT_SIZE && (strValue.startsWith("{") || strValue.startsWith("["))) {
       try {
         const parsed = JSON.parse(strValue);
         const prettyJson = JSON.stringify(parsed, null, 2);
@@ -320,13 +325,22 @@ function SqlEditor({ tab }: SqlEditorProps) {
     editor.focus();
   };
 
-  // Auto-run query when tab opens with a pre-filled query
+  // Auto-run query when tab opens with a pre-filled query or when loading completes
   useEffect(() => {
-    if (tab.query && !hasAutoRun.current) {
-      hasAutoRun.current = true;
-      runQuery();
+    // Check if we just finished loading (transition from loading to not loading)
+    const justFinishedLoading = wasLoading.current && !tab.isLoading;
+
+    if (tab.query && !tab.isLoading) {
+      // Run query if we haven't auto-run yet OR if we just finished loading
+      if (!hasAutoRun.current || justFinishedLoading) {
+        hasAutoRun.current = true;
+        runQuery();
+      }
     }
-  }, [tab.query, runQuery]);
+
+    // Update the loading state tracker
+    wasLoading.current = tab.isLoading;
+  }, [tab.query, tab.isLoading, runQuery]);
 
   // Update tab when query changes
   useEffect(() => {
@@ -355,6 +369,24 @@ function SqlEditor({ tab }: SqlEditorProps) {
       refreshSchemaCache();
     }
   }, [tab.id]);
+
+  // Show loading state if the table is being loaded
+  if (tab.isLoading) {
+    return (
+      <div className="sql-editor">
+        <div style={{
+          padding: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'var(--text-muted)'
+        }}>
+          <span className="loading-spinner-inline" style={{ marginRight: '8px' }}></span>
+          <span>Loading table {tab.sourceTable}...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="sql-editor">
@@ -432,6 +464,8 @@ function SqlEditor({ tab }: SqlEditorProps) {
               showWords: false,
               insertMode: "replace",
               filterGraceful: true,
+              localityBonus: true,
+              shareSuggestSelections: false,
             },
             bracketPairColorization: {
               enabled: true,
@@ -749,9 +783,11 @@ function SqlEditor({ tab }: SqlEditorProps) {
                     >
                       {field.value ? (
                         (() => {
-                          // First, pretty-print if it's JSON
+                          // First, pretty-print if it's JSON (but only if under 2MB)
                           let displayValue = field.value;
-                          if (field.value.startsWith('{') || field.value.startsWith('[')) {
+                          const MAX_PRETTY_PRINT_SIZE = 2 * 1024 * 1024; // 2MB
+                          if (field.value.length < MAX_PRETTY_PRINT_SIZE &&
+                              (field.value.startsWith('{') || field.value.startsWith('['))) {
                             try {
                               const parsed = JSON.parse(field.value);
                               displayValue = JSON.stringify(parsed, null, 2);
