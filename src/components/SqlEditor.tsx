@@ -180,19 +180,35 @@ function SqlEditor({ tab }: SqlEditorProps) {
         if (prettyJson.length > 100) {
           const isExpanded =
             expandedCell?.row === rowIndex && expandedCell?.col === colIndex;
+          // For truncated view, show compact JSON, not pretty-printed
+          const displayValue = isExpanded ? prettyJson : strValue;
           return (
             <pre
               className="sql-cell-json"
-              style={{ margin: 0, fontSize: "0.9em" }}
+              style={{
+                margin: 0,
+                fontSize: "0.9em",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: isExpanded ? "pre-wrap" : "nowrap",
+                maxWidth: "100%"
+              }}
             >
-              {isExpanded ? prettyJson : `${prettyJson.substring(0, 100)}...`}
+              {isExpanded ? displayValue : `${displayValue.substring(0, 100)}...`}
             </pre>
           );
         } else {
           return (
             <pre
               className="sql-cell-json"
-              style={{ margin: 0, fontSize: "0.9em" }}
+              style={{
+                margin: 0,
+                fontSize: "0.9em",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "pre-wrap",
+                maxWidth: "100%"
+              }}
             >
               {prettyJson}
             </pre>
