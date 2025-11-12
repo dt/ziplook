@@ -31,10 +31,16 @@ function SqlEditor({ tab }: SqlEditorProps) {
     col: number;
   } | null>(null);
   const [collapsedColumns, setCollapsedColumns] = useState<Set<string>>(new Set());
+  const [hoveredRow, setHoveredRow] = useState<number | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalContent, setModalContent] = useState<{ columnName: string; value: string }[]>([]);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
   const hasAutoRun = useRef(false);
   const lastNotifiedQuery = useRef(tab.query);
   const monacoRef = useRef<Monaco | null>(null);
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const tableRef = useRef<HTMLTableElement | null>(null);
+  const floatingButtonRef = useRef<HTMLButtonElement | null>(null);
 
   // Calculate editor height based on content
   const calculateEditorHeight = useCallback(() => {
@@ -54,6 +60,49 @@ function SqlEditor({ tab }: SqlEditorProps) {
 
   const [editorHeight, setEditorHeight] = useState("52px"); // 2 lines + padding initially
 
+  // Handle opening the row details modal
+  const handleOpenRowDetails = useCallback((rowIndex: number) => {
+    if (!results || !results[rowIndex]) return;
+
+    const row = results[rowIndex];
+    const content: { columnName: string; value: string }[] = [];
+
+    // Convert each field to string for display
+    Object.entries(row).forEach(([columnName, value]) => {
+      const columnType = columnTypes ? columnTypes[columnName] : undefined;
+      const stringValue = formatValue(value, columnType);
+      content.push({ columnName, value: stringValue });
+    });
+
+    setModalContent(content);
+    setModalOpen(true);
+  }, [results, columnTypes]);
+
+  // Copy text to clipboard with pretty-printing for JSON
+  const copyToClipboard = useCallback(async (text: string, fieldName: string) => {
+    try {
+      // Pretty-print JSON if applicable
+      let textToCopy = text;
+      if (text && (text.startsWith('{') || text.startsWith('['))) {
+        try {
+          const parsed = JSON.parse(text);
+          textToCopy = JSON.stringify(parsed, null, 2);
+        } catch {
+          // Not valid JSON, use as-is
+        }
+      }
+
+      await navigator.clipboard.writeText(textToCopy);
+
+      // Show success feedback
+      setCopiedField(fieldName);
+      setTimeout(() => {
+        setCopiedField(null);
+      }, 2000);
+    } catch (err) {
+      console.error('Failed to copy text:', err);
+    }
+  }, []);
 
   // Toggle column width between normal and collapsed
   const toggleColumnWidth = (columnName: string) => {
@@ -111,7 +160,7 @@ function SqlEditor({ tab }: SqlEditorProps) {
             className="sql-cell-link"
             style={{ color: '#0066cc', textDecoration: 'underline' }}
           >
-            Diagram
+            distsql plan diagram
           </a>
         );
       }
@@ -121,16 +170,30 @@ function SqlEditor({ tab }: SqlEditorProps) {
     if (strValue.startsWith("{") || strValue.startsWith("[")) {
       try {
         const parsed = JSON.parse(strValue);
+        const prettyJson = JSON.stringify(parsed, null, 2);
 
-        // Just show the JSON formatted
-        return (
-          <pre
-            className="sql-cell-json"
-            style={{ margin: 0, fontSize: "0.9em" }}
-          >
-            {JSON.stringify(parsed, null, 2)}
-          </pre>
-        );
+        // Apply truncation logic to JSON as well
+        if (prettyJson.length > 100) {
+          const isExpanded =
+            expandedCell?.row === rowIndex && expandedCell?.col === colIndex;
+          return (
+            <pre
+              className="sql-cell-json"
+              style={{ margin: 0, fontSize: "0.9em" }}
+            >
+              {isExpanded ? prettyJson : `${prettyJson.substring(0, 100)}...`}
+            </pre>
+          );
+        } else {
+          return (
+            <pre
+              className="sql-cell-json"
+              style={{ margin: 0, fontSize: "0.9em" }}
+            >
+              {prettyJson}
+            </pre>
+          );
+        }
       } catch {
         // Not valid JSON, display as string
       }
@@ -157,7 +220,22 @@ function SqlEditor({ tab }: SqlEditorProps) {
 
     const columnType = columnName && columnTypes ? columnTypes[columnName] : undefined;
     const strValue = formatValue(value, columnType);
-    if (strValue.length > 100) {
+
+    // Check if it's JSON or regular text that needs truncation
+    let needsTruncation = false;
+    if (strValue.startsWith("{") || strValue.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(strValue);
+        const prettyJson = JSON.stringify(parsed, null, 2);
+        needsTruncation = prettyJson.length > 100;
+      } catch {
+        needsTruncation = strValue.length > 100;
+      }
+    } else {
+      needsTruncation = strValue.length > 100;
+    }
+
+    if (needsTruncation) {
       const isExpanded =
         expandedCell?.row === rowIndex && expandedCell?.col === colIndex;
       setExpandedCell(isExpanded ? null : { row: rowIndex, col: colIndex });
@@ -374,11 +452,28 @@ function SqlEditor({ tab }: SqlEditorProps) {
           </div>
         )}
         {results && (
-          <div className="sql-table-wrapper">
+          <div
+            className="sql-table-wrapper"
+            onMouseLeave={(e) => {
+              // Only hide button if we're leaving the wrapper entirely
+              const relatedTarget = e.relatedTarget as HTMLElement;
+              if (!relatedTarget ||
+                  (!relatedTarget.closest('.sql-table-wrapper') &&
+                   !relatedTarget.classList.contains('sql-row-details-button'))) {
+                if (floatingButtonRef.current) {
+                  floatingButtonRef.current.style.display = 'none';
+                }
+                setHoveredRow(null);
+              }
+            }}
+          >
             {results.length === 0 ? (
               <p>No results</p>
             ) : (
-              <table className="sql-table">
+              <table
+                className="sql-table"
+                ref={tableRef}
+              >
                 <thead>
                   <tr>
                     {results[0] &&
@@ -408,7 +503,46 @@ function SqlEditor({ tab }: SqlEditorProps) {
                 </thead>
                 <tbody>
                   {results.slice(0, 1000).map((row, i) => (
-                    <tr key={i}>
+                    <tr
+                      key={i}
+                      onMouseEnter={(e) => {
+                        // Only update if it's a different row
+                        if (hoveredRow !== i) {
+                          setHoveredRow(i);
+                          // Position the floating button
+                          if (floatingButtonRef.current) {
+                            const rect = e.currentTarget.getBoundingClientRect();
+
+                            // Calculate the visible portion of the row
+                            const viewportTop = 0;
+                            const viewportBottom = window.innerHeight;
+
+                            // Find the visible top and bottom of the row
+                            const visibleTop = Math.max(rect.top, viewportTop);
+                            const visibleBottom = Math.min(rect.bottom, viewportBottom);
+
+                            // Center the button in the visible portion
+                            let buttonTop;
+
+                            if (rect.top >= viewportTop && rect.bottom <= viewportBottom) {
+                              // Row is fully visible - center normally
+                              buttonTop = rect.top + (rect.height / 2) - 10;
+                            } else {
+                              // Row extends beyond viewport - center in visible portion
+                              const visibleCenter = visibleTop + ((visibleBottom - visibleTop) / 2);
+                              buttonTop = visibleCenter - 10;
+
+                              // Add small margins from viewport edges
+                              buttonTop = Math.max(10, Math.min(buttonTop, viewportBottom - 30));
+                            }
+
+                            floatingButtonRef.current.style.top = `${buttonTop}px`;
+                            floatingButtonRef.current.style.left = `${rect.left - 24}px`;
+                            floatingButtonRef.current.style.display = 'block';
+                          }
+                        }
+                      }}
+                    >
                       {Object.entries(row).map(([colName, val], j) => {
                         const columnType = columnTypes ? columnTypes[colName] : undefined;
                         const strValue = formatValue(val, columnType);
@@ -437,6 +571,228 @@ function SqlEditor({ tab }: SqlEditorProps) {
           </div>
         )}
       </div>
+
+      {/* Floating button for row details */}
+      <style>{`
+        .sql-row-details-button::before {
+          content: '';
+          position: absolute;
+          top: -15px;
+          left: -15px;
+          right: -15px;
+          bottom: -15px;
+          z-index: -1;
+        }
+      `}</style>
+      <button
+        ref={floatingButtonRef}
+        className="sql-row-details-button"
+        style={{
+          position: 'fixed',
+          display: 'none',
+          zIndex: 1000,
+          width: '20px',
+          height: '20px',
+          padding: '0',
+          fontSize: '14px',
+          lineHeight: '20px',
+          textAlign: 'center',
+          backgroundColor: '#4a4a4a',
+          color: 'white',
+          border: 'none',
+          borderRadius: '50%',
+          cursor: 'pointer',
+          transition: 'all 0.2s ease',
+          transform: 'scale(1)',
+        }}
+        onMouseEnter={(e) => {
+          // Grow by 40% when hovering
+          e.currentTarget.style.transform = 'scale(1.4)';
+          e.currentTarget.style.backgroundColor = '#5a5a5a';
+        }}
+        onMouseLeave={(e) => {
+          // Shrink back to normal size
+          e.currentTarget.style.transform = 'scale(1)';
+          e.currentTarget.style.backgroundColor = '#4a4a4a';
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (hoveredRow !== null) {
+            handleOpenRowDetails(hoveredRow);
+          }
+        }}
+        title="View row details (fullscreen)"
+      >
+        ⤢
+      </button>
+
+      {/* Modal for row details */}
+      {modalOpen && (
+        <div
+          className="sql-row-modal-overlay"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 2000,
+          }}
+          onClick={() => setModalOpen(false)}
+        >
+          <div
+            className="sql-row-modal"
+            style={{
+              backgroundColor: '#2a2a2a',
+              border: '2px solid #444',
+              borderRadius: '8px',
+              padding: '8px', // Small padding for the outer container
+              width: '90%',
+              maxWidth: '90%',
+              height: '90vh',
+              maxHeight: '90vh',
+              position: 'relative',
+              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Fixed header with title and close button */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 16px',
+                borderBottom: '1px solid #444',
+                marginBottom: '8px',
+              }}
+            >
+              <h3 style={{ margin: 0, color: '#e0e0e0' }}>Row Details</h3>
+              <button
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#999',
+                  fontSize: '24px',
+                  cursor: 'pointer',
+                  padding: '0',
+                  width: '30px',
+                  height: '30px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                onClick={() => setModalOpen(false)}
+                title="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Inner scrollable container */}
+            <div
+              style={{
+                flex: 1,
+                overflow: 'auto',
+                padding: '12px',
+                paddingRight: '20px',
+              }}
+            >
+              <div className="sql-row-modal-content">
+                {modalContent.map((field, index) => (
+                  <div
+                    key={index}
+                    style={{
+                      marginBottom: '16px',
+                      borderBottom: index < modalContent.length - 1 ? '1px solid #444' : 'none',
+                      paddingBottom: '16px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
+                      <h4 style={{ margin: 0, color: '#b0b0b0', fontSize: '14px', flex: 1 }}>
+                        {field.columnName}
+                      </h4>
+                      <button
+                        style={{
+                          padding: '4px 8px',
+                          fontSize: '12px',
+                          backgroundColor: copiedField === field.columnName ? '#2a5a2a' : '#3a3a3a',
+                          color: copiedField === field.columnName ? '#90ee90' : '#e0e0e0',
+                          border: `1px solid ${copiedField === field.columnName ? '#3a7a3a' : '#555'}`,
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          transition: 'all 0.3s ease',
+                        }}
+                        onClick={() => copyToClipboard(field.value, field.columnName)}
+                        title={`Copy ${field.columnName}`}
+                      >
+                        {copiedField === field.columnName ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                    <div
+                      style={{
+                        padding: '8px',
+                        backgroundColor: '#1e1e1e',
+                        borderRadius: '4px',
+                        fontFamily: 'monospace',
+                        fontSize: '13px',
+                        color: '#d0d0d0',
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-all',
+                      }}
+                    >
+                      {field.value ? (
+                        (() => {
+                          // First, pretty-print if it's JSON
+                          let displayValue = field.value;
+                          if (field.value.startsWith('{') || field.value.startsWith('[')) {
+                            try {
+                              const parsed = JSON.parse(field.value);
+                              displayValue = JSON.stringify(parsed, null, 2);
+                            } catch {
+                              // Not valid JSON, use as-is
+                            }
+                          }
+
+                          // Then linkify URLs in the (possibly pretty-printed) content
+                          const urlRegex = /(https?:\/\/[^\s"',}\]()<>]+)/g;
+                          const parts = displayValue.split(urlRegex);
+
+                          return parts.map((part, i) => {
+                            if (part.match(urlRegex)) {
+                              return (
+                                <a
+                                  key={i}
+                                  href={part}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{ color: '#4a9eff', textDecoration: 'underline' }}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {part}
+                                </a>
+                              );
+                            }
+                            return part;
+                          });
+                        })()
+                      ) : (
+                        <span style={{ color: '#666', fontStyle: 'italic' }}>NULL</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
