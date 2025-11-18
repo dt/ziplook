@@ -5,7 +5,6 @@
 export interface CsvReadOptions {
   fileName: string;
   tableName: string;
-  delimiter: string;
   operation: 'create' | 'insert';
   nodeId?: number;
   typeHints?: Map<string, string>;
@@ -13,7 +12,7 @@ export interface CsvReadOptions {
 }
 
 export function generateCsvReadSql(options: CsvReadOptions): string {
-  const { fileName, tableName, delimiter, operation, nodeId, typeHints, headers } = options;
+  const { fileName, tableName, operation, nodeId, typeHints, headers } = options;
   const quotedTableName = `"${tableName}"`;
 
   // Build column specification if we have type hints and headers
@@ -31,7 +30,7 @@ export function generateCsvReadSql(options: CsvReadOptions): string {
 
   const readOptions = `
     '${fileName}',
-    delim = '${delimiter}',
+    delim = '\t',
     quote = '"',
     escape = '"',
     header = true,

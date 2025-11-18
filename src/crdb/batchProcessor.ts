@@ -78,6 +78,22 @@ function parseCSVLine(line: string, delimiter: string): string[] {
   return result;
 }
 
+// Escape a CSV field - wrap in quotes if it contains delimiter, newline, or quote
+function escapeCsvField(field: string, delimiter: string): string {
+  // Check if field needs escaping
+  const needsEscaping = field.includes(delimiter) || field.includes('\n') || field.includes('\r') || field.includes('"');
+
+  if (!needsEscaping) {
+    return field;
+  }
+
+  // Escape quotes by doubling them
+  const escapedField = field.replace(/"/g, '""');
+
+  // Wrap in quotes
+  return `"${escapedField}"`;
+}
+
 // Helper functions from csvPreprocessor.ts
 function hexToBytes(hex: string): Uint8Array {
   hex = hex.replace(/^\\x/i, "");
@@ -287,7 +303,7 @@ export async function preprocessAndLoadInBatches(
     // Extract a complete CSV line (handling quoted fields with newlines)
     let line = '';
     let inQuotes = false;
-    let lineStart = position;
+    const lineStart = position;
 
     while (position < content.length) {
       const char = content[position];
@@ -338,7 +354,9 @@ export async function preprocessAndLoadInBatches(
       protoDecoder: options.protoDecoder,
     });
 
-    const rowString = processedRow.join(delimiter);
+    // Escape each field properly before joining
+    const escapedRow = processedRow.map(field => escapeCsvField(field, delimiter));
+    const rowString = escapedRow.join(delimiter);
     const rowSize = rowString.length + 1; // +1 for newline
 
     // Check if adding this row would exceed batch limits
@@ -361,7 +379,6 @@ export async function preprocessAndLoadInBatches(
         const sql = generateCsvReadSql({
           fileName: batchFileName,
           tableName,
-          delimiter,
           operation,
           nodeId, // Always pass nodeId for both CREATE and INSERT
           typeHints,
@@ -401,7 +418,6 @@ export async function preprocessAndLoadInBatches(
       const sql = generateCsvReadSql({
         fileName: batchFileName,
         tableName,
-        delimiter,
         operation,
         nodeId, // Always pass nodeId for both CREATE and INSERT
         typeHints,
