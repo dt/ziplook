@@ -21,6 +21,7 @@ interface BatchProcessOptions {
   sourcePath?: string;
   nodeId?: number;
   forceInsert?: boolean; // Force INSERT mode (table already exists)
+  ignoreErrors?: boolean; // Use relaxed CSV parsing to load partial data
 }
 
 const BATCH_SIZE_ROWS = 10000; // Max rows per batch
@@ -129,6 +130,7 @@ function tryReplaceWithPrettyKey(value: string): string {
     return value;
   }
 
+  // Handle hex keys (start with \x)
   if (value === "\\x" || value.startsWith("\\x")) {
     try {
       const decoded = prettyKey(value);
@@ -138,7 +140,64 @@ function tryReplaceWithPrettyKey(value: string): string {
     }
   }
 
+  // Handle base64-encoded keys (like oA==, oQ==, etc.)
+  // Check if it looks like base64: only contains base64 chars and correct padding
+  if (/^[A-Za-z0-9+/]*(=|==)?$/.test(value) && value.length % 4 === 0 && value.length > 0) {
+    try {
+      // Convert base64 to hex
+      const binaryString = atob(value);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const hexStr = Array.from(bytes)
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+
+      const decoded = prettyKey(hexStr);
+      // Only use the decoded version if it's different from the hex
+      if (decoded.pretty !== hexStr) {
+        return decoded.pretty;
+      }
+    } catch {
+      // If decoding fails, return original value
+    }
+  }
+
   return value;
+}
+
+// Recursively decode base64 keys in JSON objects
+function decodeKeysInJson(obj: unknown): unknown {
+  if (typeof obj === "string") {
+    // If it's a string that looks like base64, try to decode it as a key
+    return tryReplaceWithPrettyKey(obj);
+  } else if (Array.isArray(obj)) {
+    return obj.map(decodeKeysInJson);
+  } else if (obj !== null && typeof obj === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      // Decode values in key-related fields
+      if (key.toLowerCase().includes("key") || key === "start" || key === "end") {
+        result[key] = typeof value === "string" ? tryReplaceWithPrettyKey(value) : decodeKeysInJson(value);
+      } else {
+        result[key] = decodeKeysInJson(value);
+      }
+    }
+    return result;
+  }
+  return obj;
+}
+
+function decodeJsonKeys(jsonString: string): string {
+  try {
+    const parsed = JSON.parse(jsonString);
+    const decoded = decodeKeysInJson(parsed);
+    return JSON.stringify(decoded);
+  } catch {
+    // If parsing fails, return original
+    return jsonString;
+  }
 }
 
 async function processRow(
@@ -148,6 +207,7 @@ async function processRow(
   options: {
     tableName: string;
     keyColumns: Set<number>;
+    jsonKeyColumns: Set<number>;
     protoColumns: Map<number, string | null>;
     infoKeyColumnIndex: number;
     decodeKeys: boolean;
@@ -157,6 +217,18 @@ async function processRow(
 ): Promise<string[]> {
   const processedRow = await Promise.all(
     row.map(async (value, colIndex) => {
+      // Transform JSON columns that contain base64 keys
+      if (options.jsonKeyColumns.has(colIndex) && options.decodeKeys) {
+        if (value === "\\N" || value === "NULL" || !value) {
+          return value;
+        }
+        // Check if it looks like JSON
+        if (value.startsWith("{") || value.startsWith("[")) {
+          return decodeJsonKeys(value);
+        }
+        return value;
+      }
+
       // Transform key columns
       if (options.keyColumns.has(colIndex) && options.decodeKeys) {
         if (value === "\\N" || value === "NULL") {
@@ -242,7 +314,7 @@ export async function preprocessAndLoadInBatches(
   content: string,
   options: BatchProcessOptions
 ): Promise<number> {
-  const { conn, db, tableName, delimiter, sourcePath, nodeId } = options;
+  const { conn, db, tableName, delimiter, sourcePath, nodeId, ignoreErrors } = options;
 
   // Process content in a streaming fashion
   let position = 0;
@@ -266,6 +338,7 @@ export async function preprocessAndLoadInBatches(
   // Identify columns that need special processing
   const keyColumns = new Set<number>();
   const protoColumns = new Map<number, string | null>();
+  const jsonKeyColumns = new Set<number>(); // JSON columns that may contain base64 keys
   let infoKeyColumnIndex = -1;
 
   headers.forEach((header, index) => {
@@ -276,7 +349,14 @@ export async function preprocessAndLoadInBatches(
       keyColumns.add(index);
     }
 
-    // Check for proto columns
+    // Check for JSON columns that may contain encoded keys (e.g., rangelog.info)
+    // These are already JSON from CRDB, not protos that need decoding
+    if (options.decodeKeys && columnName === "info" &&
+        (tableName.includes("rangelog") || tableName.includes("range_log"))) {
+      jsonKeyColumns.add(index);
+    }
+
+    // Check for proto columns (hex-encoded that need proto->JSON conversion)
     if (options.decodeProtos && options.protoDecoder) {
       if (columnName === "config" || columnName === "descriptor" ||
           columnName === "payload" || columnName === "progress" || columnName === "value") {
@@ -347,6 +427,7 @@ export async function preprocessAndLoadInBatches(
     const processedRow = await processRow(row, headers, lineNumber, {
       tableName,
       keyColumns,
+      jsonKeyColumns,
       protoColumns,
       infoKeyColumnIndex,
       decodeKeys: options.decodeKeys,
@@ -383,6 +464,7 @@ export async function preprocessAndLoadInBatches(
           nodeId, // Always pass nodeId for both CREATE and INSERT
           typeHints,
           headers: !tableCreated ? headers : undefined,
+          ignoreErrors,
         });
 
         await conn.query(sql);
@@ -422,6 +504,7 @@ export async function preprocessAndLoadInBatches(
         nodeId, // Always pass nodeId for both CREATE and INSERT
         typeHints,
         headers: !tableCreated ? headers : undefined,
+        ignoreErrors,
       });
 
       await conn.query(sql);

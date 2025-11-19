@@ -415,6 +415,15 @@ function TablesView() {
         [{ path: table.sourceFile, nodeId: table.nodeId ?? 0, size: table.size ?? 0, isError: true }];
       const availableFiles = table.nodeFiles?.filter(f => !f.isError) || [];
 
+      // For single-file errors, try to find the source (non-.err) file and its size
+      let sourceFileSize: number | undefined;
+      if (!table.nodeFiles || table.nodeFiles.length <= 1) {
+        // Single file error - try to find the corresponding non-.err file
+        const sourceFilePath = table.sourceFile.replace(/\.err\.txt$/, '');
+        const sourceFileEntry = state.filesIndex[sourceFilePath];
+        sourceFileSize = sourceFileEntry?.size;
+      }
+
       dispatch({
         type: "OPEN_TAB",
         tab: {
@@ -423,6 +432,7 @@ function TablesView() {
           title: `Error: ${baseName}`,
           error: "", // Will be populated by ErrorViewer
           sourceFile: table.sourceFile,
+          sourceFileSize,
           tableName: baseName,
           fullTableName: table.name, // Full name with _by_node suffix if applicable
           isPreLoadError: true,

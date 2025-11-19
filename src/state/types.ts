@@ -37,6 +37,7 @@ export type ViewerTab =
       title: string;
       error: string;
       sourceFile: ZipEntryId;
+      sourceFileSize?: number; // Size of the non-.err source file (for partial loading)
       tableName: string; // Display name (e.g., "crdb_internal.node_build_info")
       fullTableName?: string; // Full table name for loading (e.g., "crdb_internal.node_build_info_by_node")
       isPreLoadError?: boolean; // true for .err.txt files, undefined for DuckDB load errors
@@ -169,6 +170,7 @@ export interface TableData {
   nodeId?: number;
   originalName?: string;
   isError?: boolean;
+  ignoreErrors?: boolean; // Use relaxed CSV parsing to load partial data
   loaded?: boolean;
   loading?: boolean;
   sourceFile?: string;

@@ -9,10 +9,11 @@ export interface CsvReadOptions {
   nodeId?: number;
   typeHints?: Map<string, string>;
   headers?: string[];
+  ignoreErrors?: boolean; // Use relaxed CSV parsing to skip malformed rows
 }
 
 export function generateCsvReadSql(options: CsvReadOptions): string {
-  const { fileName, tableName, operation, nodeId, typeHints, headers } = options;
+  const { fileName, tableName, operation, nodeId, typeHints, headers, ignoreErrors } = options;
   const quotedTableName = `"${tableName}"`;
 
   // Build column specification if we have type hints and headers
@@ -35,7 +36,7 @@ export function generateCsvReadSql(options: CsvReadOptions): string {
     escape = '"',
     header = true,
     nullstr = ['NULL', '\\N'],
-    max_line_size = 33554432${columnsClause}
+    max_line_size = 33554432${ignoreErrors ? ',\n    ignore_errors = true' : ''}${columnsClause}
   `;
 
   if (operation === 'create') {

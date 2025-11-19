@@ -113,6 +113,7 @@ function MainPanel({ style }: { style?: React.CSSProperties }) {
                     tabId={tab.id}
                     error={tab.error}
                     sourceFile={tab.sourceFile}
+                    sourceFileSize={tab.sourceFileSize}
                     tableName={tab.tableName}
                     fullTableName={tab.fullTableName}
                     isPreLoadError={tab.isPreLoadError}

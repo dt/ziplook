@@ -5,6 +5,7 @@ interface ErrorViewerProps {
   tabId: string;
   error: string;
   sourceFile: string;
+  sourceFileSize?: number;
   tableName: string;
   fullTableName?: string;
   isPreLoadError?: boolean;
@@ -16,6 +17,7 @@ function ErrorViewer({
   tabId,
   error,
   sourceFile,
+  sourceFileSize,
   tableName,
   fullTableName,
   isPreLoadError,
@@ -84,6 +86,52 @@ function ErrorViewer({
     }
   };
 
+  const handleLoadPartialData = async () => {
+    if (!state.workerManager) {
+      return;
+    }
+
+    const tableNameForLoading = fullTableName || tableName;
+    // Get the source file path (non-.err file)
+    const sourceFilePath = sourceFile.replace(/\.err\.txt$/, '');
+
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      // Load the table with ignore_errors flag
+      await state.workerManager.loadSingleTable({
+        name: tableNameForLoading,
+        path: sourceFilePath,
+        size: sourceFileSize || 0,
+        originalName: tableName,
+        isError: false,
+        ignoreErrors: true, // NEW: Tell the loader to use relaxed mode
+      });
+
+      // Close this error tab and open the SQL tab for the loaded table
+      dispatch({ type: "CLOSE_TAB", id: tabId });
+      setTimeout(() => {
+        dispatch({
+          type: "OPEN_TAB",
+          tab: {
+            kind: "sql",
+            id: `sql-${tableNameForLoading}`,
+            title: tableNameForLoading,
+            query: `SELECT * FROM "${tableNameForLoading}" LIMIT 100`,
+            sourceTable: tableNameForLoading,
+            isCustomQuery: false,
+          },
+        });
+      }, 100);
+    } catch (err) {
+      console.error("Failed to load partial data:", err);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setLoadError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Parse the error message to extract useful information
   const parseError = (errorMsg: string) => {
     // Look for line number in error
@@ -103,6 +151,7 @@ function ErrorViewer({
   if (isPreLoadError) {
     const isSingleFile = !errorFiles || errorFiles.length === 1;
     const hasAvailableFiles = availableFiles && availableFiles.length > 0;
+    const hasPartialData = isSingleFile && sourceFileSize && sourceFileSize > 0;
 
     // Helper to format file sizes
     const formatSize = (bytes?: number) => {
@@ -148,6 +197,33 @@ function ErrorViewer({
               ))}
             </ul>
           </div>
+
+          {hasPartialData && !hasAvailableFiles && (
+            <div className="error-section">
+              <h3>Partial Data Available</h3>
+              <p style={{ marginBottom: "12px" }}>
+                The source file contains {formatSize(sourceFileSize)} of data. You can attempt to load what can be parsed with relaxed error handling.
+              </p>
+              <p style={{ marginBottom: "12px", color: "var(--text-muted)" }}>
+                <strong>Note:</strong> This will skip malformed rows and may result in incomplete data.
+              </p>
+              <button
+                className="btn btn-primary"
+                onClick={handleLoadPartialData}
+                disabled={isLoading}
+                style={{ marginTop: "16px" }}
+              >
+                {isLoading ? "Loading..." : `Load Partial Data (${formatSize(sourceFileSize)})`}
+              </button>
+
+              {loadError && (
+                <div style={{ marginTop: "16px", padding: "12px", backgroundColor: "var(--error-bg, #3c1f1f)", border: "1px solid var(--error-border, #f44336)", borderRadius: "4px" }}>
+                  <h4 style={{ margin: "0 0 8px 0", color: "var(--error-color, #f44336)" }}>Failed to Load Partial Data</h4>
+                  <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: "0.9em" }}>{loadError}</pre>
+                </div>
+              )}
+            </div>
+          )}
 
           {hasAvailableFiles && (
             <div className="error-section">

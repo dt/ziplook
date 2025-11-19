@@ -63,6 +63,7 @@ interface LoadSingleTableMessage {
     nodeId?: number;
     originalName?: string;
     isError?: boolean;
+    ignoreErrors?: boolean; // Use relaxed CSV parsing to load partial data
     nodeFiles?: Array<{
       path: string;
       size: number;
@@ -191,6 +192,7 @@ async function loadFileIncrementally(
   delimiter: string,
   nodeId?: number,
   sourcePath?: string,
+  ignoreErrors?: boolean,
 ): Promise<number> {
   if (!conn || !db) {
     throw new Error("DuckDB not initialized");
@@ -323,6 +325,7 @@ async function loadFileIncrementally(
               sourcePath,
               nodeId, // Always pass nodeId for both CREATE and INSERT operations
               forceInsert: chunkNumber > 0 || tableExists, // Force INSERT mode for chunks after the first
+              ignoreErrors,
             });
             // The batch processor successfully loaded the data
             chunkNumber++;
@@ -347,6 +350,7 @@ async function loadFileIncrementally(
                 nodeId,
                 typeHints: typeHints.size > 0 ? typeHints : undefined,
                 headers,
+                ignoreErrors,
               });
               try {
                 await conn.query(sql);
@@ -366,6 +370,7 @@ async function loadFileIncrementally(
                 delimiter,
                 operation: 'insert',
                 nodeId,
+                ignoreErrors,
               });
               try {
                 await conn.query(sql);
@@ -427,6 +432,7 @@ async function loadFileIncrementally(
         db,
         sourcePath,
         nodeId, // Always pass nodeId for both CREATE and INSERT operations
+        ignoreErrors,
       });
       // Already loaded by batch processor - need to get final count
       // Jump to the counting logic at the end
@@ -445,6 +451,7 @@ async function loadFileIncrementally(
           nodeId,
           typeHints: typeHints && typeHints.size > 0 ? typeHints : undefined,
           headers: operation === 'create' ? headers : undefined,
+          ignoreErrors,
         });
 
         try {
@@ -804,6 +811,7 @@ interface TableInfo {
   nodeId?: number;
   originalName?: string;
   isError?: boolean;
+  ignoreErrors?: boolean; // Use relaxed CSV parsing to load partial data
   nodeFiles?: Array<{
     path: string;
     size: number;
@@ -813,7 +821,7 @@ interface TableInfo {
 }
 
 async function loadSingleTable(table: TableInfo) {
-  const { name: tableName, path, size, nodeId, originalName, isError, nodeFiles } = table;
+  const { name: tableName, path, size, nodeId, originalName, isError, ignoreErrors, nodeFiles } = table;
 
   if (!conn) {
     throw new Error("Database not initialized");
@@ -935,6 +943,7 @@ async function loadSingleTable(table: TableInfo) {
             "\t",
             nodeFile.nodeId,
             nodeFile.path,
+            ignoreErrors,
           );
           totalRowCount += rowCount;
       }
@@ -1001,6 +1010,7 @@ async function loadSingleTable(table: TableInfo) {
         "\t",
         nodeId,
         path,
+        ignoreErrors,
       );
 
       // Send completion event for incremental loading
